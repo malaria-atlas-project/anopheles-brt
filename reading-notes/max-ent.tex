@@ -1,0 +1,127 @@
+%!TEX root = reading-notes.tex
+
+\section{MaxEnt} 
+\label{sec:maxent}
+
+MaxEnt produces a density for the places $y$ where the species at issue is observed. These places are assumed to be iid. This is actually a prior predictive density constructed using the principle of maximum entropy, which extends the principle of indifference by asserting that all priors should be as close as possible to uniform (vis \`a vis the Kullback-Leibler divergence) subject to any known constraints. 
+
+\subsection{The principle of maximum entropy}
+
+As usual, Jordan \cite{Jordan:ch19} gives a concise, no-nonsense explanation, which I will re-type here. Say you want to find a probability distribution $p(x)$ over a finite sample space $x$ that minimizes entropy (that is, Kullback-Liebler divergence from the uniform distribution $p(x)=1/|x|$) subject to certain moment constraints (indexed by $i$):
+\begin{equation*}
+    \begin{array}{rl}
+        \min & D(p||u) := \sum_x p(x)(\log p(x) + \log |x|)\\\\
+        \textup{subject to} & \sum_x p(x) f_i(x) = \alpha_i         
+    \end{array}
+\end{equation*}
+In the MaxEnt mapping procedure, $\alpha_i$ is taken to be the mean of $f_i(x)$ within the sample. This constrained optimization can be solved by extremizing a Lagrangian:
+\begin{eqnarray*}
+    L(p) = \sum_x p(x)(\log p(x) + \log |x|) - \sum_i \lambda_i \left(\sum_x p(x)f_i(x)-\alpha \right) - \lambda_0 \left(\sum_x p(x)-1\right)
+\end{eqnarray*}
+The $\lambda$'s are Lagrange multipliers. The middle term enforces the moment constraints, and the right-hand term ensures that $p(x)$ is normalized (sums to 1). To start, differentiating $L$ wrt $p(x)$ for arbitrary $x$ and setting to zero gives
+\begin{equation}
+    \label{eq:exponential-family}
+    p(x) = \frac{\exp{(\lambda_0-1)}}{|x|}\exp{\sum_i\lambda_if_i(x)},
+\end{equation}
+which is an exponential-family distribution. Jaynes \cite{Jaynes:ch11} shows that this is the global maximum entropy (as opposed to a local maximum).
+
+\smallskip
+The undetermined multipliers $\lambda_i$ now have to be set to enforce the moment \& normalization constraints. These values for the $\lambda$'s also maximize the likelihood of the dataset. Denoting $m$ as the empirical frequency, the log-likelihood is
+\begin{eqnarray*}
+    \sum_x m(x) \log p(x).
+\end{eqnarray*}
+Differentiating wrt $\lambda_i$ and setting to zero eventually gives (see Jordan \cite{Jordan:ch8}) 
+\begin{eqnarray*}
+    \sum_x \left(m(x) f_i(x) - p(x)f_i(x)\right) = 0,
+\end{eqnarray*}
+which is the moment constraint.
+
+\subsection{What does MaxEnt really do?} 
+
+Like most modern mapping procedures, MaxEnt `wants' to find $P_s(x)$: the epistemic probability that a species $s$ is present at location $x$. However, rather than computing its target distribution directly, MaxEnt finds the distribution $p(y)$, where $y$ is the set of locations where species $s$ will be observed. 
+
+Postponing criticism of this choice for section \ref{sec:weaknesses}, it's still important to figure out the correspondence between $P_s(x)$ and $p(y)$. Assuming the locations $y$ where samples are attempted are iid conditional on sampling intensity $S_s$ means the locations $y$ where samples have been taken are a binomial process:
+\begin{eqnarray*}
+    y\sim \textup{Binomial}(|y|, P_s S_s) 
+\end{eqnarray*}
+However, multiplying $P_s$ by a constant doesn't change the distribution of $y$:
+\begin{eqnarray*}
+    y\sim \textup{Binomial}(|y|, k P_s S_s)
+\end{eqnarray*}
+In other words, based on $y$ alone: 
+\begin{itemize}
+    \item You can't distinguish the situation where the species is less abundant but many samples have been taken from the situation where the species is more abundant but only a few samples have been taken
+    \item You can't disentangle the target $P_s$ from the sampling intensity $S_s$.
+\end{itemize}
+
+MaxEnt previously got around the second difficulty by assuming $S_s\propto 1$ where $P_s$ is positive: scientists' attempts to find the species are uniformly distributed over all areas where $P_s$ is appreciable. It just didn't deal with the first difficulty. 
+
+Recently, however, the developers of MaxEnt have come up with a good idea that allows them to address both \cite{Phillips:2008p12219}. They target the mixed continuous/discrete distribution $p(s(z), z) : \{0,1\}\times\textup{earth}\mapsto [0,\infty)$, where $z$ are the locations of sampling attempts, by maximizing entropy subject to constraints on $p(y)=p(z|s(z)=1)$. This allows them to produce an actual probability of presence:
+\begin{eqnarray*}
+    p(s(z)=1|z) = P_s(z)=\frac{e^H p(z|s(z)=1)}{1+e^H p(z|s(z)=1)}
+\end{eqnarray*}
+where all the probabilities are understood to be the approximations from MaxEnt and $H$ is the actual maximum entropy. They could also spit out an estimate of the sampling intensity (\textbf{what is it?}) which would provide another way to validate the method.
+
+They also introduced `background samples', essentially pseudoabsences generated using presences of `related' species, as a means of overcoming the second difficulty. We have discussed this idea \& decided we prefer the expert opinion maps as a source of absences.
+
+
+\subsection{Why has MaxEnt been successful?}
+MaxEnt has been one of the most successful species-mapping techniques. Here are a few ideas why that might be:
+\begin{itemize}
+    \item The presence of both smooth and quickly-changing feature shapes. The developers claim that hinge features greatly improve performance, indicating that this expressiveness may be helpful. An important question is whether the `sharpness' of the features is important in addition to their ability to span function spaces; Gaussian processes are very flexible, but not sharp.
+    \item Regularization. The impact of regularization on predictive skill seems complicated, but the developers set great store by it. Bayesian reasoning has built-in protection against overfitting when compared with maximum likelihood-based methods, so an explicit penalty term may not be a good idea for us.
+    \item Generative vs. discriminative. In other words, MaxEnt models environment as a child of presence rather than a parent. They cite Ng and Jordan as saying that this direction is more successful. It's hard to believe that that is a general principle, but maybe there's a kernel of truth. 
+\end{itemize}
+
+
+\subsection{What are MaxEnt's weaknesses?}
+
+\label{sec:weaknesses}
+
+\begin{itemize}
+    \item MaxEnt for species mapping is heavily misunderstood and misrepresented in the literature. The maximum entropy rhetoric about starting from `maximum ignorance' suggests that MaxEnt is starting from ignorance regarding the presence probability $P_s(x)$ itself \textbf{quote}. Specifically, it sounds like one of two things:
+    \begin{enumerate}
+        \item It maximizes the entropy of the probability distribution of the function $P_s(x)$ itself
+        \item It simultaneously maximizes the entropies of the probability distribution $P_s(x)$ at each location $x$.
+    \end{enumerate}
+    Maximizing the entropy of $p(x|s(x)=1)$ is not equivalent to either. The first definition is just not possible; infinite-dimensional variables like $P_s(x)$ can easily have infinite entropy. There's no way to choose between two priors with infinite entropy, and most of them will yield horrific posteriors anyway. The second definition is closer to the truth, but still off the mark. \textbf{why}
+    \item The constraint that feature means match on sample and area of observation is not actually a known constraint.
+    \item The `principle' of maximum entropy, like the `principle' of indifference, is really just a preference. Not only that, it's bound to lead to frustration, because like the principle of indifference it's impossible to satisfy under arbitrary changes of variables. Nevertheless, the principle is presented to readers with very little circumspection. Phillips, Dud\'ik et al \cite{Phillips:2004p11403,Phillips:2006p11404,Phillips:2008p12219} refer to Jaynes \cite{Jaynes:ch11} as the authority behind it:
+    \begin{quote}
+        When approximating an unknown probability distribution, the question arises, what is the best approximation? E. T. Jaynes gave a general answer to this question: the best approach is to ensure that the approximation satisfies any constraints on the unknown distribution that we are aware of, and that subject to those constraints, the distribution should have maximum entropy.
+    \end{quote} 
+Jaynes, in turn, gives a characteristically compelling argument for entropy vs. other measures of `uncertainty' that I am still digesting. As motivation for the principle of indifference itself, however, he literally cites the bible:
+\begin{quote}
+    The knowledge of average values does give the robot a reason for preferring some possibilities to others, but we would like it to assign a probability distribution which is, in some sense, as uniform as it can get while agreeing with the available information. The most conservative, noncommittal distribution is the one which is in some sense as ``spread-out'' as possible. ...
+    
+    This sounds very much like defining a variational problem; the information available defines constraints fixing some properties of the initial probability distribution, but not all of them. The ambiguity remaining is to be resolved by the policy of honesty; frankly acknowledging the full extent of its ignorance by taking into account all possibilities allowed by its knowledge. [\emph{footnote:} This is really an ancient principle of wisdom, recognized clearly already in such sources as Herodotus and the old testament.]
+\end{quote}
+This makes a striking contrast to his forceful arguments for Bayesian reasoning itself in earlier chapters, but now that people cite it, it is True. This kind of thing drives me up a wall.
+\end{itemize}
+
+\subsection{Appendix: Derivation of `logistic output format'}
+
+As mentioned earlier, the MaxEnt developers have developed a way to deal with the unknown normalizing constant, or `total prevalence', resulting from a lack of proper absence data. However, it has its difficulties as well. They target the mixed joint distribution $p(s(z),z)$. The entropy of this distribution is
+\begin{eqnarray*}
+    \sum_z p(z|s(z)=0)p(s(z)=0)\left[\log p(z|s(z)=0) + \log p(s(z)=0) + \log \frac{|z|}{2}\right]\\
+    +\sum_z p(z|s(z)=1)p(s(z)=1)\left[\log p(z|s(z)=1) + \log p(s(z)=1) + \log \frac{|z|}{2}\right].
+\end{eqnarray*}
+Writing $p(s(z)=1)$ as $q$ and adding moment \& normalization constraints, the Lagrangian is
+\begin{eqnarray*}
+    L=(1-q)\left[\log(1-q)+ \log \frac{|z|}{2}\right] + q\left[\log q+ \log \frac{|z|}{2}\right]\\
+    +(1-q)\sum_z p(z|s(z)=0)\log p(z|s(z)=0) + q\sum_z p(z|s(z)=1)\log p(z|s(z)=1)\\
+    -\sum_i \lambda_i \left(\sum_z p(z|s(z)=1) f_i(z)-\alpha_i\right) - \lambda_0 \left(\sum_z (1-q)p(z|s(z)=0) + qp(z|s(z)=1) -\alpha_0\right).
+\end{eqnarray*}
+
+\bigskip
+First, take $p(z|s(z)=0)$. Differentiating the Lagrangian gives
+\begin{eqnarray*}
+    \frac{\partial L}{\partial p(z|s(z)=0)} = (1-q)\left[\log p(z|s(z)=0)-\lambda_0+1\right]=0\\
+    \Rightarrow p(z|s(z)=0)=e^{1-\lambda_0}.
+\end{eqnarray*}
+This is crucial: the sampling process resulting in negatives is unconstrained, so MaxEnt takes it to be uniform. This is not ignorance in any meaningful sense, it's a plain assumption.
+
+Now, take $q$. Differentiating the Lagrangian and setting to zero gives
+\begin{eqnarray*}
+    \textup{logit } q = \sum_z p(z|s(z)=1) \log p(z|s(z)=1)-|z| p(z|s(z)=0) \log p(z|s(z)=0)
+\end{eqnarray*}
