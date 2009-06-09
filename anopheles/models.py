@@ -33,6 +33,13 @@ class Site(Base):
     geom = Column(Geometry(4326))
     vector_full_name = Column(Integer)
 
+class ExpertOpinion(Base):
+    __tablename__ = "vector_expertopinion"
+    id = Column(Integer, primary_key=True)
+    geom = Column(Geometry(4326))
+    anopheline_id = Column(Integer, ForeignKey('vector_anopheline.id'))
+    anopheline = relation(Anopheline, backref="expert_opinion")
+
 class Presence(Base):
     __tablename__ = "vector_presence"
     id = Column(Integer, primary_key=True)
