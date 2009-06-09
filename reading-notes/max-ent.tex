@@ -70,7 +70,8 @@ MaxEnt has been one of the most successful species-mapping techniques. Here are 
 \begin{itemize}
     \item The presence of both smooth and quickly-changing feature shapes. The developers claim that hinge features greatly improve performance, indicating that this expressiveness may be helpful. An important question is whether the `sharpness' of the features is important in addition to their ability to span function spaces; Gaussian processes are very flexible, but not sharp.
     \item Regularization. The impact of regularization on predictive skill seems complicated, but the developers set great store by it. Bayesian reasoning has built-in protection against overfitting when compared with maximum likelihood-based methods, so an explicit penalty term may not be a good idea for us.
-    \item Generative vs. discriminative. In other words, MaxEnt models environment as a child of presence rather than a parent. They cite Ng and Jordan as saying that this direction is more successful. It's hard to believe that that is a general principle, but maybe there's a kernel of truth. 
+    \item Confounding of the sampling process and the actual (realized or fundamental) distribution of the species. This is not what you'd call a feature, but it may improve MaxEnt's results measured with non-stratified, non-declustered hold-out sets. We should remember to think carefully about our hold-out sets when evaluating methods.
+    \item The MaxEnt developers suggest that MaxEnt is successful because it is a `generative' rather than a `discriminative' approach. By this they mean that they model the sampling process explicitly, rather than modeling presence conditional on the sampling process. They cite Ng and Jordan \cite{Ng:2009p12220} as evidence for this. Ng and Jordan's results do not seem general enough to provide us with guarantees, but we may as well try to maintain both generative and discriminative versions of whatever we do.
 \end{itemize}
 
 
@@ -79,14 +80,11 @@ MaxEnt has been one of the most successful species-mapping techniques. Here are 
 \label{sec:weaknesses}
 
 \begin{itemize}
-    \item MaxEnt for species mapping is heavily misunderstood and misrepresented in the literature. The maximum entropy rhetoric about starting from `maximum ignorance' suggests that MaxEnt is starting from ignorance regarding the presence probability $P_s(x)$ itself \textbf{quote}. Specifically, it sounds like one of two things:
-    \begin{enumerate}
-        \item It maximizes the entropy of the probability distribution of the function $P_s(x)$ itself
-        \item It simultaneously maximizes the entropies of the probability distribution $P_s(x)$ at each location $x$.
-    \end{enumerate}
-    Maximizing the entropy of $p(x|s(x)=1)$ is not equivalent to either. The first definition is just not possible; infinite-dimensional variables like $P_s(x)$ can easily have infinite entropy. There's no way to choose between two priors with infinite entropy, and most of them will yield horrific posteriors anyway. The second definition is closer to the truth, but still off the mark. \textbf{why}
-    \item The constraint that feature means match on sample and area of observation is not actually a known constraint.
-    \item The `principle' of maximum entropy, like the `principle' of indifference, is really just a preference. Not only that, it's bound to lead to frustration, because like the principle of indifference it's impossible to satisfy under arbitrary changes of variables. Nevertheless, the principle is presented to readers with very little circumspection. Phillips, Dud\'ik et al \cite{Phillips:2004p11403,Phillips:2006p11404,Phillips:2008p12219} refer to Jaynes \cite{Jaynes:ch11} as the authority behind it:
+    \item MaxEnt for species mapping is heavily misunderstood and misrepresented in the literature. The maximum entropy rhetoric about starting from `maximum ignorance' suggests that MaxEnt is starting from ignorance regarding the presence probability $P_s(x)$ itself \textbf{quote}. Specifically, it sounds like it maximizes the entropy of the probability distribution of the map $P_s(x)$ itself. This is just not possible; the distributions of infinite-dimensional variables like $P_s(x)$ can easily have infinite entropy, so maximum entropy is not a useful criterion.
+    \item The constraint that feature means match on the sample and area of observation should not actually hold, because the feature means on the sample are subject to sampling variation. MaxEnt allows feature means to deviate somewhat on the sample and the area of observation, but for some reason leaves the `typical' deviation as a free parameter for the user to specify.
+    \item The `principle' of maximum entropy, like the `principle' of indifference, is really just a preference. Not only that, it's bound to lead to frustration, because like the principle of indifference it's impossible to satisfy under arbitrary changes of variables. For example, indifference about the next location $z$ where an observation will be made is not the same as indifference about environmental conditions at location $z$. If 95\% of the map is rainy and 5\% is arid, indifference about $z$ induces a confidence of 95\% that the next observation will be made in a rainy area.
+    
+    Nevertheless, the principle is presented to readers with very little circumspection. Phillips, Dud\'ik et al \cite{Phillips:2004p11403,Phillips:2006p11404,Phillips:2008p12219} refer to Jaynes \cite{Jaynes:ch11} as the authority behind it:
     \begin{quote}
         When approximating an unknown probability distribution, the question arises, what is the best approximation? E. T. Jaynes gave a general answer to this question: the best approach is to ensure that the approximation satisfies any constraints on the unknown distribution that we are aware of, and that subject to those constraints, the distribution should have maximum entropy.
     \end{quote} 
@@ -96,7 +94,7 @@ Jaynes, in turn, gives a characteristically compelling argument for entropy vs. 
     
     This sounds very much like defining a variational problem; the information available defines constraints fixing some properties of the initial probability distribution, but not all of them. The ambiguity remaining is to be resolved by the policy of honesty; frankly acknowledging the full extent of its ignorance by taking into account all possibilities allowed by its knowledge. [\emph{footnote:} This is really an ancient principle of wisdom, recognized clearly already in such sources as Herodotus and the old testament.]
 \end{quote}
-This makes a striking contrast to his forceful arguments for Bayesian reasoning itself in earlier chapters, but now that people cite it, it is True. This kind of thing drives me up a wall.
+This makes a striking contrast to his forceful arguments for Bayesian reasoning itself in earlier chapters, but now that people cite it, it is True. This kind of thing drives me up a wall. Commitment to a dodgy principle is always a weakness.
 \end{itemize}
 
 \subsection{Appendix: Derivation of `logistic output format'}
@@ -119,9 +117,22 @@ First, take $p(z|s(z)=0)$. Differentiating the Lagrangian gives
     \frac{\partial L}{\partial p(z|s(z)=0)} = (1-q)\left[\log p(z|s(z)=0)-\lambda_0+1\right]=0\\
     \Rightarrow p(z|s(z)=0)=e^{1-\lambda_0}.
 \end{eqnarray*}
-This is crucial: the sampling process resulting in negatives is unconstrained, so MaxEnt takes it to be uniform. This is not ignorance in any meaningful sense, it's a plain assumption.
+The sampling process resulting in negatives is unconstrained, so MaxEnt takes it to be uniform. This is an important point. Moment constraints could be imposed on $p(z|s(z)=0)$ using pseudoabsences, but this would inherit the same problems as pseudoabsences.
 
+\bigskip
 Now, take $q$. Differentiating the Lagrangian and setting to zero gives
 \begin{eqnarray*}
     \textup{logit } q = \sum_z p(z|s(z)=1) \log p(z|s(z)=1)-|z| p(z|s(z)=0) \log p(z|s(z)=0)
 \end{eqnarray*}
+
+\bigskip
+Finally, differentiating with respect to $p(z|s(z)=1)$ and setting to zero gives
+\begin{eqnarray*}
+    p(z|s(z)=1)=e^{\lambda_0-1}e^{-\sum_i \lambda_i f_i(z)/q}.
+\end{eqnarray*}
+Not sure how you get from this to the expression involving the total entropy, but the procedure for getting to the target $P_s(z)=p(s(z)=1|z)$ would be as follows:
+\begin{eqnarray*}
+    p(s(z)=1|z) = \frac{p(z|s(z)=1)q}{p(z|s(z)=1)q+p(z|s(z)=0)(1-q)}\\
+    =\frac{p(z|s(z)=1)e^{\textup{logit } q}}{p(z|s(z)=1)e^{\textup{logit } q} + p(z|s(z)=0)}
+\end{eqnarray*}
+So apparently $e^{\textup{logit }q}/p(z|s(z)=0)$ is the total entropy of $p(z|s(z)=1)$.
