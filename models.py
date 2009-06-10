@@ -4,7 +4,7 @@ from sqlalchemy.orm import relation, join
 from sqlalchemy.orm import sessionmaker
 from connection_string import connection_string
 
-engine = create_engine(connection_string, echo=False)
+engine = create_engine(connection_string, echo=True)
 metadata = MetaData()
 metadata.bind = engine
 Session = sessionmaker(bind=engine)
@@ -56,6 +56,8 @@ class SamplePeriod(Base):
     __tablename__ = "vector_site_sample_period"
     id = Column(Integer, primary_key=True)
     site_id = Column(Integer, ForeignKey('site.site_id'))
+    anopheline_id = Column(Integer, ForeignKey('vector_anopheline.id'))
+    anopheline = relation(Anopheline, backref="sample_period")
     start_month = Column(Integer, nullable=True)
     start_year = Column(Integer, nullable=True)
     end_month = Column(Integer, nullable=True)
