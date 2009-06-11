@@ -13,7 +13,7 @@ species_specific_subquery = session.query(SamplePeriod.site_id,func.count('*').l
 any_anopheline = exists().where(SamplePeriod.site_id==Site.site_id)
 
 #SQL issued to db here - session queries are lazy.
-sites = session.query(Site.geom, species_specific_subquery.c.sample_period_count).outerjoin((species_specific_subquery, Site.site_id==species_specific_subquery.c.site_id)).filter(any_anopheline)
+sites = session.query(Site.geom, func.st_numgeometries(Site.geom), species_specific_subquery.c.sample_period_count).outerjoin((species_specific_subquery, Site.site_id==species_specific_subquery.c.site_id)).filter(any_anopheline)
 mozzie_site_list = sites.all()
 
 #for eo in mozzie.expert_opinion:
