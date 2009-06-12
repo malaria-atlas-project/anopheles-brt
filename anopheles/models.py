@@ -1,16 +1,33 @@
+# Copyright (C) 2009  William Temperley
+# 
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 from sqlalchemy import  Table, Column, Integer, String, MetaData, ForeignKey, create_engine
 from sqlalchemygeom import Geometry
 from sqlalchemy.orm import relation, join
 from sqlalchemy.orm import sessionmaker
 from connection_string import connection_string
 
-engine = create_engine(connection_string, echo=False)
+engine = create_engine(connection_string, echo=True)
 metadata = MetaData()
 metadata.bind = engine
 Session = sessionmaker(bind=engine)
 
 from sqlalchemy.ext.declarative import declarative_base
 Base = declarative_base()
+
+__all__ = ['Anopheline', 'Site', 'ExpertOpinion', 'Presence', 'SamplePeriod']
 
 class Anopheline(Base):
     """
@@ -56,6 +73,8 @@ class SamplePeriod(Base):
     __tablename__ = "vector_site_sample_period"
     id = Column(Integer, primary_key=True)
     site_id = Column(Integer, ForeignKey('site.site_id'))
+    anopheline_id = Column(Integer, ForeignKey('vector_anopheline.id'))
+    anopheline = relation(Anopheline, backref="sample_period")
     start_month = Column(Integer, nullable=True)
     start_year = Column(Integer, nullable=True)
     end_month = Column(Integer, nullable=True)

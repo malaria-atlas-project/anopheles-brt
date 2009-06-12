@@ -6,10 +6,11 @@ The purposes of this repository are to make our code available to people who wou
 License
 -------
 
-Copyright (c) 2009 Anand Patil and Marianne Sinka.
-All code in this repository is licensed under the Creative Commons attribution share-alike license, see LICENSE in this directory.
+Copyright (c) 2009 Anand Patil, William Temperley and Marianne Sinka.
+All code in this repository is licensed under the GNU general public license except portions under the GNU lesser general public license. For license terms see GPL and LGPL in this directory.
 
 Authors
 -------
 
 Anand Patil
+William Temperley
