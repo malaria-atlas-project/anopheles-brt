@@ -16,7 +16,7 @@
 
 import numpy as np
 from sqlalchemy.orm import join
-from sqlalchemy.sql import func, exists
+from sqlalchemy.sql import func, exists, and_, not_
 from models import Anopheline, Site, Presence, SamplePeriod, Session
 from sqlalchemygeom import *
 import sys
@@ -55,7 +55,7 @@ def species_query(session, species):
     """
     mozzie = session.query(Anopheline).filter(Anopheline.id == species).one()
 
-    species_specific_subquery = session.query(SamplePeriod.site_id,func.count('*').label('sample_period_count')).filter(SamplePeriod.anopheline==mozzie).group_by(SamplePeriod.site_id).subquery()
+    species_specific_subquery = session.query(SamplePeriod.site_id,func.count('*').label('sample_period_count')).filter(and_(SamplePeriod.anopheline==mozzie, not_(func.coalesce(SamplePeriod.sample_aggregate_check, 1)==0))).group_by(SamplePeriod.site_id).subquery()
     any_anopheline = exists().where(SamplePeriod.site_id==Site.site_id)
 
     #SQL issued to db here - session queries are lazy.
