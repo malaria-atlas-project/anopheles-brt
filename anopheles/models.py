@@ -31,7 +31,7 @@ class Site(Base):
     site_id = Column(Integer, primary_key=True)
     sample_periods = relation("SamplePeriod", backref="sites")
     geom = Column(Geometry(4326))
-    vector_full_name = Column(Integer)
+    vector_full_name = Column(String)
 
 class ExpertOpinion(Base):
     __tablename__ = "vector_expertopinion"
@@ -63,3 +63,18 @@ class SamplePeriod(Base):
     end_month = Column(Integer, nullable=True)
     end_year = Column(Integer, nullable=True)
     sample_aggregate_check = Column(Integer, nullable=True)
+
+
+class AdminUnit(Base):
+    """
+    Represents a vector sample at a location. May have a specified time period.
+    vector_site_sample_period is a view which aggregates samples across studies. 
+    """
+    __tablename__ = "gis_adminunit"
+    id = Column(Integer, primary_key=True)
+    geom = Column(Geometry(4326))
+    admin_level_id = Column(String)
+    parent_id  = Column(Integer, ForeignKey('gis_adminunit.id'))
+    name = Column(String)
+    dublin_core_id = Column(Integer)
+    gaul_code = Column(Integer)
