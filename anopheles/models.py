@@ -1,3 +1,7 @@
+# Author: William Temperley
+# Copyright (c) 2009 William Temperley
+# License: Gnu GPL, see GPL in the parent directory.
+
 from sqlalchemy import  Table, Column, Integer, String, MetaData, ForeignKey, create_engine
 from sqlalchemygeom import Geometry
 from sqlalchemy.orm import relation, join
@@ -11,6 +15,8 @@ Session = sessionmaker(bind=engine)
 
 from sqlalchemy.ext.declarative import declarative_base
 Base = declarative_base()
+
+__all__ = ['Anopheline', 'Site', 'ExpertOpinion', 'Presence', 'SamplePeriod']
 
 class Anopheline(Base):
     """

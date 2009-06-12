@@ -1,9 +1,15 @@
+# Author: Anand Patil
+# Copyright (c) 2009 Anand Patil
+# License: Gnu GPL, see GPL in the parent directory.
+
 import numpy as np
 from sqlalchemy.orm import join
 from sqlalchemy.sql import func, exists
 from models import Anopheline, Site, Presence, SamplePeriod, Session
 from sqlalchemygeom import *
 import sys
+
+__all__ = ['IncompleteDataError', 'site_to_rec', 'sitelist_to_recarray', 'list_species', 'species_query', 'map_extents']
 
 class IncompleteDataError(BaseException):
     pass
@@ -51,7 +57,6 @@ def species_query(session, species):
     
 def map_extents(pos_recs, eo):
     "Figures out good extents for a basemap."
-
     return [min(pos_recs.x.min(), eo.bounds[0]),
             min(pos_recs.y.min(), eo.bounds[1]),
             max(pos_recs.x.max(), eo.bounds[2]),
@@ -63,6 +68,8 @@ try:
     import pylab as pl
     from mpl_toolkits import basemap
     from map_utils import plot_unit
+
+    __all__ += ['split_recs', 'plot_species']
 
     def split_recs(recs):
         "Splits records into positive and negative versions."
