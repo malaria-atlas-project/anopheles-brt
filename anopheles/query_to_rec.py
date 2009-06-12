@@ -1,9 +1,27 @@
+# Copyright (C) 2009  Anand Patil
+# 
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
 import numpy as np
 from sqlalchemy.orm import join
 from sqlalchemy.sql import func, exists
 from models import Anopheline, Site, Presence, SamplePeriod, Session
 from sqlalchemygeom import *
 import sys
+
+__all__ = ['IncompleteDataError', 'site_to_rec', 'sitelist_to_recarray', 'list_species', 'species_query', 'map_extents']
 
 class IncompleteDataError(BaseException):
     pass
@@ -51,7 +69,6 @@ def species_query(session, species):
     
 def map_extents(pos_recs, eo):
     "Figures out good extents for a basemap."
-
     return [min(pos_recs.x.min(), eo.bounds[0]),
             min(pos_recs.y.min(), eo.bounds[1]),
             max(pos_recs.x.max(), eo.bounds[2]),
@@ -63,6 +80,8 @@ try:
     import pylab as pl
     from mpl_toolkits import basemap
     from map_utils import plot_unit
+
+    __all__ += ['split_recs', 'plot_species']
 
     def split_recs(recs):
         "Splits records into positive and negative versions."
