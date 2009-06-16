@@ -1,0 +1,53 @@
+%!TEX root = reading-notes.tex
+
+\section{Boosted Regression Trees} 
+\label{sec:brt}
+
+Boosted regression trees, like MaxEnt (section \ref{sec:maxent}), come from machine learning. In contrast to MaxEnt, which is developed almost exclusively by three people (in the context of species mapping), there are many people working energetically on boosted regression tree algorithms that are directly applicable to the mapping situation. The BRT algorithm makes much more sense than the MaxEnt algorithm. Also in contrast to MaxEnt, boosting has been given a clear likelihood-based analysis by Friedman et al. \cite{Friedman:2000p11413}, making it much easier to see how to import its ideas into the Bayesian context. In fact, there's not much point writing additional notes. I'll just briefly summarize their take-home messages here.
+
+\subsection{Likelihood interpretation}
+\label{sec:likelihood-interp} 
+Friedman et al. demonstrated that the boosting algorithm just about finds a maximum likelihood estimate for a certain generalized additive model on the logistic scale. Specifically, it fits the model
+\begin{eqnarray*}
+    y_i|p(x_i) \stackrel{\textup{\tiny ind}}{\sim} 2\ \textup{Bernoulli}(p(x_i))-1 \\
+    p(x_i) = \textup{logit}^{-1}\left(\sum_{m=1}^M f_m(x_i)\right),
+\end{eqnarray*}
+but rather than maximizing the likelihood
+\begin{eqnarray*}
+    \prod_i p(x_i)^{1_{y_i=1}}(1-p(x_i))^{1_{y_i=-1}}
+\end{eqnarray*}
+directly, it maximizes 
+\begin{eqnarray*}
+    \sum_ie^{y_i\sum_{m=1}^Mf_m(x_i)/2}
+\end{eqnarray*}
+where $\xi$ ranges over the unique values of $x$. Oddly enough, the maximizers are the same for the two objective functions:
+\begin{eqnarray*}
+    \sum_{m=1}^M\hat f_m(x) = \log \frac{n^+(x)}{n^-(x)}
+\end{eqnarray*}
+where $n^+$ and $n^-$ give the number of $y$ values corresponding to $x$ that are positive and negative, respectively. Since the $f_m$'s are not chosen to be flexible enough to interpolate the data, this maximum is usually not achieved.
+
+Boosting maximizes the objective function using an algorithm which, as one discussant notes, most statisticians would see as a capitulation: coefficients are updated one at a time in a greedy fashion, rather than jointly. Such algorithms are fast, but usually far from optimal.
+ 
+\subsection{Resistance to overfitting}
+\label{sec:res-to-overfitting} 
+The discussants to Friedman et al. all expressed surprise and/or consternation at the revelation that boosting can be viewed as likelihood maximization. Boosted regression trees operate in a very complicated model space, and conventional wisdom would suggest that maximum likelihood estimates with such flexible models would overfit the data. However, boosting is empirically reluctant to overfit.
+
+The most likely explanation seems to be that boosting's `sub-optimal' fitting algorithm does not usually find its optimum. I don't understand how this leads to resistance to overfitting; but no one else seems to either. At any rate, since Bayesian posteriors are much more robust against overfitting than maximum likelihood estimates anyway, I don't think pondering this phenomenon is the best use of our time unless we actually observe overfitting in our results.
+
+\subsection{Trees} 
+\label{sec:trees} 
+As its name implies, boosted regression trees makes use of linear combinations of `decision trees', which are piecewise-flat functions whose domain boundaries are at right angles to one another. To see why they are called `decision trees', consider the case where $x$ consists of two predictors $x_1$ and $x_2$. A decision tree would be a one-way flowchart such as:
+\begin{description}
+    \item[start] Is $x_1$ greater than $x_1^*$?
+    \begin{description}
+        \item[yes] Output $k_1$. 
+        \item[no] Is $x_2$ greater than $x_2^*$?
+        \begin{description}
+            \item[yes] Ouptut $k_2$.
+            \item[no] Output $k_3$.
+        \end{description}
+    \end{description}
+\end{description}
+If you plot the output value as a function of $x_1$ and $x_2$, you end up with the aforementioned piecewise-flat function. If you add up lots of these functions, with the boundaries in different places, you can approximate more complicated functions.
+
+These trees are competing for the same job as MaxEnt's features (section \ref{sec:maxent-success}). The fact that the two methods have been more or less equally successful is interesting. It's tempting to conclude that it doesn't really matter what basis functions you use, as long as they have a good span \& you take steps to prevent overfitting. However, that doesn't explain why both methods have been more successful than more traditional regression-based methods.
