@@ -31,6 +31,7 @@ q = q.outerjoin((sampleperiod_subq, Anopheline.id==sampleperiod_subq.c.anophelin
 
 sites_in_sea = session.query(Site).filter(and_(not_(func.intersects(Site.geom, AdminUnit.geom)),AdminUnit.admin_level_id=='0'))
 
+world = session.query(Site)[0]
 
 #positive_absences = session.query(Site
 

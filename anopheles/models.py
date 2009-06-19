@@ -96,3 +96,12 @@ class AdminUnit(Base):
     name = Column(String)
     dublin_core_id = Column(Integer)
     gaul_code = Column(Integer)
+
+
+class World(Base):
+    """
+    The world as one big multipolygon
+    """
+    __tablename__ = "gis_world"
+    id = Column(Integer, primary_key=True)
+    geom = Column(Geometry(4326))
