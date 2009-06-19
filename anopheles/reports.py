@@ -33,6 +33,7 @@ sites_in_sea = session.query(Site).filter(and_(not_(func.intersects(Site.geom, A
 
 world = session.query(Site)[0]
 
+
 #positive_absences = session.query(Site
 
 #select a.name, coalesce(ss.site_count, 0), coalesce(ss.temporally_unique, 0)

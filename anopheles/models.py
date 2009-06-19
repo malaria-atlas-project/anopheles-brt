@@ -102,6 +102,6 @@ class World(Base):
     """
     The world as one big multipolygon
     """
-    __tablename__ = "gis_world"
+    __tablename__ = "world"
     id = Column(Integer, primary_key=True)
     geom = Column(Geometry(4326))
