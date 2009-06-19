@@ -49,6 +49,7 @@ class Site(Base):
     sample_periods = relation("SamplePeriod", backref="sites")
     geom = Column(Geometry(4326))
     vector_full_name = Column(String)
+    area_type = Column(String)
 
 class ExpertOpinion(Base):
     __tablename__ = "vector_expertopinion"
