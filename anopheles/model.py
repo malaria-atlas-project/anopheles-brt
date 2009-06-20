@@ -17,84 +17,14 @@ import pymc as pm
 import numpy as np
 from models import Session
 from query_to_rec import *
-import cov_prior
 from mahalanobis_covariance import mahalanobis_covariance
 from map_utils import multipoly_sample
+from spatial_submodels import *
+import datetime
 
-
-def hinge(x, cp):
-    "A MaxEnt hinge feature"
-    y = x-cp
-    y[x<cp]=0.
-    return y
+__all__ = ['make_model', 'species_MCMC']
     
-def step(x,cp):
-    "A MaxEnt step feature"
-    y = np.ones(x.shape)
-    y[x<cp]=0.
-    return y
-
-# TODO: 'Inducing points' should be highest-rank points from random samples from 
-# the EO and not-EO regions, so that the data locations don't influence the prior.
-# The rest of the field should be determined by the EO. Don't use the extra nugget.
-
-# def make_model(session, species, covariates, rl=500):
-#     sites, eo = species_query(session, species)
-#     # TODO: Space-only model with forcible rank depression. Can put in covariates later.
-#     # Remember to use expert opinion and background.
-#     # TODO: Probably don't use improved approximations of Quinonero-Candela and Rasmussen.
-#     # Reason: no sense adding an extra nugget.
-#     
-#     p_find = pm.Uninformative('p_find',0,1)
-#     
-#     mahal_eigenvalues = pm.Gamma('mahal_eigenvalues', 2, 2, size=len(covariates))
-#     mahal_eigenvectors = cov_prior.OrthogonalBasis('mahal', len(covariates))
-#     
-#     # The Mahalanobis covariance
-#     @deterministic
-#     def C(val=mahal_eigenvalues, vec=mahal_eigenvectors, amp=amp):
-#         return pm.gp.Covariance(mahalanobis_covariance,amp,val,vec)
-#         
-#     # The low-rank Cholesky decomposition of the Mahalanobis covariance
-#     @deterministic(trace=False)
-#     def S(C=C,xtot=xtot,rl=rl):
-#         return C.cholesky(xtot,rank_limit=rl)
-
-def ghetto_spatial_submodel(**kerap):
-    "For debugging only"
-
-    amp = pm.Uninformative('amp',-1)
-    
-    @pm.stochastic
-    def ctr(value=np.array([0,0])):
-        "This makes the center uniformly distributed over the surface of the earth."
-        if value[0] < -np.pi or value[0] > np.pi or value[1] < -np.pi/2. or value[1] > np.pi/2.:
-            return -np.inf
-        return np.cos(value[1])
-
-    bump_eigenvalues = pm.Gamma('bump_eigenvalues', 2, 2, size=2)
-    bump_eigenvectors = cov_prior.OrthogonalBasis('bump_eigenvectors',2)
-    
-    @pm.deterministic(trace=False)
-    def f(val = bump_eigenvalues, vec = bump_eigenvectors, ctr = ctr, amp=amp):
-        "A stupid hill, using Euclidean distance."
-        def f(x, val=val, vec=vec, ctr=ctr):
-            dev = x-ctr
-            tdev = np.dot(dev, vec)
-            if len(dev.shape)==1:
-                ax=0
-            else:
-                ax=1
-            return pm.invlogit(np.sum(tdev**2/val,axis=ax)*amp)
-        return f
-        
-    return locals()
-
-def multipoint_to_ndarray(mp):
-    "Converts a multipont to a coordinate array IN RADIANS."
-    return np.array([[p.x, p.y] for p in mp.geoms])*np.pi/180.
-    
-def make_model(session, species, spatial_submodel = ghetto_spatial_submodel):
+def make_model(session, species, spatial_submodel):
 
     # =========
     # = Query =
@@ -134,7 +64,8 @@ def make_model(session, species, spatial_submodel = ghetto_spatial_submodel):
     # TODO: Also vectorize the data.
     f_eval = f(x)
 
-
+    # FIXME: Oddly enough, this is the bottleneck... but you need the number
+    # found in there before optimizing.
     @pm.deterministic(trace=False)
     def p_find_somewhere(f_eval=f_eval, p_find=p_find, breaks=breaks):
         out = np.empty(len(breaks)-1)
@@ -143,7 +74,7 @@ def make_model(session, species, spatial_submodel = ghetto_spatial_submodel):
             out[i]=1.-np.prod(fe*(1-p_find) + 1.-fe)
         return out
     
-    data =pm.Bernoulli('points', p_find_somewhere, value=found, observed=True)
+    data=pm.Bernoulli('points', p_find_somewhere, value=found, observed=True)
             
     
     # ==============================
@@ -153,8 +84,16 @@ def make_model(session, species, spatial_submodel = ghetto_spatial_submodel):
     out = locals()
     out.update(spatial_submodel)
     return out
-    
+
+def species_MCMC(session, species, spatial_submodel, db=None):
+    if db is None:
+        M=pm.MCMC(make_model(session, species[1], spatial_hill), db='hdf5', complevel=1, dbname=species[1][1]+str(datetime.datetime.now())+'.hdf5')
+    else:
+        M=pm.MCMC(make_model(session, species[1], spatial_hill), db=db)
+    return M
+        
 if __name__ == '__main__':
     session = Session()
     species = list_species(session)    
-    M=pm.MCMC(make_model(session, species[1]))
+    M = species_MCMC(session, species, spatial_hill)
+    M.isample(1000,0,10)
