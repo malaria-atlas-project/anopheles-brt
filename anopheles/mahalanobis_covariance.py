@@ -73,7 +73,7 @@ def mahalanobis_covariance(x,y,amp,val,vec,symm=None):
     return C
     
 if __name__ == '__main__':
-    nd = 200
+    nd = 20
     x = np.linspace(-1,1,1001)
     xo = np.vstack((x,)*nd).T
     # x,y = np.meshgrid(x,x)
@@ -88,6 +88,7 @@ if __name__ == '__main__':
     close('all')
     # imshow(A)
     # title('Autocov')
-    figure()
-    imshow(C(xo,xo).view(np.ndarray))
-    title('Evaluation')
+    # figure()
+    # imshow(C(xo,xo).view(np.ndarray))
+    s=C.cholesky(xo)
+    # title('Evaluation')

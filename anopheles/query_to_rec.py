@@ -19,7 +19,9 @@ from sqlalchemy.orm import join
 from sqlalchemy.sql import func, exists, and_, not_
 from models import Anopheline, Site, Presence, SamplePeriod, Session
 from sqlalchemygeom import *
-import sys
+from map_utils import multipoly_sample
+import tables as tb
+import sys, os
 
 __all__ = ['IncompleteDataError', 'site_to_rec', 'sitelist_to_recarray', 'list_species', 'species_query', 'map_extents']
 
@@ -33,8 +35,9 @@ def site_to_rec(s):
     m = s[0]
     if m is None:
         return None
+    # FIXME: Account for multipoints. Likelihood model: at least one of these pixels is positive/not-found and all are not the other thing. Probably can't use a recarray.
     if m.geoms._length > 0:
-        return None
+        raise ValueError, 'This is a multipoint.'
     else:
         p = m.geoms.next()
         return p.x, p.y, n
@@ -65,7 +68,7 @@ def species_query(session, species):
     if len(mozzie.expert_opinion)==0:
         raise IncompleteDataError
 
-    return sitelist_to_recarray(mozzie_site_list), mozzie.expert_opinion[0].geom
+    return mozzie_site_list, mozzie.expert_opinion[0].geom
     
 def map_extents(pos_recs, eo):
     "Figures out good extents for a basemap."
@@ -74,6 +77,38 @@ def map_extents(pos_recs, eo):
             max(pos_recs.x.max(), eo.bounds[2]),
             max(pos_recs.y.max(), eo.bounds[3])]
             
+def sample_eo(session, species, n_in, n_out):
+    sites, eo = species_query(session, species[0])
+    
+    fname = '%s_eo_pts_%i_%i.hdf5'%(species[1],n_in,n_out)
+
+    if fname in os.listdir('.'):
+        print 'Found cached expert-opinion points.'
+        hf = tb.openFile(fname)
+        pts_in = hf.root.pts_in[:]
+        pts_out = hf.root.pts_out[:]
+
+    else:
+        print 'Cached expert-opinion points not found, recomputing.'
+        print 'Querying world'
+        world = session.query(World)[0]
+        print 'Differencing with expert opinion'
+        not_eo = world.difference(eo)
+        
+        print 'Sampling inside'
+        lon_in, lat_in = multipoly_sample(n_in, eo)       
+        print 'Sampling outside'
+        lon_out, lat_out = multipoly_sample(n_out, not_eo)
+        
+        print 'Writing out'
+        pts_in = np.vstack((lon_in, lat_in)).T*np.pi/180. 
+        pts_out = np.vstack((lon_out, lat_out)).T*np.pi/180.         
+        
+        hf = tb.openFile(fname,'w')
+        hf.createArray('/','pts_in',pts_in)
+        hf.createArray('/','pts_in',pts_out)        
+    
+    return pts_in, pts_out
 
 # Pylab-dependent stuff
 try:
@@ -89,31 +124,44 @@ try:
         neg_recs = recs[np.where(recs.n<=0)]
         return pos_recs, neg_recs
     
-    def plot_species(session, species, name, negs=True, **kwds):
+    def plot_species(session, species, name, b=None, negs=True, **kwds):
         "Plots the expert opinion, positives and not-observeds for the given species."
-        ra, eo = species_query(session, species)
+        sites, eo = species_query(session, species)
+        ra = sitelist_to_recarray(sites)
         pos_recs, neg_recs = split_recs(ra)
-        b = basemap.Basemap(*map_extents(pos_recs, eo), **kwds)
+        if b is None:
+            b = basemap.Basemap(*map_extents(pos_recs, eo), **kwds)
         b.drawcoastlines(color='w',linewidth=.5)
         b.drawcountries(color='w',linewidth=.5)
         pl.title(name, style='italic')        
         plot_unit(b, eo, '-', color=(.4,.4,.9), label='_nolegend_', linewidth=.75)        
         if negs:
             b.plot(neg_recs.x, neg_recs.y, '.', color=(.1,.6,.6), markersize=1.5, label='Observed')        
-        b.plot(pos_recs.x, pos_recs.y, '.', color=(.9,.4,.4), markersize=1.5, label='Observed')              
-        
-        
+        b.plot(pos_recs.x, pos_recs.y, '.', color=(.9,.4,.4), markersize=1.5, label='Observed')
+
+
 except ImportError:
     kls,inst,tb = sys.exc_info()
     print 'Warning, could not import Pylab. Original error message:\n\n' + inst.message
 
 if __name__ == '__main__':
     session = Session()
-    species = list_species(session)
+    species = list_species(session)    
+    pts_in, pts_out = sample_eo(session, species[1], 1000, 1000)
+    # sites, eo = species_query(session,species[1][0])
+    # from map_utils import multipoly_sample
+    # lon,lat = multipoly_sample(1000,eo)
+    # 
+    # ra = sitelist_to_recarray(sites)
+    # pos_recs, neg_recs = split_recs(ra)
+    # b = basemap.Basemap(*map_extents(pos_recs, eo))
+    # plot_species(session, species[1][0], species[1][1], b=b) 
+    # b.plot(lon,lat,'k.',markersize=1.5)
+   
     # plot_species(session,44,'Anopheles punctimacula',resolution='l')
-    for s in species:
-        pl.clf()
-        try:
-            plot_species(session,s[0],s[1],resolution='l')
-        except IncompleteDataError:
-            print '\n\n\n No EO for %s\n\n\n'%s[1]
+    # for s in species:
+    #     pl.clf()
+    #     try:
+    #         plot_species(session,s[0],s[1],resolution='l')
+    #     except IncompleteDataError:
+    #         print '\n\n\n No EO for %s\n\n\n'%s[1]
