@@ -17,7 +17,7 @@
 import numpy as np
 from sqlalchemy.orm import join
 from sqlalchemy.sql import func, exists, and_, not_
-from models import Anopheline, Site, Presence, SamplePeriod, Session
+from models import Anopheline, Site, Presence, SamplePeriod, Session, World
 from sqlalchemygeom import *
 from map_utils import multipoly_sample
 import tables as tb
