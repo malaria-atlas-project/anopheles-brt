@@ -49,6 +49,7 @@ class Site(Base):
     sample_periods = relation("SamplePeriod", backref="sites")
     geom = Column(Geometry(4326))
     vector_full_name = Column(String)
+    area_type = Column(String)
 
 class ExpertOpinion(Base):
     __tablename__ = "vector_expertopinion"
@@ -95,3 +96,12 @@ class AdminUnit(Base):
     name = Column(String)
     dublin_core_id = Column(Integer)
     gaul_code = Column(Integer)
+
+
+class World(Base):
+    """
+    The world as one big multipolygon
+    """
+    __tablename__ = "world"
+    id = Column(Integer, primary_key=True)
+    geom = Column(Geometry(4326))
