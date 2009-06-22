@@ -15,23 +15,21 @@
 
 
 import numpy as np
-from sqlalchemy.orm import join
-from sqlalchemy.sql import func, exists, and_, not_
-from models import Anopheline, Site, Presence, SamplePeriod, Session, World
-from sqlalchemygeom import *
+
+from query import species_query, list_species
+from models import Session
+
+a,b = species_query(Session(), 2)
 from map_utils import multipoly_sample
 import tables as tb
 import sys, os
 
 __all__ = ['IncompleteDataError', 'site_to_rec', 'sitelist_to_recarray', 'list_species', 'species_query', 'map_extents', 'multipoint_to_ndarray']
 
-class IncompleteDataError(BaseException):
-    pass
 
 def multipoint_to_ndarray(mp):
     "Converts a multipont to a coordinate array IN RADIANS."
     return np.array([[p.x, p.y] for p in mp.geoms])*np.pi/180.
-
 
 def site_to_rec(s):
     "Converts a site to a flat x,y,n record"
@@ -51,30 +49,7 @@ def sitelist_to_recarray(sl):
     "Converts a list of sites to a NumPy record array"
     recs = filter(lambda x: x is not None, map(site_to_rec, sl))
     return np.rec.fromrecords(recs, names='x,y,n')
-    
-def list_species(session):
-    return [(o.id, o.name) for o in Session().query(Anopheline)]
-    
-def species_query(session, species):
-    """
-    Takes a species string and returns two things: a NumPy record array
-    of x,y,n records and a Shapely MultiPolygon object containing the 
-    expert opinion.
-    """
-    mozzie = session.query(Anopheline).filter(Anopheline.id == species).one()
-
-    species_specific_subquery = session.query(SamplePeriod.site_id,func.count('*').label('sample_period_count')).filter(and_(SamplePeriod.anopheline==mozzie, not_(func.coalesce(SamplePeriod.sample_aggregate_check, 1)==0))).group_by(SamplePeriod.site_id).subquery()
-    any_anopheline = exists().where(SamplePeriod.site_id==Site.site_id)
-
-    #SQL issued to db here - session queries are lazy.
-    sites = session.query(Site.geom, species_specific_subquery.c.sample_period_count).outerjoin((species_specific_subquery, Site.site_id==species_specific_subquery.c.site_id)).filter(any_anopheline)
-    mozzie_site_list = sites.all()
-    
-    if len(mozzie.expert_opinion)==0:
-        raise IncompleteDataError
-
-    return mozzie_site_list, mozzie.expert_opinion[0].geom
-    
+   
 def map_extents(pos_recs, eo):
     "Figures out good extents for a basemap."
     return [min(pos_recs.x.min(), eo.bounds[0]),
