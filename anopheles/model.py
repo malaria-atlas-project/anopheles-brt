@@ -95,5 +95,5 @@ def species_MCMC(session, species, spatial_submodel, db=None):
 if __name__ == '__main__':
     session = Session()
     species = list_species(session)    
-    M = species_MCMC(session, species, spatial_hill)
-    M.isample(1000,0,10)
+    # M = species_MCMC(session, species, spatial_hill)
+    # M.isample(1000,0,10)

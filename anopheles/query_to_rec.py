@@ -96,7 +96,7 @@ def sample_eo(session, species, n_in, n_out):
     else:
         print 'Cached expert-opinion points not found, recomputing.'
         print 'Querying world'
-        world = session.query(World)[0]
+        world = session.query(World)[0].geom
         print 'Differencing with expert opinion'
         not_eo = world.difference(eo)
         
