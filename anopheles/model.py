@@ -97,22 +97,3 @@ def species_MCMC(session, species, spatial_submodel, db=None):
     else:
         M=pm.MCMC(make_model(session, species[1], spatial_hill), db=db)
     return M
-        
-if __name__ == '__main__':
-    pass
-    # p= unequal_binomial_lp(5,np.random.random(5))
-    # print p,np.sum(p)
-    
-    # q = np.zeros(5)*.2
-    # q[0]=.99
-    # q = np.random.random(size=5)
-    q = np.ones(5)*.2
-    from utils import ubl
-    pf = ubl(q,5)
-    print pf
-    print np.array([pm.binomial_like(x,5,q[0]) for x in range(6)])
-    
-    # session = Session()
-    # species = list_species(session)    
-    # M = species_MCMC(session, species, spatial_hill)
-    # M.isample(1000,0,10)

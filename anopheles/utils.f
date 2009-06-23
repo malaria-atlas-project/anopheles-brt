@@ -13,78 +13,68 @@
 ! You should have received a copy of the GNU General Public License
 ! along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-!       SUBROUTINE binomial(x,n,p,nx,nn,np,like)
-! 
-! c Binomial log-likelihood function     
-! 
-! c  Updated 17/01/2007. DH. 
-! 
-! cf2py integer dimension(nx),intent(in) :: x
-! cf2py integer dimension(nn),intent(in) :: n
-! cf2py double precision dimension(np),intent(in) :: p
-! cf2py integer intent(hide),depend(x) :: nx=len(x)
-! cf2py integer intent(hide),depend(n),check(nn==1 || nn==len(x)) :: nn=len(n)
-! cf2py integer intent(hide),depend(p),check(np==1 || np==len(x)) :: np=len(p)
-! cf2py double precision intent(out) :: like      
-! cf2py threadsafe
-!       IMPLICIT NONE
-!       INTEGER nx,nn,np,i
-!       DOUBLE PRECISION like, p(np)
-!       INTEGER x(nx),n(nn)
-!       LOGICAL not_scalar_n,not_scalar_p
-!       INTEGER ntmp
-!       DOUBLE PRECISION ptmp
-!       DOUBLE PRECISION factln
-!       DOUBLE PRECISION infinity
-!       PARAMETER (infinity = 1.7976931348623157d308)
-! 
-!       not_scalar_n = (nn .NE. 1)
-!       not_scalar_p = (np .NE. 1) 
-! 
-!       ntmp = n(1)
-!       ptmp = p(1)
-! 
-!       like = 0.0
-!       do i=1,nx
-!         if (not_scalar_n) ntmp = n(i)
-!         if (not_scalar_p) ptmp = p(i)
-!         
-!         if ((x(i) .LT. 0) .OR. (ntmp .LT. 0) .OR. (x(i) .GT. ntmp)) then
-!           like = -infinity
-!           RETURN
-!         endif
-!         
-!         if ((ptmp .LE. 0.0D0) .OR. (ptmp .GE. 1.0D0)) then
-! !         if p = 0, number of successes must be 0
-!           if (ptmp .EQ. 0.0D0) then
-!             if (x(i) .GT. 0.0D0) then
-!                 like = -infinity
-!                 RETURN
-! !                 else like = like + 0
-!             end if
-!           else if (ptmp .EQ. 1.0D0) then
-! !           if p = 1, number of successes must be n
-!             if (x(i) .LT. ntmp) then
-!                 like = -infinity
-!                 RETURN
-! !                 else like = like + 0
-!             end if
-!           else
-!             like = -infinity
-!             RETURN
-!           endif
-!         else
-!             like = like + x(i)*dlog(ptmp) + (ntmp-x(i))*dlog(1.-ptmp)
-!             like = like + factln(ntmp)-factln(x(i))-factln(ntmp-x(i)) 
-!         end if
-!       enddo
-!       return
-!       END
 
-      SUBROUTINE logsum(z,x,y)
+      DOUBLE PRECISION FUNCTION factln(n) 
+C USES gammln Returns ln(n!). 
+
+      IMPLICIT NONE
+      INTEGER n 
+      DOUBLE PRECISION a(100),gammln, pass_val 
+      DOUBLE PRECISION infinity
+      PARAMETER (infinity = 1.7976931348623157d308)
+      
+      SAVE a 
+C Initialize the table to negative values. 
+      DATA a/100*-1./ 
+      pass_val = n + 1
+      if (n.lt.0) then
+c        write (*,*) 'negative factorial in factln' 
+        factln=-infinity
+        return
+      endif
+C In range of the table. 
+      if (n.le.99) then
+C If not already in the table, put it in.
+        if (a(n+1).lt.0.) a(n+1)=gammln(pass_val) 
+        factln=a(n+1) 
+      else 
+C Out of range of the table. 
+        factln=gammln(pass_val) 
+      endif 
+      return 
+      END
+
+
+      SUBROUTINE logsum(x, nx, s)
+cf2py intent(hide) nx
+cf2py intent(out) s
+cf2py threadsafe
+      IMPLICIT NONE
+      DOUBLE PRECISION x(nx), s, diff, li
+      INTEGER nx, i
+      PARAMETER (li=709.78271289338397)
+      
+      s = x(1)
+      
+      do i=2,nx
+!           If x(i) swamps the sum so far, ditch the sum so far.
+          diff = x(i)-s
+          if (diff.GE.li) then
+              s = x(i)
+          else
+              s = s + dlog(1.0D0+dexp(x(i)-s))
+          end if
+      end do
+
+      RETURN
+      END
+
+
+      SUBROUTINE logsum2(z,x,y)
       
 ! Computes z <- x + (-1)^s * y.
 
+      IMPLICIT NONE
       DOUBLE PRECISION x,y,z,d,li,ni
       PARAMETER (li=709.78271289338397)
       PARAMETER (ni=-1.7976931348623157d308)      
@@ -105,10 +95,15 @@
       END
 
       SUBROUTINE ubl(o,n,p)
+      
 ! Unequal binomial log-probability distribution
 cf2py intent(out) o
+cf2py intent(hide) n
+cf2py threadsafe
+
+      IMPLICIT NONE
       INTEGER n, i, j
-      DOUBLE PRECISION p(n), o(n+1), last(n)
+      DOUBLE PRECISION o(n+1), last(n), p(n)
       DOUBLE PRECISION lp(n), lomp(n)
       
 ! Log of p and 1-p
@@ -128,11 +123,53 @@ cf2py intent(out) o
           o(i+1) = last(i) + lp(i)
           do j=i,2,-1
 !               o(j) = dlog(dexp(last(j-1)+lp(i))+dexp(last(j)+lomp(i)))
-             CALL logsum(o(j), last(j-1)+lp(i), last(j)+lomp(i))
+             CALL logsum2(o(j), last(j-1)+lp(i), last(j)+lomp(i))
           end do
           o(1) = last(1) + lomp(i)
       end do
 
+      RETURN
+      END
+      
+      SUBROUTINE bin_ubl(like,npos,n,q,npix,p)
+
+c Binomial log-likelihood function mixed on p as in the anopheline project.
+
+cf2py intent(out) like
+cf2py intent(hide) npix
+cf2py threadsafe
+
+      INTEGER npos,k,npix
+      DOUBLE PRECISION like,q,p(npix),lpk(npix+1),likes(npix+1)
+      DOUBLE PRECISION factln, f
+      DOUBLE PRECISION infinity
+      PARAMETER (infinity = 1.7976931348623157d308)
+
+! Get the log-density of k
+      CALL ubl(lpk,npix,p)
+      
+! The zero term: no pixels have the thing.
+      like = 0.0
+      if (npos.EQ.0) then
+          likes(1)=lpk(1)
+      else
+        likes(1)=-infinity
+      end if
+      
+! The non-zero terms: Some pixels have it.
+      do k=1,npix
+          f=q*k/npix
+          likes(k+1)=lpk(k+1)+npos*dlog(f)+(n-npos)*dlog(1.0D0-f)
+      if ((npos.LT.n).AND.(npos.GT.0)) then
+          likes(k+1)=likes(k+1)+factln(n)-factln(npos)-factln(n-npos)
+      end if          
+      end do
+      
+!       print *,likes
+
+! Log-sum and normalize
+      CALL logsum(likes,npix+1,like)
+          
       RETURN
       END
 
