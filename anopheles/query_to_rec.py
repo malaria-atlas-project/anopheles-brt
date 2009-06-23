@@ -34,13 +34,14 @@ def multipoint_to_ndarray(mp):
 
 
 def site_to_rec(s):
-    "Converts a site to a flat x,y,n record"
+    """
+    Converts a site to a flat x,y,n record.
+    WARNING: Takes only the first point from multipoints.
+    """
     n = 0 if s[1] is None else s[1]
-    # m is a MultiPoint
     m = s[0]
     if m is None:
         return None
-    # FIXME: Account for multipoints. Likelihood model: at least one of these pixels is positive/not-found and all are not the other thing. Probably can't use a recarray.
     if m.geoms._length > 0:
         raise ValueError, 'This is a multipoint.'
     else:
@@ -48,11 +49,15 @@ def site_to_rec(s):
         return p.x, p.y, n
     
 def sitelist_to_recarray(sl):
-    "Converts a list of sites to a NumPy record array"
+    """
+    Converts a list of sites to a NumPy record array.
+    WARNING: Takes only the first point from multipoints.
+    """
     recs = filter(lambda x: x is not None, map(site_to_rec, sl))
     return np.rec.fromrecords(recs, names='x,y,n')
     
 def list_species(session):
+    """Lists all the species in the database with id numbers."""
     return [(o.id, o.name) for o in Session().query(Anopheline)]
     
 def species_query(session, species):

@@ -65,7 +65,7 @@ def make_model(session, species, spatial_submodel):
     f_eval = f(x)
 
     # FIXME: Oddly enough, this is the bottleneck... but you need the number
-    # found in there before optimizing.
+    # found in there before optimizing. 
     @pm.deterministic(trace=False)
     def p_find_somewhere(f_eval=f_eval, p_find=p_find, breaks=breaks):
         out = np.empty(len(breaks)-1)
