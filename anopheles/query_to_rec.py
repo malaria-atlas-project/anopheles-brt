@@ -15,23 +15,21 @@
 
 
 import numpy as np
-from sqlalchemy.orm import join
-from sqlalchemy.sql import func, exists, and_, not_
-from models import Anopheline, Site, Presence, SamplePeriod, Session, World
-from sqlalchemygeom import *
+
+from query import species_query, list_species
+from models import Session
+
+a,b = species_query(Session(), 2)
 from map_utils import multipoly_sample
 import tables as tb
 import sys, os
 
 __all__ = ['IncompleteDataError', 'site_to_rec', 'sitelist_to_recarray', 'list_species', 'species_query', 'map_extents', 'multipoint_to_ndarray']
 
-class IncompleteDataError(BaseException):
-    pass
 
 def multipoint_to_ndarray(mp):
     "Converts a multipont to a coordinate array IN RADIANS."
     return np.array([[p.x, p.y] for p in mp.geoms])*np.pi/180.
-
 
 def site_to_rec(s):
     """
