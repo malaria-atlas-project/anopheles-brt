@@ -13,18 +13,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-
 import numpy as np
 
 from query import species_query, list_species
-from models import Session
-
-a,b = species_query(Session(), 2)
+from models import *
 from map_utils import multipoly_sample
 import tables as tb
 import sys, os
 
-__all__ = ['IncompleteDataError', 'site_to_rec', 'sitelist_to_recarray', 'list_species', 'species_query', 'map_extents', 'multipoint_to_ndarray']
+__all__ = ['site_to_rec', 'sitelist_to_recarray', 'list_species', 'species_query', 'map_extents', 'multipoint_to_ndarray']
 
 
 def multipoint_to_ndarray(mp):
@@ -32,13 +29,14 @@ def multipoint_to_ndarray(mp):
     return np.array([[p.x, p.y] for p in mp.geoms])*np.pi/180.
 
 def site_to_rec(s):
-    "Converts a site to a flat x,y,n record"
+    """
+    Converts a site to a flat x,y,n record.
+    WARNING: Takes only the first point from multipoints.
+    """
     n = 0 if s[1] is None else s[1]
-    # m is a MultiPoint
     m = s[0]
     if m is None:
         return None
-    # FIXME: Account for multipoints. Likelihood model: at least one of these pixels is positive/not-found and all are not the other thing. Probably can't use a recarray.
     if m.geoms._length > 0:
         raise ValueError, 'This is a multipoint.'
     else:
@@ -46,10 +44,13 @@ def site_to_rec(s):
         return p.x, p.y, n
     
 def sitelist_to_recarray(sl):
-    "Converts a list of sites to a NumPy record array"
+    """
+    Converts a list of sites to a NumPy record array.
+    WARNING: Takes only the first point from multipoints.
+    """
     recs = filter(lambda x: x is not None, map(site_to_rec, sl))
     return np.rec.fromrecords(recs, names='x,y,n')
-   
+        
 def map_extents(pos_recs, eo):
     "Figures out good extents for a basemap."
     return [min(pos_recs.x.min(), eo.bounds[0]),
@@ -127,8 +128,8 @@ except ImportError:
 if __name__ == '__main__':
     session = Session()
     species = list_species(session)    
-    pts_in, pts_out = sample_eo(session, species[1], 1000, 1000)
-    # sites, eo = species_query(session,species[1][0])
+    # pts_in, pts_out = sample_eo(session, species[1], 1000, 1000)
+    sites, eo = species_query(session,species[1][0])
     # from map_utils import multipoly_sample
     # lon,lat = multipoly_sample(1000,eo)
     # 
