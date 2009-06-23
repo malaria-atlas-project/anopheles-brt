@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from sqlalchemy import  Table, Column, Integer, String, MetaData, ForeignKey, create_engine
+from sqlalchemy import  Table, Column, Integer, String, MetaData, ForeignKey, Boolean, create_engine
 from sqlalchemygeom import Geometry
 from sqlalchemy.orm import relation, join
 from sqlalchemy.orm import sessionmaker
@@ -36,8 +36,18 @@ class Anopheline(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String)
     abbreviation = Column(String)
+    sub_genus = Column(String)
+    species = Column(String)
+    author = Column(String)
+    is_complex  = Column(Boolean)
     def __repr__(self):
         return self.name
+    def get_scientific_name(self):
+        species = self.species
+        if self.is_complex:
+            species += '*'
+        name = "<i>An. (%s) %s</i> %s" % (self.sub_genus, species, self.author)
+        return name.replace("&", "&amp;")
 
 class Site(Base):
     """
@@ -49,6 +59,7 @@ class Site(Base):
     sample_periods = relation("SamplePeriod", backref="sites")
     geom = Column(Geometry(4326))
     vector_full_name = Column(String)
+    country_from_vectors = Column(String)
     area_type = Column(String)
 
 class ExpertOpinion(Base):
@@ -81,7 +92,6 @@ class SamplePeriod(Base):
     end_month = Column(Integer, nullable=True)
     end_year = Column(Integer, nullable=True)
     sample_aggregate_check = Column(Integer, nullable=True)
-
 
 class AdminUnit(Base):
     """
