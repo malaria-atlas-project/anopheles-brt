@@ -7,7 +7,7 @@ class test_queries(object):
         "Tests that the entries of the records add up."
         site_list, expert_opinion = species_query(Session(), 3)
         for x in site_list:
-            assert(sum(count or 0 for count in x[1:4]) == x[4]):
+            assert(sum(count or 0 for count in x[1:4]) == x[4])
                 
     def some_other_test(self):
         pass
