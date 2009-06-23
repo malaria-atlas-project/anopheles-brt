@@ -13,6 +13,8 @@
 ! You should have received a copy of the GNU General Public License
 ! along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+      SUBROUTINE unequal_binomial_lp(n,p,np)
+
       SUBROUTINE mahal(c,x,y,symm,a,l,s,nx,ny,nd,cmin,cmax)
 cf2py intent(out) d
 cf2py intent(hide) nx,ny,nd

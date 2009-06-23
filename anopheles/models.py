@@ -27,7 +27,7 @@ Session = sessionmaker(bind=engine)
 from sqlalchemy.ext.declarative import declarative_base
 Base = declarative_base()
 
-__all__ = ['Anopheline', 'Site', 'ExpertOpinion', 'Presence', 'SamplePeriod']
+__all__ = ['Anopheline', 'Site', 'ExpertOpinion', 'Presence', 'SamplePeriod', 'Session', 'World', 'AdminUnit']
 
 class Anopheline(Base):
     """

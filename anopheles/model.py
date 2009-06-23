@@ -23,6 +23,24 @@ from spatial_submodels import *
 import datetime
 
 __all__ = ['make_model', 'species_MCMC']
+
+def unequal_binomial_lp(n,p):
+    if n != len(p):
+        raise ValueError
+    out = np.zeros(n+1)
+    out[0] = 1.-p[0]
+    out[1] = p[0]
+    for i in range(1,n):
+        last = out.copy()
+        out[i+1] = out[i]*p[i]        
+        for j in range(i,0,-1):
+            out[j] = last[j-1]*p[i]+last[j]*(1-p[i])
+        out[0] *= (1-p[i])
+            
+    return out
+            
+            
+    
     
 def make_model(session, species, spatial_submodel):
 
@@ -46,15 +64,21 @@ def make_model(session, species, spatial_submodel):
     # ===============
     # = Likelihoods =
     # ===============
-    # FIXME: Make sure you're interpreting the queries correctly!
+    
     x = []
     breaks = [0]
     found = []
+    zero = []
+    others_found = []
+    totals = []
     
     for site in sites:
         x.append(multipoint_to_ndarray(site[0]))
         breaks.append(breaks[-1] + len(site[0].geoms))
-        found.append(site[1] is not None)
+        found.append(site[1] if site[1] is not None else 0)
+        zero.append(site[2] if site[2] is not None else 0)
+        others_found.append(site[3] if site[3] is not None else 0)
+        totals.append(site[4])
 
     breaks = np.array(breaks)
     x = np.concatenate(x)
@@ -93,7 +117,16 @@ def species_MCMC(session, species, spatial_submodel, db=None):
     return M
         
 if __name__ == '__main__':
-    session = Session()
-    species = list_species(session)    
+    pass
+    # p= unequal_binomial_lp(5,np.random.random(5))
+    # print p,np.sum(p)
+    
+    q = np.ones(5)*.2
+    p = unequal_binomial_lp(5,q)
+    print p
+    print np.exp([pm.binomial_like(x,5,q[0]) for x in range(6)])
+    
+    # session = Session()
+    # species = list_species(session)    
     # M = species_MCMC(session, species, spatial_hill)
     # M.isample(1000,0,10)
