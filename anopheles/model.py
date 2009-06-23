@@ -23,46 +23,6 @@ from spatial_submodels import *
 import datetime
 
 __all__ = ['make_model', 'species_MCMC']
-
-def log_difference(lx, ly):
-    """Returns log(exp(lx) - exp(ly)) without leaving log space."""
-    # Negative log of double-precision infinity
-    li=-709.78271289338397
-    diff = ly - lx
-    # Make sure log-difference can succeed
-    if np.any(diff>=0):
-        raise ValueError, 'Cannot compute log(x-y), because y>=x for some elements.'
-    # Otherwise evaluate log-difference
-    return lx + np.log(1.-np.exp(diff))
-
-from pymc.flib import logsum
-
-def unequal_binomial_lp(n,p):
-    lp = np.log(p)
-    lomp = np.log(1.-p)
-    if n != len(p):
-        raise ValueError
-    
-    out = np.zeros(n+1)
-    
-    out[0] = lomp[0]
-    out[1] = lp[0]
-    for i in range(1,n):
-        last = out.copy()
-        out[i+1] = out[i] + lp[i]        
-        for j in range(i,0,-1):
-            if np.isinf(last[j-1]+lp[i]) and np.isinf(last[j]+lomp[i]):
-                out[j]=-np.inf
-            else:
-                out[j] = logsum([last[j-1]+lp[i], last[j]+lomp[i]])
-            if np.isnan(out[j]):
-                raise ValueError
-        out[0] += lomp[i]
-            
-    return out
-            
-            
-    
     
 def make_model(session, species, spatial_submodel):
 
@@ -143,10 +103,13 @@ if __name__ == '__main__':
     # p= unequal_binomial_lp(5,np.random.random(5))
     # print p,np.sum(p)
     
-    q = np.zeros(5)*.2
-    q[0]=.99
-    p = unequal_binomial_lp(5,q)
-    print p
+    # q = np.zeros(5)*.2
+    # q[0]=.99
+    # q = np.random.random(size=5)
+    q = np.ones(5)*.2
+    from utils import ubl
+    pf = ubl(q,5)
+    print pf
     print np.array([pm.binomial_like(x,5,q[0]) for x in range(6)])
     
     # session = Session()
