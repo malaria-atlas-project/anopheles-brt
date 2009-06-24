@@ -32,7 +32,6 @@ def make_model(session, species, spatial_submodel):
     # =========
     sites, eo = species_query(session, species[0])
     
-    
     # ==========
     # = Priors =
     # ==========
@@ -43,10 +42,9 @@ def make_model(session, species, spatial_submodel):
     # Forget about non-records
     sites = filter(lambda s:s[0] is not None, sites)
     
-    
-    # ===============
-    # = Likelihoods =
-    # ===============
+    # ==============
+    # = Likelihood =
+    # ==============
     
     x = []
     breaks = [0]
