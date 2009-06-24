@@ -20,6 +20,7 @@ from query_to_rec import *
 from mahalanobis_covariance import mahalanobis_covariance
 from map_utils import multipoly_sample
 from spatial_submodels import *
+from utils import bin_ubl
 import datetime
 
 __all__ = ['make_model', 'species_MCMC']
@@ -65,23 +66,15 @@ def make_model(session, species, spatial_submodel):
     breaks = np.array(breaks)
     x = np.concatenate(x)
     found = np.array(found)
+    zero = np.array(zero)
+    others_found = np.array(others_found)
 
-    # TODO: Evaluate f all at once, then slice the output. Should help a lot.
-    # TODO: Also vectorize the data.
     f_eval = f(x)
 
-    # FIXME: Oddly enough, this is the bottleneck... but you need the number
-    # found in there before optimizing. 
-    @pm.deterministic(trace=False)
-    def p_find_somewhere(f_eval=f_eval, p_find=p_find, breaks=breaks):
-        out = np.empty(len(breaks)-1)
-        for i in xrange(len(breaks)-1):
-            fe = f_eval[breaks[i]:breaks[i+1]]
-            out[i]=1.-np.prod(fe*(1-p_find) + 1.-fe)
-        return out
-    
-    data=pm.Bernoulli('points', p_find_somewhere, value=found, observed=True)
-            
+    @observed
+    @pm.stochastic
+    def points(value = [found, others_found, zero], f_eval=f_eval, p_find=p_find, breaks=breaks):
+        return bin_ubls(value[0], value[0]+value[1]+value[2], p_find, breaks, f_eval)
     
     # ==============================
     # = Expert-opinion likelihoods =
@@ -93,7 +86,10 @@ def make_model(session, species, spatial_submodel):
 
 def species_MCMC(session, species, spatial_submodel, db=None):
     if db is None:
-        M=pm.MCMC(make_model(session, species[1], spatial_hill), db='hdf5', complevel=1, dbname=species[1][1]+str(datetime.datetime.now())+'.hdf5')
+        M=pm.MCMC(make_model(session, species, spatial_hill), db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
     else:
-        M=pm.MCMC(make_model(session, species[1], spatial_hill), db=db)
+        M=pm.MCMC(make_model(session, species, spatial_hill), db=db)
     return M
+    
+if __name__ == '__main__':
+    
