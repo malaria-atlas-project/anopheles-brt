@@ -20,7 +20,7 @@ from query_to_rec import *
 from mahalanobis_covariance import mahalanobis_covariance
 from map_utils import multipoly_sample
 from spatial_submodels import *
-from utils import bin_ubl
+from utils import bin_ubls
 import datetime
 
 __all__ = ['make_model', 'species_MCMC']
@@ -71,7 +71,7 @@ def make_model(session, species, spatial_submodel):
 
     f_eval = f(x)
 
-    @observed
+    @pm.observed
     @pm.stochastic
     def points(value = [found, others_found, zero], f_eval=f_eval, p_find=p_find, breaks=breaks):
         return bin_ubls(value[0], value[0]+value[1]+value[2], p_find, breaks, f_eval)
@@ -92,4 +92,6 @@ def species_MCMC(session, species, spatial_submodel, db=None):
     return M
     
 if __name__ == '__main__':
-    
+    s = Session()
+    species = list_species(s)
+    m=make_model(s, species[1], spatial_hill)
