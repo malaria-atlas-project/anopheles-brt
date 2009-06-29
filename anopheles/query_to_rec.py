@@ -21,7 +21,7 @@ from map_utils import multipoly_sample
 import tables as tb
 import sys, os
 
-__all__ = ['site_to_rec', 'sitelist_to_recarray', 'list_species', 'species_query', 'map_extents', 'multipoint_to_ndarray']
+__all__ = ['site_to_rec', 'sitelist_to_recarray', 'list_species', 'species_query', 'map_extents', 'multipoint_to_ndarray', 'sample_eo', 'map_extents']
 
 
 def multipoint_to_ndarray(mp):
@@ -76,18 +76,18 @@ def sample_eo(session, species, n_in, n_out):
         print 'Differencing with expert opinion'
         not_eo = world.difference(eo)
         
-        print 'Sampling inside'
-        lon_in, lat_in = multipoly_sample(n_in, eo)       
         print 'Sampling outside'
         lon_out, lat_out = multipoly_sample(n_out, not_eo)
+        print 'Sampling inside'
+        lon_in, lat_in = multipoly_sample(n_in, eo)
         
         print 'Writing out'
         pts_in = np.vstack((lon_in, lat_in)).T*np.pi/180. 
-        pts_out = np.vstack((lon_out, lat_out)).T*np.pi/180.         
+        pts_out = np.vstack((lon_out, lat_out)).T*np.pi/180.
         
         hf = tb.openFile(fname,'w')
         hf.createArray('/','pts_in',pts_in)
-        hf.createArray('/','pts_in',pts_out)        
+        hf.createArray('/','pts_out',pts_out)
     
     return pts_in, pts_out
 
@@ -113,7 +113,7 @@ try:
         if b is None:
             b = basemap.Basemap(*map_extents(pos_recs, eo), **kwds)
         b.drawcoastlines(color='w',linewidth=.5)
-        b.drawcountries(color='w',linewidth=.5)
+        # b.drawcountries(color='w',linewidth=.5)
         pl.title(name, style='italic')        
         plot_unit(b, eo, '-', color=(.4,.4,.9), label='_nolegend_', linewidth=.75)        
         if negs:
@@ -128,7 +128,7 @@ except ImportError:
 if __name__ == '__main__':
     session = Session()
     species = list_species(session)    
-    # pts_in, pts_out = sample_eo(session, species[1], 1000, 1000)
+    pts_in, pts_out = sample_eo(session, species[1], 1000, 1000)
     sites, eo = species_query(session,species[1][0])
     # from map_utils import multipoly_sample
     # lon,lat = multipoly_sample(1000,eo)

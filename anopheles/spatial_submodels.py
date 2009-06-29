@@ -50,14 +50,17 @@ class hill_fn(object):
         self.vec = vec
         self.ctr = ctr
         self.amp = amp
+        self.max_argsize = np.inf
+        
     def __call__(self, x):
-        dev = x-self.ctr
+        xr = x.reshape(-1,2)
+        dev = xr-self.ctr
         tdev = np.dot(dev, self.vec)
         if len(dev.shape)==1:
             ax=0
         else:
-            ax=1
-        return pm.invlogit(np.sum(tdev**2/self.val,axis=ax)*self.amp)
+            ax=-1
+        return pm.invlogit(np.sum(tdev**2/self.val,axis=ax)*self.amp).reshape(x.shape[:-1])
 
 
 def spatial_hill(**kerap):
