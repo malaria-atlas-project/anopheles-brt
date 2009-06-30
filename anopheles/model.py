@@ -25,7 +25,7 @@ import datetime
 
 __all__ = ['make_model', 'species_MCMC', 'probability_traces', 'probability_map']
     
-def make_model(session, species, spatial_submodel, with_eo = True):
+def make_model(session, species, spatial_submodel, with_eo = True, with_data = True):
     """
     Generates a PyMC probability model with a plug-in spatial submodel.
     The likelihood and expert-opinion layers are common.
@@ -53,34 +53,35 @@ def make_model(session, species, spatial_submodel, with_eo = True):
     # ==============
     # = Likelihood =
     # ==============
+
+    if with_data:
+        x = []
+        breaks = [0]
+        found = []
+        zero = []
+        others_found = []
+        totals = []
     
-    x = []
-    breaks = [0]
-    found = []
-    zero = []
-    others_found = []
-    totals = []
-    
-    for site in sites:
-        x.append(multipoint_to_ndarray(site[0]))
-        breaks.append(breaks[-1] + len(site[0].geoms))
-        found.append(site[1] if site[1] is not None else 0)
-        zero.append(site[2] if site[2] is not None else 0)
-        others_found.append(site[3] if site[3] is not None else 0)
-        totals.append(site[4])
+        for site in sites:
+            x.append(multipoint_to_ndarray(site[0]))
+            breaks.append(breaks[-1] + len(site[0].geoms))
+            found.append(site[1] if site[1] is not None else 0)
+            zero.append(site[2] if site[2] is not None else 0)
+            others_found.append(site[3] if site[3] is not None else 0)
+            totals.append(site[4])
 
-    breaks = np.array(breaks)
-    x = np.concatenate(x)
-    found = np.array(found)
-    zero = np.array(zero)
-    others_found = np.array(others_found)
+        breaks = np.array(breaks)
+        x = np.concatenate(x)
+        found = np.array(found)
+        zero = np.array(zero)
+        others_found = np.array(others_found)
 
-    f_eval = f(x)
+        f_eval = f(x)
 
-    @pm.observed
-    @pm.stochastic
-    def points(value = [found, others_found, zero], f_eval=f_eval, p_find=p_find, breaks=breaks):
-        return bin_ubls(value[0], value[0]+value[1]+value[2], p_find, breaks, f_eval)
+        @pm.observed
+        @pm.stochastic
+        def points(value = [found, others_found, zero], f_eval=f_eval, p_find=p_find, breaks=breaks):
+            return bin_ubls(value[0], value[0]+value[1]+value[2], p_find, breaks, f_eval)
     
     
     # ==============================
@@ -89,18 +90,23 @@ def make_model(session, species, spatial_submodel, with_eo = True):
 
     if with_eo:
         pts_in, pts_out = sample_eo(session, species, 1000, 1000)
-        sens_strength = pm.Uninformative('sens_strength',1000,observed=True)
-        spec_strength = pm.Uninformative('spec_strength',1000,observed=True)    
+        # sens_strength = pm.Uninformative('sens_strength',1000,observed=True)
+        # spec_strength = pm.Uninformative('spec_strength',1000,observed=True)    
         in_prob = pm.Lambda('in_prob', lambda f=f, x=pts_in: np.mean(f(x)))
         out_prob = pm.Lambda('out_prob', lambda f=f, x=pts_out: np.mean(f(x)))    
     
+        alpha_out = pm.Uniform('alpha_out',0,1)
+        beta_out = pm.Uniform('beta_out',1,10)
+        alpha_in = pm.Uniform('alpha_in',1,10)
+        beta_in = pm.Uniform('beta_in',0,1)
+    
         @pm.potential
-        def spec_factor(s=spec_strength, p=out_prob):
-            return s*p
+        def out_factor(a=alpha_out, b=beta_out, p=out_prob):
+            return pm.beta_like(p,a,b)
         
         @pm.potential
-        def sens_factor(s=sens_strength, p=out_prob):
-            return s*(1.-p)
+        def in_factor(a=alpha_in, b=beta_in, p=in_prob):
+            return pm.beta_like(p,a,b)
     
     
     out = locals()
@@ -118,6 +124,14 @@ def probability_traces(M, pos_or_neg = True):
         f = M.trace('f')[i:i+1][0]
         vals.append(f(x))
     return np.array(vals)
+    
+def potential_traces(M, in_or_out = 'in'):
+    "Traces of the 'means' of the EO factor potentials."
+    a = M.trace('alpha_'+in_or_out)[:]
+    b = M.trace('beta_'+in_or_out)[:]    
+    
+    import pylab as pl
+    pl.plot(a/(a+b))
     
 def presence_map(M, session, species, burn=0, worldwide=True, thin=1, **kwds):
     "Converts the trace to a map of presence probability."
@@ -171,9 +185,9 @@ def species_MCMC(session, species, spatial_submodel, db=None):
 if __name__ == '__main__':
     s = Session()
     species = list_species(s)
-    m=make_model(s, species[1], spatial_hill)
+    m=make_model(s, species[1], spatial_hill, with_data=False)
     M = pm.MCMC(m)
-    M.isample(10000,0,10)
+    M.isample(20000,0,10)
     
     presence_map(M, s, species[1], thin=2, burn=300)
 
