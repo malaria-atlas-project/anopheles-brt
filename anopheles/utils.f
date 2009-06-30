@@ -173,6 +173,32 @@ cf2py threadsafe
       RETURN
       END
 
+      SUBROUTINE bin_ubls(like,nposs,ns,q,breaks,ps,nobs,npts)
+
+c Calls bin_ubl for multiple observations. 
+c Just eliminates Python looping and slicing.      
+cf2py intent(out) like
+cf2py intent(hide) nobs,npts
+cf2py threadsafe
+      
+      DOUBLE PRECISION like,this_like
+      DOUBLE PRECISION q,ps(npts)
+      INTEGER nobs,i,ns(nobs),nposs(nobs),breaks(nobs+1)
+      INTEGER npix,runtot,npts
+      
+      runtot = 1
+      npix = 0
+      like = 0.0D0
+      do i=1,nobs
+          runtot = runtot+npix
+          npix = breaks(i+1)-breaks(i)
+          CALL bin_ubl(this_like,nposs(i),ns(i),q,npix,ps(runtot))
+          like = like + this_like
+      end do
+
+      RETURN
+      END
+
       SUBROUTINE mahal(c,x,y,symm,a,l,s,nx,ny,nd,cmin,cmax)
 cf2py intent(hide) nx,ny,nd
 cf2py intent(inplace) c
@@ -241,3 +267,5 @@ cf2py threadsafe
       
       RETURN 
       END
+
+
