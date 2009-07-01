@@ -36,6 +36,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     # =========
     
     sites, eo = species_query(session, species[0])
+    pts_in, pts_out = sample_eo(session, species, 1000, 1000)
     
     
     # ==========
@@ -79,8 +80,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         f_eval = f(x)
 
         @pm.observed
-        @pm.stochastic
-        def points(value = [found, others_found, zero], f_eval=f_eval, p_find=p_find, breaks=breaks):
+        @pm.stochastic(trace=False)
+        def data(value = [found, others_found, zero], f_eval=f_eval, p_find=p_find, breaks=breaks):
             return bin_ubls(value[0], value[0]+value[1]+value[2], p_find, breaks, f_eval)
     
     
@@ -89,7 +90,6 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     # ==============================
 
     if with_eo:
-        pts_in, pts_out = sample_eo(session, species, 1000, 1000)
         # sens_strength = pm.Uninformative('sens_strength',1000,observed=True)
         # spec_strength = pm.Uninformative('spec_strength',1000,observed=True)    
         in_prob = pm.Lambda('in_prob', lambda f=f, x=pts_in: np.mean(f(x)))
@@ -185,12 +185,17 @@ def species_MCMC(session, species, spatial_submodel, db=None):
 if __name__ == '__main__':
     s = Session()
     species = list_species(s)
-    m=make_model(s, species[1], spatial_hill, with_data=False)
-    M = pm.MCMC(m)
+
+    # m=make_model(s, species[1], spatial_hill, with_data=False)
+    # m=make_model(s, species[1], lr_spatial)
+    # M = pm.MCMC(m)
+
+
+    M = species_MCMC(s, species[1], lr_spatial)
     M.isample(20000,0,10)
-    
+        
     presence_map(M, s, species[1], thin=2, burn=300)
 
     p_atfound = probability_traces(M)
     p_atnotfound = probability_traces(M,False)
-    
+        

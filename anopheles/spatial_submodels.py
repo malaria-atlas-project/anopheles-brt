@@ -2,7 +2,7 @@ import numpy as np
 import cov_prior
 import pymc as pm
 
-__all__ = ['spatial_hill','hill_fn','hinge','step']
+__all__ = ['spatial_hill','hill_fn','hinge','step','krige_fn','lr_spatial']
 
 def hinge(x, cp):
     "A MaxEnt hinge feature"
@@ -19,6 +19,8 @@ def step(x,cp):
 # TODO: 'Inducing points' should be highest-rank points from random samples from 
 # the EO and not-EO regions, so that the data locations don't influence the prior.
 # The rest of the field should be determined by the EO. Don't use the extra nugget.
+
+
 
 # def make_model(session, species, covariates, rl=500):
 #     sites, eo = species_query(session, species)
@@ -83,3 +85,72 @@ def spatial_hill(**kerap):
         return hill_fn(val, vec, ctr, amp)
         
     return locals()
+
+# FIXME: Fill these in!
+class krige_fn(object):
+    """docstring for krige_fn"""
+    def __init__(self, krige_wt, x_fr, C):
+        self.krige_wt = krige_wt
+        self.x_fr = x_fr
+        self.C = C
+    def __call__(self, x):
+        return pm.invlogit(np.asarray(np.dot(self.krige_wt,self.C(self.x_fr,x))).ravel()).reshape(x.shape[:-1])
+
+def mod_matern(x,y,diff_degree,amp,scale):
+    "Matern with the mean integrated out."
+    return pm.gp.matern.geo_rad(x,y,diff_degree=diff_degree,amp=amp,scale=scale)+10000
+    
+def lr_spatial(rl=50,**stuff):
+    "A low-rank spatial-only model."
+    amp = pm.Exponential('amp',.1,value=1)
+    scale = pm.Exponential('scale',.1,value=.01)
+    diff_degree = pm.Uniform('diff_degree',0,2,value=.5)
+    
+    pts_in = stuff['pts_in']
+    pts_out = stuff['pts_out']
+    x = np.vstack((pts_in, pts_out))
+    
+    @pm.deterministic
+    def C(amp=amp,scale=scale,diff_degree=diff_degree):
+        return pm.gp.Covariance(mod_matern, amp=amp, scale=scale, diff_degree=diff_degree)
+        
+    @pm.deterministic(trace=False)
+    def x_and_U(C=C, rl=rl, x=x):
+        d = C.cholesky(x, rank_limit=rl, apply_pivot=False)
+        piv = d['pivots']
+        U = d['U']
+        return x[piv[:U.shape[0]]], U 
+    
+    # Trace the full-rank locations
+    x_fr = pm.Lambda('x_fr', lambda t=x_and_U: t[0])
+    # Don't trace the Cholesky factor. It may be big.
+    U = x_and_U[1]
+    
+    @pm.potential
+    def fr_check(U=U, rl=rl):
+        if U.shape[0]==rl:
+            return 0.
+        else:
+            return -np.inf
+    
+    f_mesh = pm.Uninformative('f_mesh',np.zeros(rl))
+    
+    @pm.deterministic
+    def krige_wt(x_fr=x_fr, U=U, rl=rl, C=C, f_mesh=f_mesh):
+        return pm.gp.trisolve(U,pm.gp.trisolve(U,f_mesh,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
+
+    @pm.potential
+    def f_logp(U=U, krige_wt=krige_wt, f_mesh=f_mesh, rl=rl):
+        return -.5*np.sum(np.log(2.*np.pi) + np.log(np.diag(U))) - .5*np.dot(f_mesh, krige_wt)
+    
+    # The 'rest' of the GP
+    @pm.deterministic
+    def f(krige_wt=krige_wt, x_fr=x_fr, C=C):
+        return krige_fn(krige_wt, x_fr, C)
+        
+    return locals()
+        
+            
+    
+    
+    
