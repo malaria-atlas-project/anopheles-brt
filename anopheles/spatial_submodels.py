@@ -45,6 +45,9 @@ def step(x,cp):
 #         return C.cholesky(xtot,rank_limit=rl)
 
 
+# =============================
+# = The standard spatial hill =
+# =============================
 class hill_fn(object):
     "Closure used by spatial_hill"    
     def __init__(self, val, vec, ctr, amp):
@@ -86,24 +89,59 @@ def spatial_hill(**kerap):
         
     return locals()
 
-# FIXME: Fill these in!
+
+# ==============================
+# = A spatial-only low-rank GP =
+# ==============================
 class krige_fn(object):
     """docstring for krige_fn"""
-    def __init__(self, krige_wt, x_fr, C):
-        self.krige_wt = krige_wt
+    def __init__(self, val, x_fr, U):
         self.x_fr = x_fr
-        self.C = C
-    def __call__(self, x):
-        return pm.invlogit(np.asarray(np.dot(self.krige_wt,self.C(self.x_fr,x))).ravel()).reshape(x.shape[:-1])
+        self.U = U
+        self.val = val
+        self.shift(x_fr, U)        
+        
 
-def mod_matern(x,y,diff_degree,amp,scale):
+    def shift(self, x_fr, U):
+        "Shifts to a new x_fr or U."
+        self.U = U
+        self.x_fr = x_fr
+        self.krige_wt = pm.gp.trisolve(self.U,pm.gp.trisolve(self.U,self.val,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
+
+    def __call__(self, x, U=None, x_fr=None):
+        f_out = None
+
+        # Possibly shift
+        if U is not None:
+            if U is not self.U:
+                self.val = self(x_fr)                
+                f_out = self.shift(x_fr, U)
+
+        if f_out is None:
+            f_out = np.asarray(np.dot(self.krige_wt,self.C(self.x_fr,x)))
+        return pm.invlogit(x_out.ravel()).reshape(x.shape[:-1])
+
+
+# FIXME: Fill these in!
+class krige_fn_stepper(pm.AdaptiveMetropolis):
+    pass
+    
+class KrigeFn(pm.Stochastic):
+    def __init__(self, name, x_fr, U):
+        self.rl = x_fr.shape[0]
+        def lpf(value, x, U):
+            return pm.mv_normal_chol_like(value(x, U), np.zeros(self.rl), U)
+        pm.Stochastic.__init__(self, name, {'x': x_fr, 'U': U}, logp=lpf)
+        
+
+def mod_matern(x,y,diff_degree,amp,scale,symm=False):
     "Matern with the mean integrated out."
-    return pm.gp.matern.geo_rad(x,y,diff_degree=diff_degree,amp=amp,scale=scale)+10000
+    return pm.gp.matern.geo_rad(x,y,diff_degree=diff_degree,amp=amp,scale=scale,symm=symm)+10000
     
 def lr_spatial(rl=50,**stuff):
     "A low-rank spatial-only model."
     amp = pm.Exponential('amp',.1,value=1)
-    scale = pm.Exponential('scale',.1,value=.01)
+    scale = pm.Exponential('scale',.1,value=1.)
     diff_degree = pm.Uniform('diff_degree',0,2,value=.5)
     
     pts_in = stuff['pts_in']
@@ -132,25 +170,11 @@ def lr_spatial(rl=50,**stuff):
             return 0.
         else:
             return -np.inf
-    
-    f_mesh = pm.Uninformative('f_mesh',np.zeros(rl))
-    
-    @pm.deterministic
-    def krige_wt(x_fr=x_fr, U=U, rl=rl, C=C, f_mesh=f_mesh):
-        return pm.gp.trisolve(U,pm.gp.trisolve(U,f_mesh,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
 
-    @pm.potential
-    def f_logp(U=U, krige_wt=krige_wt, f_mesh=f_mesh, rl=rl):
-        return -.5*np.sum(np.log(2.*np.pi) + np.log(np.diag(U))) - .5*np.dot(f_mesh, krige_wt)
+    f = KrigeFn('f', x_fr, U)
     
-    # The 'rest' of the GP
-    @pm.deterministic
-    def f(krige_wt=krige_wt, x_fr=x_fr, C=C):
-        return krige_fn(krige_wt, x_fr, C)
-        
-    return locals()
-        
-            
+    
+    return locals()            
     
     
     

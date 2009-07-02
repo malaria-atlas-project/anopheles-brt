@@ -138,6 +138,7 @@ def presence_map(M, session, species, burn=0, worldwide=True, thin=1, **kwds):
     
     # FIXME: Use the proper land-sea mask, served from the db, to do this.
     import mbgw
+    from mbgw import auxiliary_data
     from mpl_toolkits import basemap
     import pylab as pl
     
@@ -177,9 +178,9 @@ def presence_map(M, session, species, burn=0, worldwide=True, thin=1, **kwds):
 
 def species_MCMC(session, species, spatial_submodel, db=None):
     if db is None:
-        M=pm.MCMC(make_model(session, species, spatial_hill), db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
+        M=pm.MCMC(make_model(session, species, spatial_submodel), db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
     else:
-        M=pm.MCMC(make_model(session, species, spatial_hill), db=db)
+        M=pm.MCMC(make_model(session, species, spatial_submodel), db=db)
     return M
     
 if __name__ == '__main__':
