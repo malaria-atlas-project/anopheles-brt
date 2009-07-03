@@ -177,9 +177,9 @@ def presence_map(M, session, species, burn=0, worldwide=True, thin=1, **kwds):
 
 def species_MCMC(session, species, spatial_submodel, db=None):
     if db is None:
-        M=pm.MCMC(make_model(session, species, spatial_hill), db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
+        M=pm.MCMC(make_model(session, species, lr_spatial), db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
     else:
-        M=pm.MCMC(make_model(session, species, spatial_hill), db=db)
+        M=pm.MCMC(make_model(session, species, lr_spatial), db=db)
     return M
     
 if __name__ == '__main__':
@@ -192,7 +192,7 @@ if __name__ == '__main__':
 
 
     M = species_MCMC(s, species[1], lr_spatial)
-    M.isample(20000,0,10)
+    M.isample(2000,0,10)
         
     presence_map(M, s, species[1], thin=2, burn=300)
 
