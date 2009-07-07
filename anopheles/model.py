@@ -45,7 +45,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     
     p_find = pm.Uniform('p_find',0,1)
     spatial_variables = spatial_submodel(**locals())
-    f = spatial_variables['f']
+    p = spatial_variables['p']
     
     # Forget about non-records
     sites = filter(lambda s:s[0] is not None, sites)
@@ -77,12 +77,12 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         zero = np.array(zero)
         others_found = np.array(others_found)
 
-        f_eval = f(x)
+        p_eval = p(x)
 
         @pm.observed
         @pm.stochastic(trace=False)
-        def data(value = [found, others_found, zero], f_eval=f_eval, p_find=p_find, breaks=breaks):
-            return bin_ubls(value[0], value[0]+value[1]+value[2], p_find, breaks, f_eval)
+        def data(value = [found, others_found, zero], p_eval=p_eval, p_find=p_find, breaks=breaks):
+            return bin_ubls(value[0], value[0]+value[1]+value[2], p_find, breaks, p_eval)
     
     
     # ==============================
@@ -92,8 +92,12 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     if with_eo:
         # sens_strength = pm.Uninformative('sens_strength',1000,observed=True)
         # spec_strength = pm.Uninformative('spec_strength',1000,observed=True)    
-        in_prob = pm.Lambda('in_prob', lambda f=f, x=pts_in: np.mean(f(x)))
-        out_prob = pm.Lambda('out_prob', lambda f=f, x=pts_out: np.mean(f(x)))    
+        if has_key(spatial_variables, 'in_prob'):
+            in_prob = spatial_variables['in_prob']
+            out_prob = spatial_variables['out_prob']
+        else:
+            in_prob = pm.Lambda('in_prob', lambda p=p, x=pts_in: np.mean(p(x)))
+            out_prob = pm.Lambda('out_prob', lambda p=p, x=pts_out: np.mean(p(x)))    
     
         alpha_out = pm.Uniform('alpha_out',0,1)
         beta_out = pm.Uniform('beta_out',1,10)
@@ -121,8 +125,8 @@ def probability_traces(M, pos_or_neg = True):
         x = M.x[np.where(M.found == 0)]
     vals = []
     for i in xrange(M._cur_trace_index):
-        f = M.trace('f')[i:i+1][0]
-        vals.append(f(x))
+        p = M.trace('p')[i:i+1][0]
+        vals.append(p(x))
     return np.array(vals)
     
 def potential_traces(M, in_or_out = 'in'):
@@ -166,8 +170,8 @@ def presence_map(M, session, species, burn=0, worldwide=True, thin=1, **kwds):
     out = np.zeros(mask.shape)
 
     for i in xrange(M._cur_trace_index):
-        f = M.trace('f')[i:i+1][0]
-        out += f(x)/M._cur_trace_index
+        p = M.trace('p')[i:i+1][0]
+        out += p(x)/M._cur_trace_index
     
     b = basemap.Basemap(*img_extent)
     arr = np.ma.masked_array(out, mask=True-mask)

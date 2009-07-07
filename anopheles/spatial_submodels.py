@@ -2,7 +2,7 @@ import numpy as np
 import cov_prior
 import pymc as pm
 
-__all__ = ['spatial_hill','hill_fn','hinge','step','LRGP','LRRealization','LRGPMetropolis','lr_spatial']
+__all__ = ['spatial_hill','hill_fn','hinge','step','MvNormalLR','lr_spatial']
 
 def hinge(x, cp):
     "A MaxEnt hinge feature"
@@ -83,74 +83,48 @@ def spatial_hill(**kerap):
     bump_eigenvectors = cov_prior.OrthogonalBasis('bump_eigenvectors',2)
     
     @pm.deterministic
-    def f(val = bump_eigenvalues, vec = bump_eigenvectors, ctr = ctr, amp=amp):
+    def p(val = bump_eigenvalues, vec = bump_eigenvectors, ctr = ctr, amp=amp):
         "A stupid hill, using Euclidean distance."
         return hill_fn(val, vec, ctr, amp)
         
     return locals()
 
 
-# ==============================
-# = A spatial-only low-rank GP =
-# ==============================
-class LRRealization(object):
-    def __init__(self, val, x_fr, U, C):
-        self.x_fr = x_fr
-        self.U = U
-        self.C = C
-        self.val = val
-        self.shift(x_fr, U)        
-        
+def mod_matern(x,y,diff_degree,amp,scale,symm=False):
+    "Matern with the mean integrated out."
+    return pm.gp.matern.geo_rad(x,y,diff_degree=diff_degree,amp=amp,scale=scale,symm=symm)+10000
 
-    def shift(self, x_fr, U):
-        "Shifts to a new x_fr or U."
-        self.U = U
-        self.x_fr = x_fr
-        self.krige_wt = pm.gp.trisolve(self.U,pm.gp.trisolve(self.U,self.val,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
+def lrmvn_lp(x, m, piv, U, rl):
+    """
+    lrmvn_lp(x, mu, C)
+    
+    Low-rank multivariate normal log-likelihood
+    """
+    if rl != U.shape[0]:
+        return -np.inf
+    return pm.mv_normal_chol_like(x[piv[:rl]], m[piv[:rl]], U[:rl, :rl].T)
+    
+def rlrmvn(m, piv, U, rl):
+    rl = U.shape[0]
+    U_forrand = U[:,np.argsort(piv)]
+    return np.dot(U_forrand.T, np.random.normal(size=rl))
+    
+MvNormalLR = pm.stochastic_from_dist('MvNormalLR', lrmvn_lp, rlrmvn, mv=True)
 
-    def call_untrans(self, x, U=None, x_fr=None):
-        f_out = None
-
-        # Possibly shift
-        if x_fr is not None:
-            if np.any(x_fr != self.x_fr):
-                self.val = self.call_untrans(x_fr, U, x_fr)                
-                f_out = self.shift(x_fr, U)
-
-        if f_out is None:
-            f_out = np.asarray(np.dot(self.krige_wt,self.C(self.x_fr,x)))
-            
-        return f_out
-
-    def __call__(self, x, U=None, x_fr=None):
-        f_out = self.call_untrans(x, U, x_fr)
-        return pm.invlogit(f_out.ravel()).reshape(x.shape[:-1])
-
-
-def lrgp_lp(value, x, U, rl, C):
-    return pm.mv_normal_chol_like(value.call_untrans(x,U,x), np.zeros(rl), U)
-
-class LRGP(pm.Stochastic):
-    def __init__(self, name, x_fr, U, C):
-        self.rl = x_fr.value.shape[0]
-        pm.Stochastic.__init__(self, doc='', 
-            name=name, 
-            parents={'x': x_fr, 'U': U, 'rl': self.rl, 'C': C}, 
-            logp=lrgp_lp, 
-            value = LRRealization(np.zeros(x_fr.value.shape[:-1]), x_fr.value, U.value, C.value), 
-            dtype=np.dtype('object'))
-
-class LRGPMetropolis(pm.AdaptiveMetropolis):
-    def __init__(self, lrgp, cov=None, delay=1000, scales=None, interval=200, greedy=True, shrink_if_necessary=False, verbose=0, tally=False):
+class MVNLRMetropolis(pm.AdaptiveMetropolis):
+    def __init__(self, mvnlr, cov=None, delay=1000, scales=None, interval=200, greedy=True, shrink_if_necessary=False, verbose=0, tally=False):
         
         # Verbosity flag
         self.verbose = verbose
         
         self.accepted = 0
         self.rejected = 0
-        self.lrgp = lrgp
+        self.mvnlr = mvnlr
+        self.piv = mvnlr.parents['piv']
+        self.U = mvnlr.parents['U']
+        self.rl = mvnlr.parents['rl']
         
-        stochastic = [lrgp]
+        stochastic = [mvnlr]
         # Initialize superclass
         pm.StepMethod.__init__(self, stochastic, verbose, tally)
         
@@ -170,9 +144,9 @@ class LRGPMetropolis(pm.AdaptiveMetropolis):
         self.greedy = greedy
         
         # Call methods to initialize
-        self.isdiscrete = {lrgp: False}
-        self.dim = lrgp.rl
-        self._slices = {lrgp: slice(0,lrgp.rl)}
+        self.isdiscrete = {mvnlr: False}
+        self.dim = self.rl
+        self._slices = {mvnlr: slice(0,self.rl)}
         self.set_cov(cov, scales)
         self.updateproposal_sd()
         
@@ -194,7 +168,7 @@ class LRGPMetropolis(pm.AdaptiveMetropolis):
     
     @classmethod
     def competence(cls,stochastic):
-        if isinstance(stochastic, LRGP):
+        if isinstance(stochastic, MvNormalLR):
             return 3
         else:
             return 0
@@ -225,7 +199,7 @@ class LRGPMetropolis(pm.AdaptiveMetropolis):
             except:
                 ord_sc = []
                 for s in self.stochastics:
-                    this_value = abs(np.ravel(s.value.val))
+                    this_value = abs(np.ravel(s.value[self.piv.value[:self.rl]]))
                     if not this_value.any():
                         this_value = [1.]
                     for elem in this_value:
@@ -238,18 +212,38 @@ class LRGPMetropolis(pm.AdaptiveMetropolis):
 
             
     def propose(self):
-        s = self.lrgp
-        v = s.value
+        s = self.mvnlr
+        piv = self.piv.value
+        v = s.value[piv[:self.rl]]
         jump = np.dot(self.proposal_sd, np.random.normal(size=self.proposal_sd.shape[0]))
         if self.verbose > 2:
             print 'Jump :', jump
-        # Update each stochastic individually.
-        new_val = v.val + jump
-        s.value = LRRealization(new_val, v.x_fr, v.U, v.C)
 
-def mod_matern(x,y,diff_degree,amp,scale,symm=False):
-    "Matern with the mean integrated out."
-    return pm.gp.matern.geo_rad(x,y,diff_degree=diff_degree,amp=amp,scale=scale,symm=symm)+10000
+        new_val = np.empty(s.value.shape)
+        
+        # Jump the full-rank part
+        new_val_fr = v + jump
+        new_val[piv[:self.rl]] = new_val_fr
+        
+        # Jump the non-full-rank part
+        ind_norms = pm.gp.trisolve(self.U.value[:, :self.rl], new_val_fr, uplo='U', transa='T')
+        new_val[piv[self.rl:]] = np.dot(self.U.value[:, self.rl:].T, ind_norms) 
+
+        s.value = new_val
+        
+        
+
+
+class LRP(object):
+    """A closure that can evaluate a low-rank field."""
+    def __init__(self, x_fr, C, krige_wt):
+        self.x_fr = x_fr
+        self.C = C
+        self.krige_wt = krige_wt
+    def __call__(self, x):
+        f_out = np.dot(np.asarray(self.C(x,self.x_fr)), self.krige_wt)
+        return pm.invlogit(f_out).reshape(x.shape[:-1])
+        
     
 def lr_spatial(rl=50,**stuff):
     "A low-rank spatial-only model."
@@ -266,24 +260,27 @@ def lr_spatial(rl=50,**stuff):
         return pm.gp.Covariance(mod_matern, amp=amp, scale=scale, diff_degree=diff_degree)
 
     @pm.deterministic(trace=False)
-    def x_and_U(C=C, rl=rl, x=x_eo):
-        d = C.cholesky(x, rank_limit=rl, apply_pivot=False)
-        piv = d['pivots']
-        U = d['U']
-        return x[piv[:rl]], U[:rl,:rl]
+    def ichol(C=C, rl=rl, x=x_eo):
+        return C.cholesky(x, rank_limit=rl, apply_pivot=False)
+
+    piv = pm.Lambda('piv', lambda d=ichol: d['pivots'])
+    U = pm.Lambda('U', lambda d=ichol: d['U'].view(np.ndarray), trace=False)
 
     # Trace the full-rank locations
-    x_fr = pm.Lambda('x_fr', lambda t=x_and_U: t[0])
-    # Don't trace the Cholesky factor. It may be big.
-    U = x_and_U[1]
+    x_fr = pm.Lambda('x_fr', lambda d=ichol, rl=rl, x=x_eo: x[d['pivots'][:rl]])
 
-    @pm.potential
-    def fr_check(U=U, rl=rl):
-        if U.shape[0]==rl:
-            return 0.
-        else:
-            return -np.inf
-
-    f = LRGP('f', x_fr, U, C)
+    # Evaluation of field at expert-opinion points
+    f_eo = MvNormalLR('f_eo', np.zeros(x_eo.shape[0]), piv, U, rl, value=np.zeros(x_eo.shape[0]))
     
+    in_prob = pm.Lambda('p_in', lambda f_eo=f_eo, n_in=pts_in.shape[0]: np.mean(pm.invlogit(f_eo[:n_in])))
+    out_prob = pm.Lambda('p_out', lambda f_eo=f_eo, n_in=pts_in.shape[0]: np.mean(pm.invlogit(f_eo[n_in:])))    
+    
+    @pm.deterministic(trace=False)
+    def krige_wt(f_eo = f_eo, piv=piv, U=U, rl=rl):
+        U_fr = U[:rl,:rl]
+        f_fr = f_eo[piv[:rl]]
+        return pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
+    
+    p = pm.Lambda('p', lambda x_fr=x_fr, C=C, krige_wt=krige_wt: LRP(x_fr, C, krige_wt))
+        
     return locals()            
