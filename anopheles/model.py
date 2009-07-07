@@ -175,11 +175,11 @@ def presence_map(M, session, species, burn=0, worldwide=True, thin=1, **kwds):
     pl.colorbar()    
     plot_species(session, species[0], species[1], b, negs=True, **kwds)    
 
-def species_MCMC(session, species, spatial_submodel, db=None):
+def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
     if db is None:
-        M=pm.MCMC(make_model(session, species, spatial_submodel), db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
+        M=pm.MCMC(make_model(session, species, spatial_submodel, **kwds), db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
     else:
-        M=pm.MCMC(make_model(session, species, spatial_submodel), db=db)
+        M=pm.MCMC(make_model(session, species, spatial_submodel, **kwds), db=db)
     return M
     
 if __name__ == '__main__':
@@ -191,7 +191,7 @@ if __name__ == '__main__':
     # M = pm.MCMC(m)
 
 
-    M = species_MCMC(s, species[1], lr_spatial)
+    M = species_MCMC(s, species[1], lr_spatial, with_eo = False)
     M.isample(5000,0,10)
         
     presence_map(M, s, species[1], thin=2, burn=300)
