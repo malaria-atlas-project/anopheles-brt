@@ -143,27 +143,27 @@ def lr_spatial(rl=50,**stuff):
     amp = pm.Exponential('amp',.1,value=1)
     scale = pm.Exponential('scale',.1,value=1.)
     diff_degree = pm.Uniform('diff_degree',0,2,value=.5)
-    
+
     pts_in = stuff['pts_in']
     pts_out = stuff['pts_out']
-    x = np.vstack((pts_in, pts_out))
-    
+    x_eo = np.vstack((pts_in, pts_out))
+
     @pm.deterministic
     def C(amp=amp,scale=scale,diff_degree=diff_degree):
         return pm.gp.Covariance(mod_matern, amp=amp, scale=scale, diff_degree=diff_degree)
-        
+
     @pm.deterministic(trace=False)
-    def x_and_U(C=C, rl=rl, x=x):
+    def x_and_U(C=C, rl=rl, x=x_eo):
         d = C.cholesky(x, rank_limit=rl, apply_pivot=False)
         piv = d['pivots']
         U = d['U']
         return x[piv[:U.shape[0]]], U 
-    
+
     # Trace the full-rank locations
     x_fr = pm.Lambda('x_fr', lambda t=x_and_U: t[0])
     # Don't trace the Cholesky factor. It may be big.
     U = x_and_U[1]
-    
+
     @pm.potential
     def fr_check(U=U, rl=rl):
         if U.shape[0]==rl:
@@ -175,6 +175,3 @@ def lr_spatial(rl=50,**stuff):
     
     
     return locals()            
-    
-    
-    
