@@ -193,6 +193,8 @@ if __name__ == '__main__':
 
 
     M = species_MCMC(s, species[1], lr_spatial, with_eo = False)
+    # S=LRGPMetropolis(M.f)
+    # S.step()
     M.isample(5000,0,10)
         
     # presence_map(M, s, species[1], thin=2, burn=300)

@@ -2,7 +2,7 @@ import numpy as np
 import cov_prior
 import pymc as pm
 
-__all__ = ['spatial_hill','hill_fn','hinge','step','krige_fn','lr_spatial']
+__all__ = ['spatial_hill','hill_fn','hinge','step','LRGP','LRRealization','LRGPMetropolis','lr_spatial']
 
 def hinge(x, cp):
     "A MaxEnt hinge feature"
@@ -93,11 +93,11 @@ def spatial_hill(**kerap):
 # ==============================
 # = A spatial-only low-rank GP =
 # ==============================
-class krige_fn(object):
-    """docstring for krige_fn"""
-    def __init__(self, val, x_fr, U):
+class LRRealization(object):
+    def __init__(self, val, x_fr, U, C):
         self.x_fr = x_fr
         self.U = U
+        self.C = C
         self.val = val
         self.shift(x_fr, U)        
         
@@ -108,31 +108,144 @@ class krige_fn(object):
         self.x_fr = x_fr
         self.krige_wt = pm.gp.trisolve(self.U,pm.gp.trisolve(self.U,self.val,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
 
-    def __call__(self, x, U=None, x_fr=None):
+    def call_untrans(self, x, U=None, x_fr=None):
         f_out = None
 
         # Possibly shift
-        if U is not None:
-            if U is not self.U:
-                self.val = self(x_fr)                
+        if x_fr is not None:
+            if np.any(x_fr != self.x_fr):
+                self.val = self.call_untrans(x_fr, U, x_fr)                
                 f_out = self.shift(x_fr, U)
 
         if f_out is None:
             f_out = np.asarray(np.dot(self.krige_wt,self.C(self.x_fr,x)))
-        return pm.invlogit(x_out.ravel()).reshape(x.shape[:-1])
+            
+        return f_out
+
+    def __call__(self, x, U=None, x_fr=None):
+        f_out = self.call_untrans(x, U, x_fr)
+        return pm.invlogit(f_out.ravel()).reshape(x.shape[:-1])
 
 
-# FIXME: Fill these in!
-class krige_fn_stepper(pm.AdaptiveMetropolis):
-    pass
-    
-class KrigeFn(pm.Stochastic):
-    def __init__(self, name, x_fr, U):
-        self.rl = x_fr.shape[0]
-        def lpf(value, x, U):
-            return pm.mv_normal_chol_like(value(x, U), np.zeros(self.rl), U)
-        pm.Stochastic.__init__(self, name, {'x': x_fr, 'U': U}, logp=lpf)
+def lrgp_lp(value, x, U, rl, C):
+    return pm.mv_normal_chol_like(value.call_untrans(x,U,x), np.zeros(rl), U)
+
+class LRGP(pm.Stochastic):
+    def __init__(self, name, x_fr, U, C):
+        self.rl = x_fr.value.shape[0]
+        pm.Stochastic.__init__(self, doc='', 
+            name=name, 
+            parents={'x': x_fr, 'U': U, 'rl': self.rl, 'C': C}, 
+            logp=lrgp_lp, 
+            value = LRRealization(np.zeros(x_fr.value.shape[:-1]), x_fr.value, U.value, C.value), 
+            dtype=np.dtype('object'))
+
+class LRGPMetropolis(pm.AdaptiveMetropolis):
+    def __init__(self, lrgp, cov=None, delay=1000, scales=None, interval=200, greedy=True, shrink_if_necessary=False, verbose=0, tally=False):
         
+        # Verbosity flag
+        self.verbose = verbose
+        
+        self.accepted = 0
+        self.rejected = 0
+        self.lrgp = lrgp
+        
+        stochastic = [lrgp]
+        # Initialize superclass
+        pm.StepMethod.__init__(self, stochastic, verbose, tally)
+        
+        self._id = 'AdaptiveMetropolis_'+'_'.join([p.__name__ for p in self.stochastics])
+        # State variables used to restore the state in a latter session.
+        self._state += ['accepted', 'rejected', '_trace_count', '_current_iter', 'C', 'proposal_sd',
+        '_proposal_deviate', '_trace']
+        self._tuning_info = ['C']
+        
+        self.proposal_sd = None
+        
+        # Number of successful steps before the empirical covariance is computed
+        self.delay = delay
+        # Interval between covariance updates
+        self.interval = interval
+        # Flag for tallying only accepted jumps until delay reached
+        self.greedy = greedy
+        
+        # Call methods to initialize
+        self.isdiscrete = {lrgp: False}
+        self.dim = lrgp.rl
+        self._slices = {lrgp: slice(0,lrgp.rl)}
+        self.set_cov(cov, scales)
+        self.updateproposal_sd()
+        
+        # Keep track of the internal trace length
+        # It may be different from the iteration count since greedy
+        # sampling can be done during warm-up period.
+        self._trace_count = 0
+        self._current_iter = 0
+        
+        self._proposal_deviate = np.zeros(self.dim)
+        self.chain_mean = np.asmatrix(np.zeros(self.dim))
+        self._trace = []
+        
+        if self.verbose >= 1:
+            print "Initialization..."
+            print 'Dimension: ', self.dim
+            print "C_0: ", self.C
+            print "Sigma: ", self.proposal_sd
+    
+    @classmethod
+    def competence(cls,stochastic):
+        if isinstance(stochastic, LRGP):
+            return 3
+        else:
+            return 0
+    
+    def set_cov(self, cov=None, scales={}, trace=2000, scaling=50):
+        """Define C, the jump distributioin covariance matrix.
+
+        Return:
+            - cov,  if cov != None
+            - covariance matrix built from the scales dictionary if scales!=None
+            - covariance matrix estimated from the stochastics last trace values.
+            - covariance matrix estimated from the stochastics value, scaled by
+                scaling parameter.
+        """
+
+        if cov is not None:
+            self.C = cov
+        elif scales:
+            # Get array of scales
+            ord_sc = self.order_scales(scales)
+            # Scale identity matrix
+            self.C = np.eye(self.dim)*ord_sc
+        else:
+            try:
+                a = self.trace2array(-trace, -1)
+                nz = a[:, 0]!=0
+                self.C = np.cov(a[nz, :], rowvar=0)
+            except:
+                ord_sc = []
+                for s in self.stochastics:
+                    this_value = abs(np.ravel(s.value.val))
+                    if not this_value.any():
+                        this_value = [1.]
+                    for elem in this_value:
+                        ord_sc.append(elem)
+                # print len(ord_sc), self.dim
+                for i in xrange(len(ord_sc)):
+                    if ord_sc[i] == 0:
+                        ord_sc[i] = 1
+                self.C = np.eye(self.dim)*ord_sc/scaling
+
+            
+    def propose(self):
+        s = self.lrgp
+        v = s.value
+        jump = np.dot(self.proposal_sd, np.random.normal(size=self.proposal_sd.shape[0]))
+        if self.verbose > 2:
+            print 'Jump :', jump
+        # Update each stochastic individually.
+        new_val = v.val + jump
+        s.value = LRRealization(new_val, v.x_fr, v.U, v.C)
 
 def mod_matern(x,y,diff_degree,amp,scale,symm=False):
     "Matern with the mean integrated out."
@@ -157,7 +270,7 @@ def lr_spatial(rl=50,**stuff):
         d = C.cholesky(x, rank_limit=rl, apply_pivot=False)
         piv = d['pivots']
         U = d['U']
-        return x[piv[:U.shape[0]]], U 
+        return x[piv[:rl]], U[:rl,:rl]
 
     # Trace the full-rank locations
     x_fr = pm.Lambda('x_fr', lambda t=x_and_U: t[0])
@@ -171,7 +284,6 @@ def lr_spatial(rl=50,**stuff):
         else:
             return -np.inf
 
-    f = KrigeFn('f', x_fr, U)
-    
+    f = LRGP('f', x_fr, U, C)
     
     return locals()            
