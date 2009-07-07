@@ -105,36 +105,36 @@ def lr_spatial(rl=50,**stuff):
     amp = pm.Exponential('amp',.1,value=1)
     scale = pm.Exponential('scale',.1,value=.01)
     diff_degree = pm.Uniform('diff_degree',0,2,value=.5)
-    
+
     pts_in = stuff['pts_in']
     pts_out = stuff['pts_out']
-    x = np.vstack((pts_in, pts_out))
-    
+    x_eo = np.vstack((pts_in, pts_out))
+
     @pm.deterministic
     def C(amp=amp,scale=scale,diff_degree=diff_degree):
         return pm.gp.Covariance(mod_matern, amp=amp, scale=scale, diff_degree=diff_degree)
-        
+
     @pm.deterministic(trace=False)
-    def x_and_U(C=C, rl=rl, x=x):
+    def x_and_U(C=C, rl=rl, x=x_eo):
         d = C.cholesky(x, rank_limit=rl, apply_pivot=False)
         piv = d['pivots']
         U = d['U']
         return x[piv[:U.shape[0]]], U 
-    
+
     # Trace the full-rank locations
     x_fr = pm.Lambda('x_fr', lambda t=x_and_U: t[0])
     # Don't trace the Cholesky factor. It may be big.
     U = x_and_U[1]
-    
+
     @pm.potential
     def fr_check(U=U, rl=rl):
         if U.shape[0]==rl:
             return 0.
         else:
             return -np.inf
-    
+
     f_mesh = pm.Uninformative('f_mesh',np.zeros(rl))
-    
+
     @pm.deterministic
     def krige_wt(x_fr=x_fr, U=U, rl=rl, C=C, f_mesh=f_mesh):
         return pm.gp.trisolve(U,pm.gp.trisolve(U,f_mesh,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
@@ -142,15 +142,10 @@ def lr_spatial(rl=50,**stuff):
     @pm.potential
     def f_logp(U=U, krige_wt=krige_wt, f_mesh=f_mesh, rl=rl):
         return -.5*np.sum(np.log(2.*np.pi) + np.log(np.diag(U))) - .5*np.dot(f_mesh, krige_wt)
-    
+
     # The 'rest' of the GP
     @pm.deterministic
     def f(krige_wt=krige_wt, x_fr=x_fr, C=C):
         return krige_fn(krige_wt, x_fr, C)
-        
+
     return locals()
-        
-            
-    
-    
-    
