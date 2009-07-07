@@ -203,8 +203,8 @@ if __name__ == '__main__':
     sf=M.step_method_dict[M.f_eo][0]
     ss=M.step_method_dict[M.p_find][0]
         
-    # presence_map(M, s, species[1], thin=2, burn=300)
+    presence_map(M, s, species[1], thin=2, burn=200)
     
-    # p_atfound = probability_traces(M)
-    # p_atnotfound = probability_traces(M,False)
+    p_atfound = probability_traces(M)
+    p_atnotfound = probability_traces(M,False)
         
