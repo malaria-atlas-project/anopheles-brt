@@ -116,58 +116,11 @@ MvNormalLR = pm.stochastic_from_dist('MvNormalLR', lrmvn_lp, rlrmvn, mv=True)
 
 class MVNLRMetropolis(pm.AdaptiveMetropolis):
     def __init__(self, mvnlr, cov=None, delay=1000, scales=None, interval=200, greedy=True, shrink_if_necessary=False, verbose=0, tally=False):
-        
-        # Verbosity flag
-        self.verbose = verbose
-        
-        self.accepted = 0
-        self.rejected = 0
+        pm.AdaptiveMetropolis.__init__(self, mvnlr, cov, delay, scales, interval, greedy, shrink_if_necessary,verbose, tally)
         self.mvnlr = mvnlr
         self.piv = mvnlr.parents['piv']
         self.U = mvnlr.parents['U']
         self.rl = mvnlr.parents['rl']
-        
-        stochastic = [mvnlr]
-        # Initialize superclass
-        pm.StepMethod.__init__(self, stochastic, verbose, tally)
-        
-        self._id = 'AdaptiveMetropolis_'+'_'.join([p.__name__ for p in self.stochastics])
-        # State variables used to restore the state in a latter session.
-        self._state += ['accepted', 'rejected', '_trace_count', '_current_iter', 'C', 'proposal_sd',
-        '_proposal_deviate', '_trace']
-        self._tuning_info = ['C']
-        
-        self.proposal_sd = None
-        
-        # Number of successful steps before the empirical covariance is computed
-        self.delay = delay
-        # Interval between covariance updates
-        self.interval = interval
-        # Flag for tallying only accepted jumps until delay reached
-        self.greedy = greedy
-        
-        # Call methods to initialize
-        self.isdiscrete = {mvnlr: False}
-        self.dim = self.rl
-        self._slices = {mvnlr: slice(0,self.rl)}
-        self.set_cov(cov, scales)
-        self.updateproposal_sd()
-        
-        # Keep track of the internal trace length
-        # It may be different from the iteration count since greedy
-        # sampling can be done during warm-up period.
-        self._trace_count = 0
-        self._current_iter = 0
-        
-        self._proposal_deviate = np.zeros(self.dim)
-        self.chain_mean = np.asmatrix(np.zeros(self.dim))
-        self._trace = []
-        
-        if self.verbose >= 1:
-            print "Initialization..."
-            print 'Dimension: ', self.dim
-            print "C_0: ", self.C
-            print "Sigma: ", self.proposal_sd
     
     @classmethod
     def competence(cls,stochastic):
@@ -175,45 +128,15 @@ class MVNLRMetropolis(pm.AdaptiveMetropolis):
             return 3
         else:
             return 0
-    
-    def set_cov(self, cov=None, scales={}, trace=2000, scaling=50):
+
+    def covariance_adjustment(self, f=.9):
+        """Multiply self.proposal_sd by a factor f. This is useful when the current proposal_sd is too large and all jumps are rejected.
         """
-        Define C, the jump distributioin covariance matrix.
+        pass
 
-        Return:
-            - cov,  if cov != None
-            - covariance matrix built from the scales dictionary if scales!=None
-            - covariance matrix estimated from the stochastics last trace values.
-            - covariance matrix estimated from the stochastics value, scaled by
-                scaling parameter.
-        """
-
-        if cov is not None:
-            self.C = cov
-        elif scales:
-            # Get array of scales
-            ord_sc = self.order_scales(scales)
-            # Scale identity matrix
-            self.C = np.eye(self.dim)*ord_sc
-        else:
-            try:
-                a = self.trace2array(-trace, -1)
-                nz = a[:, 0]!=0
-                self.C = np.cov(a[nz, :], rowvar=0)
-            except:
-                ord_sc = []
-                for s in self.stochastics:
-                    this_value = abs(np.ravel(s.value[self.piv.value[:self.rl]]))
-                    if not this_value.any():
-                        this_value = [1.]
-                    for elem in this_value:
-                        ord_sc.append(elem)
-                # print len(ord_sc), self.dim
-                for i in xrange(len(ord_sc)):
-                    if ord_sc[i] == 0:
-                        ord_sc[i] = 1
-                self.C = np.eye(self.dim)*ord_sc/scaling
-
+    def updateproposal_sd(self):
+        """Compute the Cholesky decomposition of self.C."""
+        pass
             
     def propose(self):
         
@@ -222,7 +145,7 @@ class MVNLRMetropolis(pm.AdaptiveMetropolis):
         
         piv = self.piv.value
         v = self.mvnlr.value[piv[:self.rl]]
-        jump = np.dot(self.proposal_sd, np.random.normal(size=self.proposal_sd.shape[0]))
+        jump = pm.rmv_normal_cov(np.zeros(self.rl), self.C[piv[:self.rl], :][:,piv[:self.rl]])
         if self.verbose > 2:
             print 'Jump :', jump
 
