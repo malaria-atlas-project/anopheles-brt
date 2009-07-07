@@ -185,6 +185,8 @@ def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
         M=pm.MCMC(make_model(session, species, spatial_submodel, **kwds), db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
     else:
         M=pm.MCMC(make_model(session, species, spatial_submodel, **kwds), db=db)
+    scalar_stochastics = filter(lambda s: np.prod(np.shape(s.value))<=1, M.stochastics)
+    M.use_step_method(pm.AdaptiveMetropolis, scalar_stochastics)
     return M
     
 if __name__ == '__main__':
@@ -197,12 +199,12 @@ if __name__ == '__main__':
 
 
     M = species_MCMC(s, species[1], lr_spatial, with_eo = False)
-    # S=LRGPMetropolis(M.f)
-    # S.step()
     M.isample(5000,0,10)
+    sf=M.step_method_dict[M.f_eo][0]
+    ss=M.step_method_dict[M.p_find][0]
         
     # presence_map(M, s, species[1], thin=2, burn=300)
     
-    p_atfound = probability_traces(M)
-    p_atnotfound = probability_traces(M,False)
+    # p_atfound = probability_traces(M)
+    # p_atnotfound = probability_traces(M,False)
         

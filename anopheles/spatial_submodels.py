@@ -2,7 +2,7 @@ import numpy as np
 import cov_prior
 import pymc as pm
 
-__all__ = ['spatial_hill','hill_fn','hinge','step','MvNormalLR','lr_spatial']
+__all__ = ['spatial_hill','hill_fn','hinge','step','MvNormalLR','lr_spatial','MVNLRMetropolis']
 
 def hinge(x, cp):
     "A MaxEnt hinge feature"
@@ -90,8 +90,11 @@ def spatial_hill(**kerap):
     return locals()
 
 
+# =======================================
+# = The spatial-only, low-rank submodel =
+# =======================================
 def mod_matern(x,y,diff_degree,amp,scale,symm=False):
-    "Matern with the mean integrated out."
+    """Matern with the mean integrated out."""
     return pm.gp.matern.geo_rad(x,y,diff_degree=diff_degree,amp=amp,scale=scale,symm=symm)+10000
 
 def lrmvn_lp(x, m, piv, U, rl):
@@ -174,7 +177,8 @@ class MVNLRMetropolis(pm.AdaptiveMetropolis):
             return 0
     
     def set_cov(self, cov=None, scales={}, trace=2000, scaling=50):
-        """Define C, the jump distributioin covariance matrix.
+        """
+        Define C, the jump distributioin covariance matrix.
 
         Return:
             - cov,  if cov != None
@@ -212,28 +216,29 @@ class MVNLRMetropolis(pm.AdaptiveMetropolis):
 
             
     def propose(self):
-        s = self.mvnlr
+        
+        # from IPython.Debugger import Pdb
+        # Pdb(color_scheme='Linux').set_trace()   
+        
         piv = self.piv.value
-        v = s.value[piv[:self.rl]]
+        v = self.mvnlr.value[piv[:self.rl]]
         jump = np.dot(self.proposal_sd, np.random.normal(size=self.proposal_sd.shape[0]))
         if self.verbose > 2:
             print 'Jump :', jump
 
-        new_val = np.empty(s.value.shape)
+        new_val = np.empty(self.mvnlr.value.shape)
         
         # Jump the full-rank part
         new_val_fr = v + jump
         new_val[piv[:self.rl]] = new_val_fr
         
-        # Jump the non-full-rank part
+        # Jump the determined part
         ind_norms = pm.gp.trisolve(self.U.value[:, :self.rl], new_val_fr, uplo='U', transa='T')
         new_val[piv[self.rl:]] = np.dot(self.U.value[:, self.rl:].T, ind_norms) 
 
-        s.value = new_val
+        self.mvnlr.value = new_val
         
         
-
-
 class LRP(object):
     """A closure that can evaluate a low-rank field."""
     def __init__(self, x_fr, C, krige_wt):
@@ -246,7 +251,7 @@ class LRP(object):
         
     
 def lr_spatial(rl=50,**stuff):
-    "A low-rank spatial-only model."
+    """A low-rank spatial-only model."""
     amp = pm.Exponential('amp',.1,value=1)
     scale = pm.Exponential('scale',.1,value=1.)
     diff_degree = pm.Uniform('diff_degree',0,2,value=.5)
@@ -270,10 +275,10 @@ def lr_spatial(rl=50,**stuff):
     x_fr = pm.Lambda('x_fr', lambda d=ichol, rl=rl, x=x_eo: x[d['pivots'][:rl]])
 
     # Evaluation of field at expert-opinion points
-    f_eo = MvNormalLR('f_eo', np.zeros(x_eo.shape[0]), piv, U, rl, value=np.zeros(x_eo.shape[0]))
+    f_eo = MvNormalLR('f_eo', np.zeros(x_eo.shape[0]), piv, U, rl, value=np.zeros(x_eo.shape[0]), trace=False)
     
-    in_prob = pm.Lambda('p_in', lambda f_eo=f_eo, n_in=pts_in.shape[0]: np.mean(pm.invlogit(f_eo[:n_in])))
-    out_prob = pm.Lambda('p_out', lambda f_eo=f_eo, n_in=pts_in.shape[0]: np.mean(pm.invlogit(f_eo[n_in:])))    
+    in_prob = pm.Lambda('in_prob', lambda f_eo=f_eo, n_in=pts_in.shape[0]: np.mean(pm.invlogit(f_eo[:n_in])))
+    out_prob = pm.Lambda('out_prob', lambda f_eo=f_eo, n_in=pts_in.shape[0]: np.mean(pm.invlogit(f_eo[n_in:])))    
     
     @pm.deterministic(trace=False)
     def krige_wt(f_eo = f_eo, piv=piv, U=U, rl=rl):
