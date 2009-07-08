@@ -5,9 +5,19 @@ from sqlalchemygeom import *
 
 session = Session()
 
-"""
-obtain a list of anophelines
-"""
+class RawQuery(object):
+    """
+    Emulates the behaviour of session.query
+    used to enable lazy querying of raw sql
+    """
+    def __init__(self, session, sql):
+        self.session = session
+        self.sql = sql
+
+    def all(self):
+        result_proxy = self.session.execute(self.sql)
+        return result_proxy.fetchall()
+
 sampleperiod_subq = session.query(
     SamplePeriod.anopheline_id,
     func.count(func.distinct(SamplePeriod.site_id)).label('site_count'),
@@ -21,30 +31,42 @@ point_subq = session.query(
 
 q = session.query(Anopheline.name,
     func.coalesce(sampleperiod_subq.c.site_count,0),
-    #func.coalesce(select([func.count().label('point_count')]).where(sampleperiod_subq.c.anopheline_id=Anopheline.id).as_scalar(),0),
     func.coalesce(sampleperiod_subq.c.sampleperiod_count, 0)
-    )
+    ).order_by(Anopheline.name.desc())
 
-q = q.outerjoin((sampleperiod_subq, Anopheline.id==sampleperiod_subq.c.anopheline_id))
-#q = q.outerjoin((point_subq, Anopheline.id==point_subq.c.anopheline_id))
-
-
-sites_in_sea = session.query(Site).filter(and_(not_(func.intersects(Site.geom, AdminUnit.geom)),AdminUnit.admin_level_id=='0'))
-
-world = session.query(Site)[0]
+sites_and_sample_period_by_species = q.outerjoin((sampleperiod_subq, Anopheline.id==sampleperiod_subq.c.anopheline_id))
 
 
+#sites_in_sea = session.query(Site).filter(and_(not_(func.intersects(Site.geom, AdminUnit.geom)),AdminUnit.admin_level_id=='0'))
 
-#positive_absences = session.query(Site
+sites_by_species_and_areatype = RawQuery(session,
+"""
+select
+a.name,
+(select count(*) from site where geom is not null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as all_sites,
+(select count(*) from site where area_type = 'point' and geom is not null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as point_count,
+(select count(*) from site where area_type = 'polygon small' and geom is not null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as polygon_small,
+(select count(*) from site where area_type = 'polygon large' and geom is not null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as polygon_large,
+(select count(*) from site where area_type = 'not specified' and geom is not null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as not_specified,
+(select count(*) from site where area_type = 'wide area' and geom is not null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as wide_area,
+(select count(*) from site where geom is null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as all_sites_null_geom,
+(select count(*) from site where area_type = 'point' and geom is null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as point_count_null_geom,
+(select count(*) from site where area_type = 'polygon small' and geom is null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as polygon_small_null_geom,
+(select count(*) from site where area_type = 'polygon large' and geom is null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as polygon_large_null_geom,
+(select count(*) from site where area_type = 'not specified' and geom is null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as not_specified_null_geom,
+(select count(*) from site where area_type = 'wide area' and geom is null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as wide_area_null_geom
+from vector_anopheline a
+order by a.name desc;
+"""
+)
 
-#select a.name, coalesce(ss.site_count, 0), coalesce(ss.temporally_unique, 0)
-#from vector_anopheline a
-#left join
-#(
-#select vp.anopheline_id, count(distinct(vp.site_id)) as site_count, count(vp.anopheline_id) as temporally_unique from vector_sampleperiod vsp inner join vector_presence vp
-#on vsp.vector_presence_id = vp.id
-#group by vp.anopheline_id
-#)
-#as ss
-#on a.id = ss.anopheline_id
-#) to /tmp/excel2.txt
+missing_coords = RawQuery(session,
+"""
+select s.site_id, min(source_id), count(*) as x 
+from site s, vector_presence vp
+where geom is null
+and s.site_id = vp.site_id
+group by s.site_id
+order by x asc;
+"""
+)

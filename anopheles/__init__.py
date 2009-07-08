@@ -10,4 +10,4 @@ try:
 except ImportError:
     print 'Failed to import utils'
     
-from testsuite import test
+#from testsuite import test

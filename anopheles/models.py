@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from sqlalchemy import  Table, Column, Integer, String, MetaData, ForeignKey, Boolean, create_engine
+from sqlalchemy import  Table, Column, Integer, String, Float, MetaData, ForeignKey, Boolean, create_engine
 from sqlalchemygeom import Geometry
 from sqlalchemy.orm import relation, join
 from sqlalchemy.orm import sessionmaker
@@ -98,15 +98,41 @@ class AdminUnit(Base):
     Represents a vector sample at a location. May have a specified time period.
     vector_site_sample_period is a view which aggregates samples across studies. 
     """
-    __tablename__ = "gis_adminunit"
+    __tablename__ = "adminunit"
     id = Column(Integer, primary_key=True)
     geom = Column(Geometry(4326))
     admin_level_id = Column(String)
-    parent_id  = Column(Integer, ForeignKey('gis_adminunit.id'))
+    parent_id  = Column(Integer, ForeignKey('adminunit.id'))
     name = Column(String)
     dublin_core_id = Column(Integer)
     gaul_code = Column(Integer)
 
+class LayerStyle(Base):
+    __tablename__ = "vector_layerstyle"
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    fill_color = Column(String)
+    line_color = Column(String)
+    line_width = Column(String)
+    opacity = Column(Float)
+
+class Map(Base):
+    __tablename__ = "vector_map"
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+
+class AnophelineLayer(Base):
+    __tablename__ = "vector_anophelinelayer"
+    id = Column(Integer, primary_key=True)
+    ordinal = Column(Integer)
+    map_id = Column(Integer, ForeignKey('vector_map.id'))
+    map = relation(Map, backref="anopheline_layers")
+    style_id = Column(Integer, ForeignKey('vector_layerstyle.id'))
+    style = relation(LayerStyle, backref="anopheline_layer")
+    anopheline_id = Column(Integer, ForeignKey('vector_anopheline.id'))
+    anopheline = relation(Anopheline, backref="anopheline_layer")
+    class Meta:
+        ordering = ('ordinal',)
 
 class World(Base):
     """
