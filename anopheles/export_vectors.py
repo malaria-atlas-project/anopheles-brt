@@ -94,7 +94,7 @@ class VectorRow(object):
             print "WTF: ", fns
             raise ValueError
 
-site_sample_periods = SiteSamplePeriod.objects.all()[0:1000]
+site_sample_periods = SiteSamplePeriod.objects.filter(site__country='Kenya')
 writer = csv.writer(open('/tmp/rectangular_database.csv', "w"))
 writer.writerow(HEADER_FIELDS)
 
