@@ -137,41 +137,49 @@ def potential_traces(M, in_or_out = 'in'):
     import pylab as pl
     pl.plot(a/(a+b))
     
-def presence_map(M, session, species, burn=0, worldwide=True, thin=1, **kwds):
-    "Converts the trace to a map of presence probability."
-    
+def make_covering_raster(thin=1, worldwide=True, **kwds):
     # FIXME: Use the proper land-sea mask, served from the db, to do this.
     import mbgw
     from mbgw import auxiliary_data
-    from mpl_toolkits import basemap
-    import pylab as pl
-    
+
+
     a=getattr(mbgw.auxiliary_data,'landSea-e')
-    
+
     lon = a.long[::thin]
     lat = a.lat[::thin][::-1]
     # mask = a.data[::thin,::thin]
     mask = grid_convert(a.data[::thin,::thin],'y-x+','x+y-')
-    
+
     extent = [-180,-90,180,90]
-    
+
     if not worldwide:
-        extent = map_extents(pos_recs, eo)
+        extent = map_extents(kwds['pos_recs'], kwds['eo'])
         where_inlon = np.where((lon>=extent[0]) * (lon <= extent[2]))
         where_inlat = np.where((lon>=extent[0]) * (lon <= extent[2]))        
         lon = lon[where_inlon]
         lat = lat[where_inlat]
         mask = mask[where_inlon,:][:,where_inlat]
-        
+
     img_extent = [lon.min(), lat.min(), lon.max(), lat.max()]
-        
+
     lat_grid, lon_grid = np.meshgrid(lat*np.pi/180.,lon*np.pi/180.)
     x=np.dstack((lon_grid,lat_grid))
+    return mask, x, img_extent
+
+    
+def presence_map(M, session, species, burn=0, worldwide=True, thin=1, trace_thin=1, **kwds):
+    "Converts the trace to a map of presence probability."
+    
+    from mpl_toolkits import basemap
+    import pylab as pl
+    
+    mask, x, img_extent = make_covering_raster(thin, worldwide, **kwds)
     out = np.zeros(mask.shape)
 
-    for i in xrange(M._cur_trace_index):
-        p = M.trace('p')[i:i+1][0]
-        out += p(x)/M._cur_trace_index
+    for i in xrange(burn, M._cur_trace_index, trace_thin):
+        p = M.trace('p')[:][i]
+        pe = p(x)
+        out += pe/float(M._cur_trace_index-burn)
     
     b = basemap.Basemap(*img_extent)
     arr = np.ma.masked_array(out, mask=True-mask)
@@ -179,6 +187,7 @@ def presence_map(M, session, species, burn=0, worldwide=True, thin=1, **kwds):
     b.imshow(arr.T, interpolation='nearest')    
     pl.colorbar()    
     plot_species(session, species[0], species[1], b, negs=True, **kwds)    
+    return out, arr
 
 def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
     if db is None:
@@ -196,15 +205,23 @@ if __name__ == '__main__':
     # m=make_model(s, species[1], spatial_hill, with_data=False)
     # m=make_model(s, species[1], lr_spatial)
     # M = pm.MCMC(m)
-
+    
+    from mpl_toolkits import basemap
+    import pylab as pl
 
     M = species_MCMC(s, species[1], lr_spatial, with_eo = False)
-    M.isample(5000,0,10)
+    M.isample(2000,0,10)
     sf=M.step_method_dict[M.f_eo][0]
     ss=M.step_method_dict[M.p_find][0]
+
+    # mask, x, img_extent = make_covering_raster(2)
+    # b = basemap.Basemap(*img_extent)
+    # out = M.p.value(x)
+    # arr = np.ma.masked_array(out, mask=True-mask)
+    # b.imshow(arr.T, interpolation='nearest')
+    # pl.colorbar()
         
-    presence_map(M, s, species[1], thin=2, burn=200)
-    
-    p_atfound = probability_traces(M)
-    p_atnotfound = probability_traces(M,False)
-        
+    out, arr = presence_map(M, s, species[1], thin=5, burn=100, trace_thin=10)
+    # 
+    # p_atfound = probability_traces(M)
+    # p_atnotfound = probability_traces(M,False)
