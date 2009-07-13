@@ -92,7 +92,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     if with_eo:
         # sens_strength = pm.Uninformative('sens_strength',1000,observed=True)
         # spec_strength = pm.Uninformative('spec_strength',1000,observed=True)    
-        if has_key(spatial_variables, 'in_prob'):
+        if spatial_variables.has_key('in_prob'):
             in_prob = spatial_variables['in_prob']
             out_prob = spatial_variables['out_prob']
         else:
@@ -209,8 +209,8 @@ if __name__ == '__main__':
     from mpl_toolkits import basemap
     import pylab as pl
 
-    M = species_MCMC(s, species[1], lr_spatial, with_eo = False)
-    M.isample(2000,0,10)
+    M = species_MCMC(s, species[1], lr_spatial, with_eo = True, with_data=False)
+    M.isample(5000,0,10)
     sf=M.step_method_dict[M.f_eo][0]
     ss=M.step_method_dict[M.p_find][0]
 
@@ -221,7 +221,7 @@ if __name__ == '__main__':
     # b.imshow(arr.T, interpolation='nearest')
     # pl.colorbar()
         
-    out, arr = presence_map(M, s, species[1], thin=5, burn=100, trace_thin=10)
+    out, arr = presence_map(M, s, species[1], thin=5, burn=200, trace_thin=10)
     # 
     # p_atfound = probability_traces(M)
     # p_atnotfound = probability_traces(M,False)
