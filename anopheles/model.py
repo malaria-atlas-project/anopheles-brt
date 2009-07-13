@@ -221,7 +221,7 @@ if __name__ == '__main__':
     # b.imshow(arr.T, interpolation='nearest')
     # pl.colorbar()
         
-    out, arr = presence_map(M, s, species[1], thin=5, burn=200, trace_thin=10)
+    out, arr = presence_map(M, s, species[1], thin=5, burn=200, trace_thin=1)
     # 
     # p_atfound = probability_traces(M)
     # p_atnotfound = probability_traces(M,False)
