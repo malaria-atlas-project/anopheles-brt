@@ -70,3 +70,23 @@ group by s.site_id
 order by x asc;
 """
 )
+
+bad_sequence = RawQuery(session,
+"""
+select distinct(source_id) 
+from vector_presence where site_id in 
+(select site_id as sum_ord from site_latlong
+group by site_id
+having not (
+    (sum(ordinal) = 1 and count(*) = 1) or
+    (sum(ordinal) = 3 and count(*) = 2) or
+    (sum(ordinal) = 6 and count(*) = 3) or
+    (sum(ordinal) = 10 and count(*) = 4) or
+    (sum(ordinal) = 15 and count(*) = 5) or
+    (sum(ordinal) = 21 and count(*) = 6) or
+    (sum(ordinal) = 28 and count(*) = 7) or
+    (sum(ordinal) = 36 and count(*) = 8))
+)
+;
+"""
+)
