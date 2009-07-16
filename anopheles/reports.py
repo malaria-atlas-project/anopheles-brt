@@ -45,15 +45,15 @@ select
 a.name,
 (select count(*) from site where geom is not null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as all_sites,
 (select count(*) from site where area_type = 'point' and geom is not null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as point_count,
+(select count(*) from site where area_type = 'wide area' and geom is not null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as wide_area,
 (select count(*) from site where area_type = 'polygon small' and geom is not null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as polygon_small,
 (select count(*) from site where area_type = 'polygon large' and geom is not null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as polygon_large,
-(select count(*) from site where area_type = 'wide area' and geom is not null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as wide_area,
 (select count(*) from site where area_type = 'not specified' and geom is not null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as not_specified,
 (select count(*) from site where geom is null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as all_sites_null_geom,
 (select count(*) from site where area_type = 'point' and geom is null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as point_count_null_geom,
+(select count(*) from site where area_type = 'wide area' and geom is null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as wide_area_null_geom,
 (select count(*) from site where area_type = 'polygon small' and geom is null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as polygon_small_null_geom,
 (select count(*) from site where area_type = 'polygon large' and geom is null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as polygon_large_null_geom,
-(select count(*) from site where area_type = 'wide area' and geom is null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as wide_area_null_geom,
 (select count(*) from site where area_type = 'not specified' and geom is null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as not_specified_null_geom
 from vector_anopheline a
 order by a.name desc;
@@ -62,22 +62,35 @@ order by a.name desc;
 
 missing_coords = RawQuery(session,
 """
-select vp.source_id, count(*) as count 
-from vector_presence vp, 
-(
-    select s.site_id, count(*) as c 
-    from site s, vector_presence vp
-    where geom is null
-    and s.site_id = vp.site_id
-    group by s.site_id
-) as ss
+select s.author_main, s.author_initials, s.enl_id, ss1.count
+from
+    source s,
+    (select vp.source_id, count(*) as count
+    from vector_presence vp,
+    (
+        select s.site_id, count(*) as c
+        from site s, vector_presence vp
+        where geom is null
+        and s.site_id = vp.site_id
+        group by s.site_id
+    ) as ss
+    where
+    ss.site_id = vp.site_id
+    group by vp.source_id
+    ) as ss1
+    where
+    ss1.source_id = s.enl_id
+order by count;
+"""
+)
 
-where 
-ss.site_id = vp.site_id
-group by vp.source_id
-order by count
-asc
-;
+points_that_are_not_points = RawQuery(session,
+"""
+select distinct source_id, site.full_name, site.site_id from vector_presence, site
+where exists (select * from vector_presence vp where vp.site_id = site.site_id) and vector_presence.site_id in
+(select site_id from site_latlong group by site_id having count(*) > 1) and area_type = 'point'
+and vector_presence.site_id = site.site_id
+order by source_id desc
 """
 )
 
@@ -97,6 +110,18 @@ having not (
     (sum(ordinal) = 28 and count(*) = 7) or
     (sum(ordinal) = 36 and count(*) = 8))
 )
+;
+"""
+)
+
+non_matching_sample_aggregates = RawQuery(session,
+"""
+select source_id, sample_period_id, sample_aggregate_check as ALLN, ss.c as counted from vector_presence vp, vector_sampleperiod vsp, (
+select sample_period_id, sum(count)  as c from vector_sample group by sample_period_id
+) as ss
+where ss.sample_period_id = vsp.id
+and vsp.vector_presence_id = vp.id
+and vsp.sample_aggregate_check <> ss.c
 ;
 """
 )
