@@ -15,8 +15,7 @@
 
 from sqlalchemy import  Table, Column, Integer, String, Float, MetaData, ForeignKey, Boolean, create_engine
 from sqlalchemygeom import Geometry
-from sqlalchemy.orm import relation, join
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import relation, backref, join, mapper, sessionmaker 
 from connection_string import connection_string
 
 engine = create_engine(connection_string, echo=True)
@@ -25,9 +24,17 @@ metadata.bind = engine
 Session = sessionmaker(bind=engine)
 
 from sqlalchemy.ext.declarative import declarative_base
-Base = declarative_base()
+Base = declarative_base(metadata=metadata)
 
-__all__ = ['Anopheline', 'Site', 'ExpertOpinion', 'Presence', 'SamplePeriod', 'Session', 'World', 'AdminUnit']
+__all__ = ['Anopheline', 'Source', 'Site', 'ExpertOpinion', 'Presence', 'SamplePeriod', 'Session', 'World', 'AdminUnit', 'Map', 'Sample',]
+
+unique_species = Table('unique_species', metadata, 
+autoload=True
+)
+
+"""
+update vector_anopheline set anopheline2_id = 
+"""
 
 class Anopheline(Base):
     """
@@ -42,42 +49,72 @@ class Anopheline(Base):
     is_complex  = Column(Boolean)
     def __repr__(self):
         return self.name
+
+class Anopheline2(Base):
+    """
+    """
+    __tablename__ = "vector_anopheline2"
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    abbreviation = Column(String)
+    sub_genus = Column(String)
+    species = Column(String)
+    author = Column(String)
+    is_complex  = Column(Boolean)
+    def __repr__(self):
+        return self.name
     def get_scientific_name(self):
         species = self.species
         if self.is_complex:
             species += '*'
-        name = "<i>An. (%s) %s</i> %s" % (self.sub_genus, species, self.author)
+        name = "<i>Anopheles (%s) %s</i> %s" % (self.sub_genus, species, self.author)
         return name.replace("&", "&amp;")
+
+class Source(Base):
+    __table__ = Table('source', metadata, autoload=True)
 
 class Site(Base):
     """
     Represents a georeferenced site. The geometry returns a multipoint shapely object.
     The sample_periods property returns all sample periods linked to the site, aggregated across all studies.
     """
-    __tablename__ = "site"
-    site_id = Column(Integer, primary_key=True)
+    __table__ = Table('site', metadata, Column('geom', Geometry(4326)), autoload=True)
     sample_periods = relation("SamplePeriod", backref="sites")
-    geom = Column(Geometry(4326))
-    vector_full_name = Column(String)
-    country_from_vectors = Column(String)
-    area_type = Column(String)
 
 class ExpertOpinion(Base):
     __tablename__ = "vector_expertopinion"
     id = Column(Integer, primary_key=True)
     geom = Column(Geometry(4326))
-    anopheline_id = Column(Integer, ForeignKey('vector_anopheline.id'))
-    anopheline = relation(Anopheline, backref="expert_opinion")
+    anopheline2_id = Column(Integer, ForeignKey('vector_anopheline2.id'))
+    anopheline2 = relation(Anopheline2, backref="expert_opinion")
 
 class Presence(Base):
     __tablename__ = "vector_presence"
     id = Column(Integer, primary_key=True)
     anopheline_id = Column(Integer, ForeignKey('vector_anopheline.id'))
     anopheline = relation(Anopheline, backref="presences")
+    anopheline2_id = Column(Integer, ForeignKey('vector_anopheline2.id'))
+    anopheline2 = relation(Anopheline2, backref="presences")
     subspecies_id = Column(Integer)
     site_id = Column(Integer, ForeignKey('site.site_id'))
+    source_id = Column(Integer, ForeignKey('source.enl_id'))
 
 class SamplePeriod(Base):
+    """
+    Represents a vector sample at a location. May have a specified time period.
+    vector_site_sample_period is a view which aggregates samples across studies. 
+    """
+    __tablename__ = "vector_sampleperiod"
+    id = Column(Integer, primary_key=True)
+    site_id = Column(Integer, ForeignKey('site.site_id'))
+    anopheline2_id = Column(Integer, ForeignKey('vector_anopheline2.id'))
+    anopheline2 = relation(Anopheline2, backref="sample_period")
+    start_month = Column(Integer, nullable=True)
+    start_year = Column(Integer, nullable=True)
+    end_month = Column(Integer, nullable=True)
+    end_year = Column(Integer, nullable=True)
+
+class SiteSamplePeriod(Base):
     """
     Represents a vector sample at a location. May have a specified time period.
     vector_site_sample_period is a view which aggregates samples across studies. 
@@ -87,11 +124,22 @@ class SamplePeriod(Base):
     site_id = Column(Integer, ForeignKey('site.site_id'))
     anopheline_id = Column(Integer, ForeignKey('vector_anopheline.id'))
     anopheline = relation(Anopheline, backref="sample_period")
+    anopheline2_id = Column(Integer, ForeignKey('vector_anopheline2.id'))
+    anopheline2 = relation(Anopheline2, backref="site_sample_period")
     start_month = Column(Integer, nullable=True)
     start_year = Column(Integer, nullable=True)
     end_month = Column(Integer, nullable=True)
     end_year = Column(Integer, nullable=True)
     sample_aggregate_check = Column(Integer, nullable=True)
+
+class Sample(Base):
+    """ 
+    A set of mosquitos collected by a specific method 
+    """ 
+    __table__ = Table('vector_sample', metadata, autoload=True)
+
+class Region(Base):
+    __table__ = Table('vector_region', metadata, autoload=True)
 
 class AdminUnit(Base):
     """
@@ -111,26 +159,44 @@ class LayerStyle(Base):
     __tablename__ = "vector_layerstyle"
     id = Column(Integer, primary_key=True)
     name = Column(String)
-    fill_color = Column(String)
-    line_color = Column(String)
+    fill_colour = Column(String)
+    line_colour = Column(String)
     line_width = Column(String)
     opacity = Column(Float)
+    def to_rgba(self, key):
+        hex = self.__getattribute__(key)
+        return float(int(hex[1:3], 16))/255,float(int(hex[3:5], 16))/255,float(int(hex[5:7], 16))/255,self.opacity
 
 class Map(Base):
     __tablename__ = "vector_map"
     id = Column(Integer, primary_key=True)
     name = Column(String)
+    abbreviation = Column(String)
+    sub_genus = Column(String)
+    species = Column(String)
+    author = Column(String)
+    is_complex  = Column(Boolean)
+    region_id = Column(Integer, ForeignKey('vector_region.id'))
+    region = relation(Region, backref="vector_map")
+    def get_scientific_name(self):
+        species = self.species
+        if self.is_complex:
+            species += '*'
+        name = "<i>Anopheles (%s) %s</i> %s" % (self.sub_genus, species, self.author)
+        return name.replace("&", "&amp;")
 
 class AnophelineLayer(Base):
     __tablename__ = "vector_anophelinelayer"
     id = Column(Integer, primary_key=True)
     ordinal = Column(Integer)
     map_id = Column(Integer, ForeignKey('vector_map.id'))
-    map = relation(Map, backref="anopheline_layers")
+    map = relation(Map, backref=backref("anopheline_layers", order_by=ordinal))
     style_id = Column(Integer, ForeignKey('vector_layerstyle.id'))
     style = relation(LayerStyle, backref="anopheline_layer")
-    anopheline_id = Column(Integer, ForeignKey('vector_anopheline.id'))
-    anopheline = relation(Anopheline, backref="anopheline_layer")
+    layer_type = Column(String)
+    is_presence = Column(Boolean, nullable=True)
+    anopheline2_id = Column(Integer, ForeignKey('vector_anopheline2.id'))
+    anopheline2 = relation(Anopheline2, backref="anopheline_layer")
     class Meta:
         ordering = ('ordinal',)
 

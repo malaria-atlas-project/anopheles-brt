@@ -19,22 +19,22 @@ class RawQuery(object):
         return result_proxy.fetchall()
 
 sampleperiod_subq = session.query(
-    SamplePeriod.anopheline_id,
+    SamplePeriod.anopheline2_id,
     func.count(func.distinct(SamplePeriod.site_id)).label('site_count'),
     func.count('*').label('sampleperiod_count')
-    ).group_by(SamplePeriod.anopheline_id).subquery()
+    ).group_by(SamplePeriod.anopheline2_id).subquery()
 
 point_subq = session.query(
-    SamplePeriod.anopheline_id,
+    SamplePeriod.anopheline2_id,
     func.count('*').label('count')
-    ).filter(Site.area_type=='point').filter(exists().where(SamplePeriod.site_id==Site.site_id)).filter(Anopheline.id==SamplePeriod.anopheline_id)
+    ).filter(Site.area_type=='point').filter(exists().where(SamplePeriod.site_id==Site.site_id)).filter(Anopheline.id==SamplePeriod.anopheline2_id)
 
 q = session.query(Anopheline.name,
     func.coalesce(sampleperiod_subq.c.site_count,0),
     func.coalesce(sampleperiod_subq.c.sampleperiod_count, 0)
     ).order_by(Anopheline.name.desc())
 
-sites_and_sample_period_by_species = q.outerjoin((sampleperiod_subq, Anopheline.id==sampleperiod_subq.c.anopheline_id))
+sites_and_sample_period_by_species = q.outerjoin((sampleperiod_subq, Anopheline.id==sampleperiod_subq.c.anopheline2_id))
 
 
 #sites_in_sea = session.query(Site).filter(and_(not_(func.intersects(Site.geom, AdminUnit.geom)),AdminUnit.admin_level_id=='0'))
@@ -125,3 +125,20 @@ and vsp.sample_aggregate_check <> ss.c
 ;
 """
 )
+
+unique_sp = RawQuery(session,
+"""
+select va.name, vss.name, ss.complex, count from 
+(select count(*), anopheline_id, subspecies_id, complex from vector_presence
+group by 
+anopheline_id, subspecies_id, complex
+)
+as ss 
+left join
+vector_subspecies vss on vss.id = ss.subspecies_id
+left join
+vector_anopheline va on va.id = ss.anopheline_id
+order by va.name, vss.name, ss.complex;
+"""
+)
+
