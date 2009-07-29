@@ -125,3 +125,17 @@ and vsp.sample_aggregate_check <> ss.c
 ;
 """
 )
+
+extra_points = RawQuery(session,
+"""
+select vp1.source_id, vp1.site_id, (select full_name from site sss where sss.site_id = vp1.site_id) from vector_presence vp1 where vp1.site_id in (
+select sll.site_id from site s, site_latlong sll 
+where s.site_id = sll.site_id 
+and s.area_type in ('point', 'wide area')
+and exists(select * from vector_presence where s.site_id = vector_presence.site_id)
+group by sll.site_id
+having count(*) > 1
+)
+group by vp1.source_id, vp1.site_id
+"""
+)
