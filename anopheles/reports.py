@@ -126,19 +126,32 @@ and vsp.sample_aggregate_check <> ss.c
 """
 )
 
-unique_sp = RawQuery(session,
+extra_points = RawQuery(session,
 """
+<<<<<<< HEAD:anopheles/reports.py
 select va.name, vss.name, ss.complex, count from 
 (select count(*), anopheline_id, subspecies_id, complex from vector_presence
 group by 
 anopheline_id, subspecies_id, complex
+=======
+select vp1.source_id, vp1.site_id, (select full_name from site sss where sss.site_id = vp1.site_id) from vector_presence vp1 where vp1.site_id in (
+select sll.site_id from site s, site_latlong sll 
+where s.site_id = sll.site_id 
+and s.area_type in ('point', 'wide area')
+and exists(select * from vector_presence where s.site_id = vector_presence.site_id)
+group by sll.site_id
+having count(*) > 1
+>>>>>>> 39ff8d34fa94a0b9889bf60272e999296e6ca566:anopheles/reports.py
 )
+<<<<<<< HEAD:anopheles/reports.py
 as ss 
 left join
 vector_subspecies vss on vss.id = ss.subspecies_id
 left join
 vector_anopheline va on va.id = ss.anopheline_id
 order by va.name, vss.name, ss.complex;
+=======
+group by vp1.source_id, vp1.site_id
+>>>>>>> 39ff8d34fa94a0b9889bf60272e999296e6ca566:anopheles/reports.py
 """
 )
-
