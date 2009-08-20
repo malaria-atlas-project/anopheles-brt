@@ -275,7 +275,7 @@ cf2py intent(inplace) c
 cf2py threadsafe
       DOUBLE PRECISION x(nx,nd), y(ny,nd), s(nd+1,nd+1), l(nd+1)
       DOUBLE PRECISION c(nx,ny), dev(nd+1), this, a, tdev(nd+1)
-      DOUBLE PRECISION ds(nx,cmax-cmin)
+      DOUBLE PRECISION ds(nx,ny)
       INTEGER i,j,k,m,nx,ny,nd,cmin,cmax
       LOGICAL symm
       

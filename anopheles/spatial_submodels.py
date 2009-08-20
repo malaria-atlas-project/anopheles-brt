@@ -1,8 +1,9 @@
 import numpy as np
 import cov_prior
+from mahalanobis_covariance import *
 import pymc as pm
 
-__all__ = ['spatial_hill','hill_fn','hinge','step','MvNormalLR','lr_spatial','MVNLRMetropolis']
+__all__ = ['spatial_hill','hill_fn','hinge','step','MvNormalLR','lr_spatial','MVNLRMetropolis','lr_spatial_env']
 
 def hinge(x, cp):
     "A MaxEnt hinge feature"
@@ -15,34 +16,6 @@ def step(x,cp):
     y = np.ones(x.shape)
     y[x<cp]=0.
     return y
-
-# TODO: 'Inducing points' should be highest-rank points from random samples from 
-# the EO and not-EO regions, so that the data locations don't influence the prior.
-# The rest of the field should be determined by the EO. Don't use the extra nugget.
-
-
-
-# def make_model(session, species, covariates, rl=500):
-#     sites, eo = species_query(session, species)
-#     # TODO: Space-only model with forcible rank depression. Can put in covariates later.
-#     # Remember to use expert opinion and background.
-#     # TODO: Probably don't use improved approximations of Quinonero-Candela and Rasmussen.
-#     # Reason: no sense adding an extra nugget.
-#     
-#     p_find = pm.Uninformative('p_find',0,1)
-#     
-#     mahal_eigenvalues = pm.Gamma('mahal_eigenvalues', 2, 2, size=len(covariates))
-#     mahal_eigenvectors = cov_prior.OrthogonalBasis('mahal', len(covariates))
-#     
-#     # The Mahalanobis covariance
-#     @deterministic
-#     def C(val=mahal_eigenvalues, vec=mahal_eigenvectors, amp=amp):
-#         return pm.gp.Covariance(mahalanobis_covariance,amp,val,vec)
-#         
-#     # The low-rank Cholesky decomposition of the Mahalanobis covariance
-#     @deterministic(trace=False)
-#     def S(C=C,xtot=xtot,rl=rl):
-#         return C.cholesky(xtot,rank_limit=rl)
 
 
 # =============================
@@ -161,7 +134,6 @@ class MVNLRMetropolis(pm.AdaptiveMetropolis):
 
         self.mvnlr.value = new_val
         
-        
 class LRP(object):
     """A closure that can evaluate a low-rank field."""
     def __init__(self, x_fr, C, krige_wt):
@@ -172,7 +144,6 @@ class LRP(object):
         f_out = np.dot(np.asarray(self.C(x,self.x_fr)), self.krige_wt)
         return pm.invlogit(f_out).reshape(x.shape[:-1])
         
-    
 def lr_spatial(rl=50,**stuff):
     """A low-rank spatial-only model."""
     amp = pm.Exponential('amp',.1,value=1)
@@ -212,3 +183,52 @@ def lr_spatial(rl=50,**stuff):
     p = pm.Lambda('p', lambda x_fr=x_fr, C=C, krige_wt=krige_wt: LRP(x_fr, C, krige_wt))
         
     return locals()            
+    
+# ======================================
+# = Spatial and environmental low-rank =
+# ======================================
+def lr_spatial_env(rl=50,**stuff):
+    """A low-rank spatial-only model."""
+    amp = pm.Exponential('amp',.1,value=1)
+    diff_degree = pm.Uniform('diff_degree',0,2,value=.5)
+
+    pts_in = np.hstack((stuff['pts_in'],stuff['env_in']))
+    pts_out = np.hstack((stuff['pts_out'],stuff['env_out']))
+    x_eo = np.vstack((pts_in, pts_out))
+    
+    n_env = stuff['env_in'].shape[1]
+    
+    val = pm.Gamma('val',1,1,size=n_env+1)
+    vec = cov_prior.OrthogonalBasis('vec',n_env+1,constrain=False)
+
+    @pm.deterministic
+    def C(amp=amp,val=val,vec=vec):
+        return pm.gp.Covariance(spatial_mahalanobis_covariance, amp=amp, val=val, vec=vec)
+
+    C.value(x_eo,x_eo)
+
+    @pm.deterministic(trace=False)
+    def ichol(C=C, rl=rl, x=x_eo):
+        return C.cholesky(x, rank_limit=rl, apply_pivot=False)
+
+    piv = pm.Lambda('piv', lambda d=ichol: d['pivots'])
+    U = pm.Lambda('U', lambda d=ichol: d['U'].view(np.ndarray), trace=False)
+
+    # Trace the full-rank locations
+    x_fr = pm.Lambda('x_fr', lambda d=ichol, rl=rl, x=x_eo: x[d['pivots'][:rl]])
+
+    # Evaluation of field at expert-opinion points
+    f_eo = MvNormalLR('f_eo', np.zeros(x_eo.shape[0]), piv, U, rl, value=np.zeros(x_eo.shape[0]), trace=False)
+
+    in_prob = pm.Lambda('in_prob', lambda f_eo=f_eo, n_in=pts_in.shape[0]: np.mean(pm.invlogit(f_eo[:n_in])))
+    out_prob = pm.Lambda('out_prob', lambda f_eo=f_eo, n_in=pts_in.shape[0]: np.mean(pm.invlogit(f_eo[n_in:])))    
+
+    @pm.deterministic(trace=False)
+    def krige_wt(f_eo = f_eo, piv=piv, U=U, rl=rl):
+        U_fr = U[:rl,:rl]
+        f_fr = f_eo[piv[:rl]]
+        return pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
+
+    p = pm.Lambda('p', lambda x_fr=x_fr, C=C, krige_wt=krige_wt: LRP(x_fr, C, krige_wt))
+
+    return locals()
