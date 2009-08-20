@@ -1,4 +1,4 @@
-from anopheles import mod_matern_with_mahal
+from anopheles import spatial_mahalanobis_covariance
 import numpy as np
 import pymc as pm
 
@@ -13,4 +13,11 @@ for i in xrange(n_env):
     
 x = np.vstack([lon,lat]+env).T
 
-C = mod_matern_with_mahal(x,x,)
+val = np.ones(n_env+1)
+vec = np.eye(n_env+1)
+
+C = spatial_mahalanobis_covariance(x,x,1,val,vec,symm=True)
+
+import pylab as pl
+pl.clf()
+pl.imshow(C.view(np.ndarray),interpolation='nearest')

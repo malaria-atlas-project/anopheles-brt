@@ -15,7 +15,7 @@
 
 import numpy as np
 import pymc as pm
-from mahalanobis import mahal
+from utils import mahal, mod_mahal
 
 __all__ = ['mahalanobis_covariance', 'spatial_mahalanobis_covariance']
 
@@ -42,6 +42,7 @@ def spatial_mahalanobis_covariance(x,y,amp,val,vec,symm=None):
     ndim = x.shape[1]
     
     C = np.asmatrix(np.empty((nx,ny),order='F'))
+    D = np.asmatrix(np.empty((nx,ny),order='F'))    
     
     # Figure out symmetry and threading
     if symm is None:
@@ -56,16 +57,15 @@ def spatial_mahalanobis_covariance(x,y,amp,val,vec,symm=None):
             bounds = np.array(np.sqrt(np.linspace(0,ny*ny,n_threads+1)),dtype=int)
 
     # Target function for threads
-    def targ(C,x,y,symm,amp,val,vec,cmin,cmax):
-        DS = np.empty((x.shape,cmax-cmin),order='F')
-        pm.gp.geo_rad(DS,x,y)
-        mod_mahal(C,DS,x[:,2:],y[:,2:],symm,amp,val,vec,cmin,cmax)
+    def targ(C,D,x,y,symm,amp,val,vec,cmin,cmax):
+        pm.gp.geo_rad(D,x[:,:2],y[:,:2],cmin,cmax,symm)
+        mod_mahal(C,D,x[:,2:],y[:,2:],symm,amp,val,vec,cmin,cmax)
     
     # Dispatch threads        
     if n_threads <= 1:
-        targ(C,x,y,symm,amp,val,vec,0,C.shape[1])
+        targ(C,D,x,y,symm,amp,val,vec,0,C.shape[1])
     else:
-        thread_args = [(C,x,y,symm,amp,val,vec,bounds[i],bounds[i+1]) for i in xrange(n_threads)]
+        thread_args = [(C,D,x,y,symm,amp,val,vec,bounds[i],bounds[i+1]) for i in xrange(n_threads)]
         pm.map_noreturn(targ, thread_args)
 
     if symm:

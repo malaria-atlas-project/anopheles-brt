@@ -2,7 +2,7 @@ import numpy as np
 import cov_prior
 import pymc as pm
 
-__all__ = ['spatial_hill','hill_fn','hinge','step','MvNormalLR','lr_spatial','MVNLRMetropolis','lr_spatial_env','mod_matern_with_mahal']
+__all__ = ['spatial_hill','hill_fn','hinge','step','MvNormalLR','lr_spatial','MVNLRMetropolis']
 
 def hinge(x, cp):
     "A MaxEnt hinge feature"
@@ -211,70 +211,4 @@ def lr_spatial(rl=50,**stuff):
     
     p = pm.Lambda('p', lambda x_fr=x_fr, C=C, krige_wt=krige_wt: LRP(x_fr, C, krige_wt))
         
-    return locals()            
-
-def mod_matern_with_mahal(x,y,diff_degree,amp,V,O,symm=False):
-    
-    """Matern with the mean integrated out."""
-    
-    D = np.empty((x.shape[0],y.shape[0],len(V)),order='F')
-    
-    # Fill in first slice of D with great-circle distance
-    pm.gp.geo_rad(D[:,:,0],x[:,:2],y[:,:2],diff_degree=diff_degree,amp=amp,scale=scale,symm=symm)
-
-    # Fill in subsequent slices with Euclidean difference between environmental inputs
-    for i in xrange(0,len(V)-1):
-        pm.gp.euclidean(D[:,:,i+1],x[:,i+2],y[:,i+2])
-    
-    # Apply Mahalanobis transformation    
-    D = np.tensordot(np.dot(np.dot(D,O)/V,O.T),D.T,axes=1)
-    
-    # Evaluate Matern and return
-    return pm.gp.matern.raw(D,diff_degree=diff_degree,symm=symm)*amp**2 + 10000
-
-
-def lr_spatial_env(rl=50,**stuff):
-    
-    """A low-rank spatial-plus-environment model."""
-    
-    amp = pm.Exponential('amp',.1,value=1.)
-    diff_degree = pm.Uniform('diff_degree',0,2,value=.5)
-    
-    pts_in = np.hstack((stuff['pts_in'], stuff['env_in']))
-    pts_out = np.hstack((stuff['pts_out'], stuff['env_out']))
-
-    x_eo = np.vstack((pts_in, pts_out))    
-    n_env = stuff['env_in'].shape[1]
-
-    V = pm.Gamma('V', 1, 1, size=n_env+1)
-    O = cov_prior.OrthogonalBasis('O', n_env+1, constrain=False)
-
-    @pm.deterministic
-    def C(amp=amp,scale=scale,diff_degree=diff_degree):
-        return pm.gp.Covariance(mod_matern_with_mahal, amp=amp, scale=scale, diff_degree=diff_degree, V=V, O=O)
-
-    @pm.deterministic(trace=False)
-    def ichol(C=C, rl=rl, x=x_eo):
-        return C.cholesky(x, rank_limit=rl, apply_pivot=False)
-
-    piv = pm.Lambda('piv', lambda d=ichol: d['pivots'])
-    U = pm.Lambda('U', lambda d=ichol: d['U'].view(np.ndarray), trace=False)
-
-    # Trace the full-rank locations
-    x_fr = pm.Lambda('x_fr', lambda d=ichol, rl=rl, x=x_eo: x[d['pivots'][:rl]])
-
-    # Evaluation of field at expert-opinion points
-    f_eo = MvNormalLR('f_eo', np.zeros(x_eo.shape[0]), piv, U, rl, value=np.zeros(x_eo.shape[0]), trace=False)
-
-    in_prob = pm.Lambda('in_prob', lambda f_eo=f_eo, n_in=pts_in.shape[0]: np.mean(pm.invlogit(f_eo[:n_in])))
-    out_prob = pm.Lambda('out_prob', lambda f_eo=f_eo, n_in=pts_in.shape[0]: np.mean(pm.invlogit(f_eo[n_in:])))    
-
-    @pm.deterministic(trace=False)
-    def krige_wt(f_eo = f_eo, piv=piv, U=U, rl=rl):
-        U_fr = U[:rl,:rl]
-        f_fr = f_eo[piv[:rl]]
-        return pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
-
-    p = pm.Lambda('p', lambda x_fr=x_fr, C=C, krige_wt=krige_wt: LRP(x_fr, C, krige_wt))
-
     return locals()            

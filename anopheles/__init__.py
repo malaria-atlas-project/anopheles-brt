@@ -1,6 +1,6 @@
 import os,sys
 
-for mod in ['query_to_rec','query','models','spatial_submodels','utils','env_data']:
+for mod in ['query_to_rec','query','models','spatial_submodels','utils','env_data','mahalanobis_covariance']:
     try:
         exec('from %s import *'%mod)
     except ImportError:
