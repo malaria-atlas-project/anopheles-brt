@@ -17,6 +17,7 @@ import pymc as pm
 import numpy as np
 from models import Session
 from query_to_rec import *
+from env_data import *
 from mahalanobis_covariance import mahalanobis_covariance
 from map_utils import multipoly_sample, grid_convert
 from spatial_submodels import *
@@ -25,7 +26,7 @@ import datetime
 
 __all__ = ['make_model', 'species_MCMC', 'probability_traces', 'probability_map']
     
-def make_model(session, species, spatial_submodel, with_eo = True, with_data = True):
+def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = ()):
     """
     Generates a PyMC probability model with a plug-in spatial submodel.
     The likelihood and expert-opinion layers are common.
@@ -38,6 +39,15 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     sites, eo = species_query(session, species[0])
     pts_in, pts_out = sample_eo(session, species, 1000, 1000)
     
+    # ========================
+    # = Environmental inputs =
+    # ========================
+    if len(env_variables)>0:
+        env_in = np.array([extract_environment(n, pts_in * 180./np.pi) for n in env_variables]).T
+        env_out = np.array([extract_environment(n, pts_out * 180./np.pi) for n in env_variables]).T
+    else:
+        env_in = np.empty((len(pts_in),0))
+        env_out = np.empty((len(pts_out),0))        
     
     # ==========
     # = Priors =
@@ -76,8 +86,13 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         found = np.array(found)
         zero = np.array(zero)
         others_found = np.array(others_found)
+        
+        if len(env_variables)>0:
+            env_x = np.array([extract_environment(n, x * 180./np.pi) for n in env_variables]).T
+        else:
+            env_x = np.empty((len(x),0))
 
-        p_eval = p(x)
+        p_eval = p(np.hstack((x, env_x)))
 
         @pm.observed
         @pm.stochastic(trace=False)
@@ -96,8 +111,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
             in_prob = spatial_variables['in_prob']
             out_prob = spatial_variables['out_prob']
         else:
-            in_prob = pm.Lambda('in_prob', lambda p=p, x=pts_in: np.mean(p(x)))
-            out_prob = pm.Lambda('out_prob', lambda p=p, x=pts_out: np.mean(p(x)))    
+            in_prob = pm.Lambda('in_prob', lambda p=p, x=pts_in, e=env_in: np.mean(p(np.hstack((x, e)))))
+            out_prob = pm.Lambda('out_prob', lambda p=p, x=pts_out, e=env_out: np.mean(p(np.hstack((x,e)))))    
     
         alpha_out = pm.Uniform('alpha_out',0,1)
         beta_out = pm.Uniform('beta_out',1,10)
@@ -209,7 +224,8 @@ if __name__ == '__main__':
     from mpl_toolkits import basemap
     import pylab as pl
 
-    M = species_MCMC(s, species[1], lr_spatial, with_eo = True, with_data=False)
+    M = species_MCMC(s, species[1], lr_spatial, with_eo = True, with_data = True, env_variables = [])
+    # M = species_MCMC(s, species[1], lr_spatial_env, with_eo = True, with_data = True, env_variables = ['MARA','SCI'])
     M.isample(5000,0,10)
     sf=M.step_method_dict[M.f_eo][0]
     ss=M.step_method_dict[M.p_find][0]

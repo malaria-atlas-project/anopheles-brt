@@ -57,37 +57,39 @@ def map_extents(pos_recs, eo):
             min(pos_recs.y.min(), eo.bounds[1]),
             max(pos_recs.x.max(), eo.bounds[2]),
             max(pos_recs.y.max(), eo.bounds[3])]
+    
             
 def sample_eo(session, species, n_in, n_out):
     sites, eo = species_query(session, species[0])
     
     fname = '%s_eo_pts_%i_%i.hdf5'%(species[1],n_in,n_out)
 
-    if fname in os.listdir('.'):
-        print 'Found cached expert-opinion points.'
-        hf = tb.openFile(fname)
-        pts_in = hf.root.pts_in[:]
-        pts_out = hf.root.pts_out[:]
+    if 'anopheles-caches' in os.listdir('.'):
+        if fname in os.listdir('anopheles-caches'):
+            hf = tb.openFile(os.path.join('anopheles-caches', fname))
+            pts_in = hf.root.pts_in[:]
+            pts_out = hf.root.pts_out[:]
+        
+            return pts_in, pts_out
 
-    else:
-        print 'Cached expert-opinion points not found, recomputing.'
-        print 'Querying world'
-        world = session.query(World)[0].geom
-        print 'Differencing with expert opinion'
-        not_eo = world.difference(eo)
-        
-        print 'Sampling outside'
-        lon_out, lat_out = multipoly_sample(n_out, not_eo)
-        print 'Sampling inside'
-        lon_in, lat_in = multipoly_sample(n_in, eo)
-        
-        print 'Writing out'
-        pts_in = np.vstack((lon_in, lat_in)).T*np.pi/180. 
-        pts_out = np.vstack((lon_out, lat_out)).T*np.pi/180.
-        
-        hf = tb.openFile(fname,'w')
-        hf.createArray('/','pts_in',pts_in)
-        hf.createArray('/','pts_out',pts_out)
+    print 'Cached expert-opinion points not found, recomputing.'
+    print 'Querying world'
+    world = session.query(World)[0].geom
+    print 'Differencing with expert opinion'
+    not_eo = world.difference(eo)
+    
+    print 'Sampling outside'
+    lon_out, lat_out = multipoly_sample(n_out, not_eo)
+    print 'Sampling inside'
+    lon_in, lat_in = multipoly_sample(n_in, eo)
+    
+    print 'Writing out'
+    pts_in = np.vstack((lon_in, lat_in)).T*np.pi/180. 
+    pts_out = np.vstack((lon_out, lat_out)).T*np.pi/180.
+    
+    hf = tb.openFile(os.path.join('anopheles-caches',fname),'w')
+    hf.createArray('/','pts_in',pts_in)
+    hf.createArray('/','pts_out',pts_out)
     
     return pts_in, pts_out
 
