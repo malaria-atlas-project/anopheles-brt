@@ -64,7 +64,7 @@ def spatial_mahalanobis_covariance(x,y,amp,val,vec,symm=None):
         if x.shape[1]>2:
             mod_mahal(C,D,x[:,2:],y[:,2:],symm=symm,a=amp,l=val,s=vec,cmin=cmin,cmax=cmax)
         else:
-            C[:]=D[:]
+            C[:,cmin:cmax]=D[:,cmin:cmax]
             pm.gp.exponential.raw(C,cmin=cmin,cmax=cmax,symm=symm)
     
     # Dispatch threads        
