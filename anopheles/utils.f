@@ -303,10 +303,12 @@ cf2py threadsafe
 
                     this = 0.0D0
                     do k=1,nd+1
-                        this = this - tdev(k)*tdev(k)/l(k)
+                        this = this + tdev(k)*tdev(k)/l(k)
                     end do
+                    
+!                     print *,dev(1),tdev(1),dsqrt(this)
 
-                    c(i,j) = dexp(this)*a*a
+                    c(i,j) = dexp(-dsqrt(this))*a*a
 
                 end do              
                 
@@ -329,10 +331,10 @@ cf2py threadsafe
               
                   this = 0.0D0
                   do k=1,nd+1
-                      this = this - tdev(k)*tdev(k)/l(k)
+                      this = this + tdev(k)*tdev(k)/l(k)
                   end do
               
-                  c(i,j) = dexp(this)*a*a
+                  c(i,j) = dexp(-dsqrt(this))*a*a
 
               end do
           end if

@@ -58,8 +58,14 @@ def spatial_mahalanobis_covariance(x,y,amp,val,vec,symm=None):
 
     # Target function for threads
     def targ(C,D,x,y,symm,amp,val,vec,cmin,cmax):
-        pm.gp.geo_rad(D,x[:,:2],y[:,:2],cmin,cmax,symm)
-        mod_mahal(C,D,x[:,2:],y[:,2:],symm,amp,val,vec,cmin,cmax)
+        # from IPython.Debugger import Pdb
+        # Pdb(color_scheme='Linux').set_trace()   
+        pm.gp.geo_rad(D,x[:,:2],y[:,:2],cmin=cmin,cmax=cmax,symm=symm)
+        if x.shape[1]>2:
+            mod_mahal(C,D,x[:,2:],y[:,2:],symm=symm,a=amp,l=val,s=vec,cmin=cmin,cmax=cmax)
+        else:
+            C[:]=D[:]
+            pm.gp.exponential.raw(C,cmin=cmin,cmax=cmax,symm=symm)
     
     # Dispatch threads        
     if n_threads <= 1:

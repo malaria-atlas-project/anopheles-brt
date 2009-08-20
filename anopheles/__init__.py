@@ -1,4 +1,5 @@
 import os,sys
+import anopheles
 
 for mod in ['query_to_rec','query','models','spatial_submodels','utils','env_data','mahalanobis_covariance']:
     try:
@@ -14,4 +15,4 @@ except ImportError:
 from testsuite import test
 
 print 'Syncing datafiles with server.'
-os.system('rsync -ax rsync://map1.zoo.ox.ac.uk/map_envlayers/anopheles/ ../datafiles')
+os.system('rsync -ax rsync://map1.zoo.ox.ac.uk/map_envlayers/anopheles/ %s'%os.path.join(anopheles.__path__[0],'../datafiles'))
