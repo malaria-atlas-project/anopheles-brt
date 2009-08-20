@@ -42,6 +42,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     # ========================
     # = Environmental inputs =
     # ========================
+    
     if len(env_variables)>0:
         env_in = np.array([extract_environment(n, pts_in * 180./np.pi) for n in env_variables]).T
         env_out = np.array([extract_environment(n, pts_out * 180./np.pi) for n in env_variables]).T
@@ -59,7 +60,6 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     
     # Forget about non-records
     sites = filter(lambda s:s[0] is not None, sites)
-    
     
     # ==============
     # = Likelihood =
@@ -98,7 +98,6 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         @pm.stochastic(trace=False)
         def data(value = [found, others_found, zero], p_eval=p_eval, p_find=p_find, breaks=breaks):
             return bin_ubls(value[0], value[0]+value[1]+value[2], p_find, breaks, p_eval)
-    
     
     # ==============================
     # = Expert-opinion likelihoods =
@@ -224,8 +223,8 @@ if __name__ == '__main__':
     from mpl_toolkits import basemap
     import pylab as pl
 
-    M = species_MCMC(s, species[1], lr_spatial, with_eo = True, with_data = True, env_variables = [])
-    # M = species_MCMC(s, species[1], lr_spatial_env, with_eo = True, with_data = True, env_variables = ['MARA','SCI'])
+    # M = species_MCMC(s, species[1], lr_spatial, with_eo = True, with_data = True, env_variables = [])
+    M = species_MCMC(s, species[1], lr_spatial_env, with_eo = True, with_data = True, env_variables = ['MARA','SCI'])
     M.isample(5000,0,10)
     sf=M.step_method_dict[M.f_eo][0]
     ss=M.step_method_dict[M.p_find][0]

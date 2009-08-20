@@ -17,12 +17,66 @@ import numpy as np
 import pymc as pm
 from mahalanobis import mahal
 
-__all__ = ['mahalanobis_covariance']
+__all__ = ['mahalanobis_covariance', 'spatial_mahalanobis_covariance']
+
+def spatial_mahalanobis_covariance(x,y,amp,val,vec,symm=None):
+    """
+    Converts x and y to a matrix of covariances. x and y are assumed to have
+    columns (long,lat,t). Parameters are:
+    - t_gam_fun: A function returning a matrix of variogram values.
+      Inputs will be the 't' columns of x and y, as well as kwds.
+    - amp: The MS amplitude of realizations.
+    - scale: Scales distance.
+    - inc, ecc: Anisotropy parameters.
+    - n_threads: Maximum number of threads available to function.
+    - symm: Flag indicating whether matrix will be symmetric (optional).
+    - kwds: Passed to t_gam_fun.
+    
+    Output value should never drop below -1. This happens when:
+    -1 > -sf*c+k
+    
+    """
+    # Allocate 
+    nx = x.shape[0]
+    ny = y.shape[0]
+    ndim = x.shape[1]
+    
+    C = np.asmatrix(np.empty((nx,ny),order='F'))
+    
+    # Figure out symmetry and threading
+    if symm is None:
+        symm = (x is y)
+
+    n_threads = min(pm.get_threadpool_size(), nx*ny / 2000)        
+    
+    if n_threads > 1:
+        if not symm:
+            bounds = np.linspace(0,ny,n_threads+1)
+        else:
+            bounds = np.array(np.sqrt(np.linspace(0,ny*ny,n_threads+1)),dtype=int)
+
+    # Target function for threads
+    def targ(C,x,y,symm,amp,val,vec,cmin,cmax):
+        DS = np.empty((x.shape,cmax-cmin),order='F')
+        pm.gp.geo_rad(DS,x,y)
+        mod_mahal(C,DS,x[:,2:],y[:,2:],symm,amp,val,vec,cmin,cmax)
+    
+    # Dispatch threads        
+    if n_threads <= 1:
+        targ(C,x,y,symm,amp,val,vec,0,C.shape[1])
+    else:
+        thread_args = [(C,x,y,symm,amp,val,vec,bounds[i],bounds[i+1]) for i in xrange(n_threads)]
+        pm.map_noreturn(targ, thread_args)
+
+    if symm:
+        pm.gp.symmetrize(C)
+    
+    return C
+
 
 def mahalanobis_covariance(x,y,amp,val,vec,symm=None):
     """
-    Spatiotemporal covariance function. Converts x and y
-    to a matrix of covariances. x and y are assumed to have
+    Converts x and y to a matrix of covariances. x and y are assumed to have
     columns (long,lat,t). Parameters are:
     - t_gam_fun: A function returning a matrix of variogram values.
       Inputs will be the 't' columns of x and y, as well as kwds.

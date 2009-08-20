@@ -2,7 +2,7 @@ import numpy as np
 import cov_prior
 import pymc as pm
 
-__all__ = ['spatial_hill','hill_fn','hinge','step','MvNormalLR','lr_spatial','MVNLRMetropolis']
+__all__ = ['spatial_hill','hill_fn','hinge','step','MvNormalLR','lr_spatial','MVNLRMetropolis','lr_spatial_env','mod_matern_with_mahal']
 
 def hinge(x, cp):
     "A MaxEnt hinge feature"
@@ -213,19 +213,45 @@ def lr_spatial(rl=50,**stuff):
         
     return locals()            
 
-def lr_spatial_env(rl=50,**stuff):
-    """A low-rank spatial-plus-environment model."""
-    amp = pm.Exponential('amp',.1,value=1)
-    scale = pm.Exponential('scale',.1,value=1.)
-    diff_degree = pm.Uniform('diff_degree',0,2,value=.5)
+def mod_matern_with_mahal(x,y,diff_degree,amp,V,O,symm=False):
+    
+    """Matern with the mean integrated out."""
+    
+    D = np.empty((x.shape[0],y.shape[0],len(V)),order='F')
+    
+    # Fill in first slice of D with great-circle distance
+    pm.gp.geo_rad(D[:,:,0],x[:,:2],y[:,:2],diff_degree=diff_degree,amp=amp,scale=scale,symm=symm)
 
-    pts_in = stuff['pts_in']
-    pts_out = stuff['pts_out']
-    x_eo = np.vstack((pts_in, pts_out))
+    # Fill in subsequent slices with Euclidean difference between environmental inputs
+    for i in xrange(0,len(V)-1):
+        pm.gp.euclidean(D[:,:,i+1],x[:,i+2],y[:,i+2])
+    
+    # Apply Mahalanobis transformation    
+    D = np.tensordot(np.dot(np.dot(D,O)/V,O.T),D.T,axes=1)
+    
+    # Evaluate Matern and return
+    return pm.gp.matern.raw(D,diff_degree=diff_degree,symm=symm)*amp**2 + 10000
+
+
+def lr_spatial_env(rl=50,**stuff):
+    
+    """A low-rank spatial-plus-environment model."""
+    
+    amp = pm.Exponential('amp',.1,value=1.)
+    diff_degree = pm.Uniform('diff_degree',0,2,value=.5)
+    
+    pts_in = np.hstack((stuff['pts_in'], stuff['env_in']))
+    pts_out = np.hstack((stuff['pts_out'], stuff['env_out']))
+
+    x_eo = np.vstack((pts_in, pts_out))    
+    n_env = stuff['env_in'].shape[1]
+
+    V = pm.Gamma('V', 1, 1, size=n_env+1)
+    O = cov_prior.OrthogonalBasis('O', n_env+1, constrain=False)
 
     @pm.deterministic
     def C(amp=amp,scale=scale,diff_degree=diff_degree):
-        return pm.gp.Covariance(mod_matern, amp=amp, scale=scale, diff_degree=diff_degree)
+        return pm.gp.Covariance(mod_matern_with_mahal, amp=amp, scale=scale, diff_degree=diff_degree, V=V, O=O)
 
     @pm.deterministic(trace=False)
     def ichol(C=C, rl=rl, x=x_eo):
