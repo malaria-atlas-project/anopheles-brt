@@ -19,12 +19,13 @@ from models import Session
 from query_to_rec import *
 from env_data import *
 from mahalanobis_covariance import mahalanobis_covariance
-from map_utils import multipoly_sample, grid_convert
+from map_utils import multipoly_sample
+from mapping import *
 from spatial_submodels import *
 from utils import bin_ubls
 import datetime
 
-__all__ = ['make_model', 'species_MCMC', 'probability_traces', 'probability_map']
+__all__ = ['make_model', 'species_MCMC', 'probability_traces','potential_traces']
     
 def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = ()):
     """
@@ -150,58 +151,6 @@ def potential_traces(M, in_or_out = 'in'):
     
     import pylab as pl
     pl.plot(a/(a+b))
-    
-def make_covering_raster(thin=1, worldwide=True, **kwds):
-    # FIXME: Use the proper land-sea mask, served from the db, to do this.
-    import mbgw
-    from mbgw import auxiliary_data
-
-
-    a=getattr(mbgw.auxiliary_data,'landSea-e')
-
-    lon = a.long[::thin]
-    lat = a.lat[::thin][::-1]
-    # mask = a.data[::thin,::thin]
-    mask = grid_convert(a.data[::thin,::thin],'y-x+','x+y-')
-
-    extent = [-180,-90,180,90]
-
-    if not worldwide:
-        extent = map_extents(kwds['pos_recs'], kwds['eo'])
-        where_inlon = np.where((lon>=extent[0]) * (lon <= extent[2]))
-        where_inlat = np.where((lon>=extent[0]) * (lon <= extent[2]))        
-        lon = lon[where_inlon]
-        lat = lat[where_inlat]
-        mask = mask[where_inlon,:][:,where_inlat]
-
-    img_extent = [lon.min(), lat.min(), lon.max(), lat.max()]
-
-    lat_grid, lon_grid = np.meshgrid(lat*np.pi/180.,lon*np.pi/180.)
-    x=np.dstack((lon_grid,lat_grid))
-    return mask, x, img_extent
-
-    
-def presence_map(M, session, species, burn=0, worldwide=True, thin=1, trace_thin=1, **kwds):
-    "Converts the trace to a map of presence probability."
-    
-    from mpl_toolkits import basemap
-    import pylab as pl
-    
-    mask, x, img_extent = make_covering_raster(thin, worldwide, **kwds)
-    out = np.zeros(mask.shape)
-
-    for i in xrange(burn, M._cur_trace_index, trace_thin):
-        p = M.trace('p')[:][i]
-        pe = p(x)
-        out += pe/float(M._cur_trace_index-burn)
-    
-    b = basemap.Basemap(*img_extent)
-    arr = np.ma.masked_array(out, mask=True-mask)
-
-    b.imshow(arr.T, interpolation='nearest')    
-    pl.colorbar()    
-    plot_species(session, species[0], species[1], b, negs=True, **kwds)    
-    return out, arr
 
 def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
     if db is None:
