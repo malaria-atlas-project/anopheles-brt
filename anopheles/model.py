@@ -131,7 +131,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     out = locals()
     out.update(spatial_variables)
     return out
-    
+
 def probability_traces(M, pos_or_neg = True):
     "Plots traces of the probability of presence at observation locations."
     if pos_or_neg:
@@ -143,7 +143,7 @@ def probability_traces(M, pos_or_neg = True):
         p = M.trace('p')[i:i+1][0]
         vals.append(p(x))
     return np.array(vals)
-    
+
 def potential_traces(M, in_or_out = 'in'):
     "Traces of the 'means' of the EO factor potentials."
     a = M.trace('alpha_'+in_or_out)[:]
@@ -160,7 +160,30 @@ def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
     scalar_stochastics = filter(lambda s: np.prod(np.shape(s.value))<=1, M.stochastics)
     M.use_step_method(pm.AdaptiveMetropolis, scalar_stochastics)
     return M
+
+def mean_response_samples(M, axis, n, thin=1):
+    pts_in = M.pts_in
+    pts_out = M.pts_out
+    pts_eo = np.vstack((pts_in, pts_out))
     
+    x_disp = np.linspace(pts_eo[:,axis].min(), pts_eo[:,axis].max(), n)
+    
+    pts_plot = np.tile(pts_eo.T, n).T
+    pts_plot[:,axis] = np.repeat(x_disp, len(pts_eo))
+    
+    outs = []
+    for p in M.trace('p')[::thin]:
+        out = np.empty(n)
+        p_eval = p(pts_plot)
+        for i in xrange(n):
+            out[i] = np.mean(p_eval[i*len(pts_eo):(i+1)*len(pts_eo)])
+            
+    return x_disp, outs
+    
+    
+    
+    
+
 if __name__ == '__main__':
     s = Session()
     species = list_species(s)
@@ -184,8 +207,14 @@ if __name__ == '__main__':
     # arr = np.ma.masked_array(out, mask=True-mask)
     # b.imshow(arr.T, interpolation='nearest')
     # pl.colorbar()
-        
+    
+    pl.close('all')
+    
     out, arr = presence_map(M, s, species[1], thin=5, burn=200, trace_thin=1)
+    pl.figure()
+    x_disp, samps = mean_response_samples(M,0,10)
+    for s in samps:
+        pl.plot(x_disp, s)
     # 
     # p_atfound = probability_traces(M)
     # p_atnotfound = probability_traces(M,False)

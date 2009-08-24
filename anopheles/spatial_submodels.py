@@ -170,27 +170,29 @@ def lr_spatial(rl=50,**stuff):
 
     # Evaluation of field at expert-opinion points
     f_eo = MvNormalLR('f_eo', np.zeros(x_eo.shape[0]), piv, U, rl, value=np.zeros(x_eo.shape[0]), trace=False)
-    
+
     in_prob = pm.Lambda('in_prob', lambda f_eo=f_eo, n_in=pts_in.shape[0]: np.mean(pm.invlogit(f_eo[:n_in])))
     out_prob = pm.Lambda('out_prob', lambda f_eo=f_eo, n_in=pts_in.shape[0]: np.mean(pm.invlogit(f_eo[n_in:])))    
-    
+
     @pm.deterministic(trace=False)
     def krige_wt(f_eo = f_eo, piv=piv, U=U, rl=rl):
         U_fr = U[:rl,:rl]
         f_fr = f_eo[piv[:rl]]
         return pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
-    
+
     p = pm.Lambda('p', lambda x_fr=x_fr, C=C, krige_wt=krige_wt: LRP(x_fr, C, krige_wt))
-        
+
     return locals()            
     
 # ======================================
 # = Spatial and environmental low-rank =
 # ======================================
+def mod_spatial_mahalanobis(x,y,amp,val,vec,symm=False):
+    return spatial_mahalanobis_covariance(x,y,amp,val,vec,symm)+10000
+
 def lr_spatial_env(rl=50,**stuff):
     """A low-rank spatial-only model."""
     amp = pm.Exponential('amp',.1,value=1)
-    diff_degree = pm.Uniform('diff_degree',0,2,value=.5)
 
     pts_in = np.hstack((stuff['pts_in'],stuff['env_in']))
     pts_out = np.hstack((stuff['pts_out'],stuff['env_out']))
@@ -198,12 +200,12 @@ def lr_spatial_env(rl=50,**stuff):
     
     n_env = stuff['env_in'].shape[1]
     
-    val = pm.Gamma('val',1,1,size=n_env+1)
+    val = pm.Gamma('val',4,4,value=np.ones(n_env+1))
     vec = cov_prior.OrthogonalBasis('vec',n_env+1,constrain=False)
 
     @pm.deterministic
     def C(amp=amp,val=val,vec=vec):
-        return pm.gp.Covariance(spatial_mahalanobis_covariance, amp=amp, val=val, vec=vec)
+        return pm.gp.Covariance(mod_spatial_mahalanobis, amp=amp, val=val, vec=vec)
 
     C.value(x_eo,x_eo)
 
