@@ -161,7 +161,7 @@ def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
     M.use_step_method(pm.AdaptiveMetropolis, scalar_stochastics)
     return M
 
-def mean_response_samples(M, axis, n, thin=1):
+def mean_response_samples(M, axis, n, burn=0, thin=1):
     pts_in = M.pts_in
     pts_out = M.pts_out
     pts_eo = np.vstack((pts_in, pts_out))
@@ -172,11 +172,12 @@ def mean_response_samples(M, axis, n, thin=1):
     pts_plot[:,axis] = np.repeat(x_disp, len(pts_eo))
     
     outs = []
-    for p in M.trace('p')[::thin]:
+    for p in M.trace('p')[:][burn::thin]:
         out = np.empty(n)
         p_eval = p(pts_plot)
         for i in xrange(n):
             out[i] = np.mean(p_eval[i*len(pts_eo):(i+1)*len(pts_eo)])
+        outs.append(out)
             
     return x_disp, outs
     
@@ -197,9 +198,19 @@ if __name__ == '__main__':
 
     # M = species_MCMC(s, species[1], lr_spatial, with_eo = True, with_data = True, env_variables = [])
     M = species_MCMC(s, species[1], lr_spatial_env, with_eo = True, with_data = True, env_variables = ['MARA','SCI'])
-    M.isample(5000,0,10)
-    sf=M.step_method_dict[M.f_eo][0]
-    ss=M.step_method_dict[M.p_find][0]
+    M.val.value = np.array([1.,10.,100.])
+    mask, x, img_extent = make_covering_raster(5, M.env_variables)
+    pl.close('all')
+    pl.figure(figsize=(12,9))
+    for i in xrange(2):
+        M.f_eo.rand()
+        pl.subplot(2,1,i+1)
+        out, arr = current_state_map(M, s, species[1], mask, x, img_extent, thin=5)
+        # x_slice, out = current_state_slice(M, 2)
+        
+    # M.isample(50000,0,100)
+    # sf=M.step_method_dict[M.f_eo][0]
+    # ss=M.step_method_dict[M.p_find][0]
 
     # mask, x, img_extent = make_covering_raster(2)
     # b = basemap.Basemap(*img_extent)
@@ -208,13 +219,13 @@ if __name__ == '__main__':
     # b.imshow(arr.T, interpolation='nearest')
     # pl.colorbar()
     
-    pl.close('all')
-    
-    out, arr = presence_map(M, s, species[1], thin=5, burn=200, trace_thin=1)
-    pl.figure()
-    x_disp, samps = mean_response_samples(M,0,10)
-    for s in samps:
-        pl.plot(x_disp, s)
+    # pl.close('all')
     # 
+    # out, arr = presence_map(M, s, species[1], thin=5, burn=200, trace_thin=1)
+    # pl.figure()
+    # x_disp, samps = mean_response_samples(M, -1, 10, burn=200, thin=1)
+    # for s in samps:
+    #     pl.plot(x_disp, s)
+    
     # p_atfound = probability_traces(M)
     # p_atnotfound = probability_traces(M,False)

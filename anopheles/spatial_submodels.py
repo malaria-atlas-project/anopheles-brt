@@ -188,9 +188,9 @@ def lr_spatial(rl=50,**stuff):
 # = Spatial and environmental low-rank =
 # ======================================
 def mod_spatial_mahalanobis(x,y,amp,val,vec,symm=False):
-    return spatial_mahalanobis_covariance(x,y,amp,val,vec,symm)+10000
+    return spatial_mahalanobis_covariance(x,y,amp,val,vec,symm)#+10000
 
-def lr_spatial_env(rl=50,**stuff):
+def lr_spatial_env(rl=200,**stuff):
     """A low-rank spatial-only model."""
     amp = pm.Exponential('amp',.1,value=1)
 
@@ -206,8 +206,6 @@ def lr_spatial_env(rl=50,**stuff):
     @pm.deterministic
     def C(amp=amp,val=val,vec=vec):
         return pm.gp.Covariance(mod_spatial_mahalanobis, amp=amp, val=val, vec=vec)
-
-    C.value(x_eo,x_eo)
 
     @pm.deterministic(trace=False)
     def ichol(C=C, rl=rl, x=x_eo):
