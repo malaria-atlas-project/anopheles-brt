@@ -190,7 +190,26 @@ def lr_spatial(rl=50,**stuff):
 def mod_spatial_mahalanobis(x,y,amp,val,vec,symm=False):
     return spatial_mahalanobis_covariance(x,y,amp,val,vec,symm)#+10000
 
-def lr_spatial_env(rl=200,**stuff):
+class LRP_norm(LRP):
+    """
+    A closure that can evaluate a low-rank field.
+    
+    Normalizes the third argument onward.
+    """
+    def __init__(self, x_fr, C, krige_wt, means, stds):
+        LRP.__init__(self, x_fr, C, krige_wt)
+        self.means = means
+        self.stds = stds
+
+    def __call__(self, x):
+        x_norm = x.copy().reshape(-1,x.shape[-1])
+        for i in xrange(2,x_norm.shape[1]):
+            x_norm[:,i] -= self.means[i-2]
+            x_norm[:,i] /= self.stds[i-2]
+            
+        return LRP.__call__(self, x_norm.reshape(x.shape))
+
+def lr_spatial_env(rl=50,**stuff):
     """A low-rank spatial-only model."""
     amp = pm.Exponential('amp',.1,value=1)
 
@@ -229,6 +248,6 @@ def lr_spatial_env(rl=200,**stuff):
         f_fr = f_eo[piv[:rl]]
         return pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
 
-    p = pm.Lambda('p', lambda x_fr=x_fr, C=C, krige_wt=krige_wt: LRP(x_fr, C, krige_wt))
+    p = pm.Lambda('p', lambda x_fr=x_fr, C=C, krige_wt=krige_wt, means=stuff['env_means'], stds=stuff['env_stds']: LRP_norm(x_fr, C, krige_wt, means, stds))
 
     return locals()

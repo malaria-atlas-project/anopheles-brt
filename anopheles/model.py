@@ -47,9 +47,13 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     if len(env_variables)>0:
         env_in = np.array([extract_environment(n, pts_in * 180./np.pi) for n in env_variables]).T
         env_out = np.array([extract_environment(n, pts_out * 180./np.pi) for n in env_variables]).T
+        env_means = np.array([np.mean(np.concatenate((env_in[:,i], env_out[:,i]))) for i in xrange(len(env_variables))])
+        env_stds = np.array([np.std(np.concatenate((env_in[:,i], env_out[:,i]))) for i in xrange(len(env_variables))])
     else:
         env_in = np.empty((len(pts_in),0))
-        env_out = np.empty((len(pts_out),0))        
+        env_out = np.empty((len(pts_out),0))
+        env_means = []
+        env_stds = []
     
     # ==========
     # = Priors =
@@ -198,7 +202,8 @@ if __name__ == '__main__':
 
     # M = species_MCMC(s, species[1], lr_spatial, with_eo = True, with_data = True, env_variables = [])
     M = species_MCMC(s, species[1], lr_spatial_env, with_eo = True, with_data = True, env_variables = ['MARA','SCI'])
-    M.val.value = np.array([1.,10.,100.])
+
+    M.val.value = np.array([1.,1.,1.])
     mask, x, img_extent = make_covering_raster(5, M.env_variables)
     pl.close('all')
     pl.figure(figsize=(12,9))
