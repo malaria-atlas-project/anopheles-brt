@@ -202,7 +202,8 @@ if __name__ == '__main__':
     species_num = 7
 
     # M = species_MCMC(s, species[species_num], lr_spatial, with_eo = True, with_data = True, env_variables = [])
-    M = species_MCMC(s, species[species_num], lr_spatial_env, with_eo = True, with_data = True, env_variables = ['MARA','SCI'])
+    M = species_MCMC(s, species[species_num], lr_spatial_env, with_eo = True, with_data = False, env_variables = ['MARA','SCI'])
+    M.f_eo.rand()
 
         
     M.isample(10000,0,10)
