@@ -199,23 +199,15 @@ if __name__ == '__main__':
     
     from mpl_toolkits import basemap
     import pylab as pl
+    species_num = 7
 
-    # M = species_MCMC(s, species[1], lr_spatial, with_eo = True, with_data = True, env_variables = [])
-    M = species_MCMC(s, species[1], lr_spatial_env, with_eo = True, with_data = True, env_variables = ['MARA','SCI'])
+    # M = species_MCMC(s, species[species_num], lr_spatial, with_eo = True, with_data = True, env_variables = [])
+    M = species_MCMC(s, species[species_num], lr_spatial_env, with_eo = True, with_data = True, env_variables = ['MARA','SCI'])
 
-    M.val.value = np.array([1.,1.,1.])
-    mask, x, img_extent = make_covering_raster(5, M.env_variables)
-    pl.close('all')
-    pl.figure(figsize=(12,9))
-    for i in xrange(2):
-        M.f_eo.rand()
-        pl.subplot(2,1,i+1)
-        out, arr = current_state_map(M, s, species[1], mask, x, img_extent, thin=5)
-        # x_slice, out = current_state_slice(M, 2)
         
-    # M.isample(50000,0,100)
-    # sf=M.step_method_dict[M.f_eo][0]
-    # ss=M.step_method_dict[M.p_find][0]
+    M.isample(10000,0,10)
+    sf=M.step_method_dict[M.f_eo][0]
+    ss=M.step_method_dict[M.p_find][0]
 
     # mask, x, img_extent = make_covering_raster(2)
     # b = basemap.Basemap(*img_extent)
@@ -224,13 +216,13 @@ if __name__ == '__main__':
     # b.imshow(arr.T, interpolation='nearest')
     # pl.colorbar()
     
-    # pl.close('all')
-    # 
-    # out, arr = presence_map(M, s, species[1], thin=5, burn=200, trace_thin=1)
-    # pl.figure()
-    # x_disp, samps = mean_response_samples(M, -1, 10, burn=200, thin=1)
-    # for s in samps:
-    #     pl.plot(x_disp, s)
+    pl.close('all')
+    
+    out, arr = presence_map(M, s, species[species_num], thin=5, burn=500, trace_thin=1)
+    pl.figure()
+    x_disp, samps = mean_response_samples(M, -1, 10, burn=500, thin=1)
+    for s in samps:
+        pl.plot(x_disp, s)
     
     # p_atfound = probability_traces(M)
     # p_atnotfound = probability_traces(M,False)
