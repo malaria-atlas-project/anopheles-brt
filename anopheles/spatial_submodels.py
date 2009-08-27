@@ -190,6 +190,13 @@ def lr_spatial(rl=50,**stuff):
 def mod_spatial_mahalanobis(x,y,amp,val,vec,symm=False):
     return spatial_mahalanobis_covariance(x,y,amp,val,vec,symm)+100
 
+def normalize_env(x, means, stds):
+    x_norm = x.copy().reshape(-1,x.shape[-1])
+    for i in xrange(2,x_norm.shape[1]):
+        x_norm[:,i] -= means[i-2]
+        x_norm[:,i] /= stds[i-2]
+    return x_norm
+
 class LRP_norm(LRP):
     """
     A closure that can evaluate a low-rank field.
@@ -202,11 +209,7 @@ class LRP_norm(LRP):
         self.stds = stds
 
     def __call__(self, x):
-        x_norm = x.copy().reshape(-1,x.shape[-1])
-        for i in xrange(2,x_norm.shape[1]):
-            x_norm[:,i] -= self.means[i-2]
-            x_norm[:,i] /= self.stds[i-2]
-            
+        x_norm = normalize_env(x, self.means, self.stds)
         return LRP.__call__(self, x_norm.reshape(x.shape))
 
 def lr_spatial_env(rl=50,**stuff):
@@ -215,7 +218,7 @@ def lr_spatial_env(rl=50,**stuff):
 
     pts_in = np.hstack((stuff['pts_in'],stuff['env_in']))
     pts_out = np.hstack((stuff['pts_out'],stuff['env_out']))
-    x_eo = np.vstack((pts_in, pts_out))
+    x_eo = normalize_env(np.vstack((pts_in, pts_out)), stuff['env_means'], stuff['env_stds'])
     
     n_env = stuff['env_in'].shape[1]
     

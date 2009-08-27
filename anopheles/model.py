@@ -118,33 +118,31 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
             in_prob = pm.Lambda('in_prob', lambda p=p, x=pts_in, e=env_in: np.mean(p(np.hstack((x, e)))))
             out_prob = pm.Lambda('out_prob', lambda p=p, x=pts_out, e=env_out: np.mean(p(np.hstack((x,e)))))    
 
-        @pm.potential
-        def out_factor(p=out_prob):
-            if p == 0 or p == 1:
-                return -np.inf
-            return pm.flib.logit(1.-p)*1e3
-        
-        @pm.potential
-        def in_factor(p=in_prob):
-            if p == 0 or p == 1:
-                return -np.inf
-            return pm.flib.logit(p)*1e3
-        
-    
-        # alpha_out = pm.Uniform('alpha_out',0,1)
-        # beta_out = pm.Uniform('beta_out',1,10)
-        # alpha_in = pm.Uniform('alpha_in',1,10)
-        # beta_in = pm.Uniform('beta_in',0,1)
-        #     
         # @pm.potential
-        # def out_factor(a=alpha_out, b=beta_out, p=out_prob):
-        #     return pm.beta_like(p,a,b)
+        # def out_factor(p=out_prob):
+        #     if p == 0 or p == 1:
+        #         return -np.inf
+        #     return pm.flib.logit(1.-p)
         # 
         # @pm.potential
-        # def in_factor(a=alpha_in, b=beta_in, p=in_prob):
-        #     return pm.beta_like(p,a,b)
-    
-    
+        # def in_factor(p=in_prob):
+        #     if p == 0 or p == 1:
+        #         return -np.inf
+        #     return pm.flib.logit(p)
+            
+        alpha_out = pm.Uniform('alpha_out',0,1)
+        beta_out = pm.Uniform('beta_out',1,10)
+        alpha_in = pm.Uniform('alpha_in',1,10)
+        beta_in = pm.Uniform('beta_in',0,1)
+            
+        @pm.potential
+        def out_factor(a=alpha_out, b=beta_out, p=out_prob):
+            return pm.beta_like(p,a,b)
+        
+        @pm.potential
+        def in_factor(a=alpha_in, b=beta_in, p=in_prob):
+            return pm.beta_like(p,a,b)
+        
     out = locals()
     out.update(spatial_variables)
     return out
@@ -239,27 +237,27 @@ if __name__ == '__main__':
     # TODO: Have sf take a tiny step, even the determined elements of f_eo should stay close or else something is wrong.
     
         
-    # M.isample(10000,0,10)
+    M.isample(10000,0,10)
     
-    # # mask, x, img_extent = make_covering_raster(2)
-    # # b = basemap.Basemap(*img_extent)
-    # # out = M.p.value(x)
-    # # arr = np.ma.masked_array(out, mask=True-mask)
-    # # b.imshow(arr.T, interpolation='nearest')
-    # # pl.colorbar()
-    # pl.figure()
-    # current_state_map(M, s, species[species_num], mask, x, img_extent, thin=1)
-    # pl.title('Final')
-    # pl.figure()
-    # pl.plot(M.trace('out_prob')[:],'b-',label='out')
-    # pl.plot(M.trace('in_prob')[:],'r-',label='in')    
-    # pl.legend(loc=0)
-    # pl.figure()
+    # mask, x, img_extent = make_covering_raster(2)
+    # b = basemap.Basemap(*img_extent)
+    # out = M.p.value(x)
+    # arr = np.ma.masked_array(out, mask=True-mask)
+    # b.imshow(arr.T, interpolation='nearest')
+    # pl.colorbar()
+    pl.figure()
+    current_state_map(M, s, species[species_num], mask, x, img_extent, thin=1)
+    pl.title('Final')
+    pl.figure()
+    pl.plot(M.trace('out_prob')[:],'b-',label='out')
+    pl.plot(M.trace('in_prob')[:],'r-',label='in')    
+    pl.legend(loc=0)
+    pl.figure()
     # out, arr = presence_map(M, s, species[species_num], thin=5, burn=500, trace_thin=1)
-    # # pl.figure()
-    # # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
-    # # for s in samps:
-    # #     pl.plot(x_disp, s)
-    # 
-    # # p_atfound = probability_traces(M)
-    # # p_atnotfound = probability_traces(M,False)
+    # pl.figure()
+    # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
+    # for s in samps:
+    #     pl.plot(x_disp, s)
+    
+    # p_atfound = probability_traces(M)
+    # p_atnotfound = probability_traces(M,False)
