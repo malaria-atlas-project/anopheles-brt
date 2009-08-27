@@ -188,7 +188,7 @@ def lr_spatial(rl=50,**stuff):
 # = Spatial and environmental low-rank =
 # ======================================
 def mod_spatial_mahalanobis(x,y,amp,val,vec,symm=False):
-    return spatial_mahalanobis_covariance(x,y,amp,val,vec,symm)#+10000
+    return spatial_mahalanobis_covariance(x,y,amp,val,vec,symm)+100
 
 class LRP_norm(LRP):
     """
@@ -211,7 +211,7 @@ class LRP_norm(LRP):
 
 def lr_spatial_env(rl=50,**stuff):
     """A low-rank spatial-only model."""
-    amp = pm.Exponential('amp',.1,value=1)
+    amp = pm.Exponential('amp',.1,value=10)
 
     pts_in = np.hstack((stuff['pts_in'],stuff['env_in']))
     pts_out = np.hstack((stuff['pts_out'],stuff['env_out']))

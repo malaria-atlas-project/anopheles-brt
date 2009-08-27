@@ -107,7 +107,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     # ==============================
     # = Expert-opinion likelihoods =
     # ==============================
-
+    
     if with_eo:
         # sens_strength = pm.Uninformative('sens_strength',1000,observed=True)
         # spec_strength = pm.Uninformative('spec_strength',1000,observed=True)    
@@ -117,19 +117,32 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         else:
             in_prob = pm.Lambda('in_prob', lambda p=p, x=pts_in, e=env_in: np.mean(p(np.hstack((x, e)))))
             out_prob = pm.Lambda('out_prob', lambda p=p, x=pts_out, e=env_out: np.mean(p(np.hstack((x,e)))))    
-    
-        alpha_out = pm.Uniform('alpha_out',0,1)
-        beta_out = pm.Uniform('beta_out',1,10)
-        alpha_in = pm.Uniform('alpha_in',1,10)
-        beta_in = pm.Uniform('beta_in',0,1)
-    
+
         @pm.potential
-        def out_factor(a=alpha_out, b=beta_out, p=out_prob):
-            return pm.beta_like(p,a,b)
+        def out_factor(p=out_prob):
+            if p == 0 or p == 1:
+                return -np.inf
+            return pm.flib.logit(1.-p)*1e3
         
         @pm.potential
-        def in_factor(a=alpha_in, b=beta_in, p=in_prob):
-            return pm.beta_like(p,a,b)
+        def in_factor(p=in_prob):
+            if p == 0 or p == 1:
+                return -np.inf
+            return pm.flib.logit(p)*1e3
+        
+    
+        # alpha_out = pm.Uniform('alpha_out',0,1)
+        # beta_out = pm.Uniform('beta_out',1,10)
+        # alpha_in = pm.Uniform('alpha_in',1,10)
+        # beta_in = pm.Uniform('beta_in',0,1)
+        #     
+        # @pm.potential
+        # def out_factor(a=alpha_out, b=beta_out, p=out_prob):
+        #     return pm.beta_like(p,a,b)
+        # 
+        # @pm.potential
+        # def in_factor(a=alpha_in, b=beta_in, p=in_prob):
+        #     return pm.beta_like(p,a,b)
     
     
     out = locals()
@@ -185,7 +198,17 @@ def mean_response_samples(M, axis, n, burn=0, thin=1):
             
     return x_disp, outs
     
+def initialize_by_eo(M):    
+    new_val_fr = np.empty(M.rl)
+    new_val_fr[:] = -5
+    new_val_fr[np.where(M.piv.value[:M.rl]<M.pts_in.shape[0])] = 10
     
+    new_val_d = np.dot(M.U.value[:,M.rl:].T,np.linalg.solve(M.U.value[:,:M.rl].T, new_val_fr))
+    
+    new_val = np.empty(len(M.f_eo.value))        
+    new_val[M.piv.value[:M.rl]] = new_val_fr
+    new_val[M.piv.value[M.rl:]] = new_val_d
+    M.f_eo.value = new_val
     
     
 
@@ -203,27 +226,40 @@ if __name__ == '__main__':
 
     # M = species_MCMC(s, species[species_num], lr_spatial, with_eo = True, with_data = True, env_variables = [])
     M = species_MCMC(s, species[species_num], lr_spatial_env, with_eo = True, with_data = False, env_variables = ['MARA','SCI'])
-    M.f_eo.rand()
-
-        
-    M.isample(10000,0,10)
-    sf=M.step_method_dict[M.f_eo][0]
-    ss=M.step_method_dict[M.p_find][0]
-
-    # mask, x, img_extent = make_covering_raster(2)
-    # b = basemap.Basemap(*img_extent)
-    # out = M.p.value(x)
-    # arr = np.ma.masked_array(out, mask=True-mask)
-    # b.imshow(arr.T, interpolation='nearest')
-    # pl.colorbar()
+    initialize_by_eo(M)
     
     pl.close('all')
+    mask, x, img_extent = make_covering_raster(5, ['MARA','SCI'])
+    current_state_map(M, s, species[species_num], mask, x, img_extent, thin=1)
+    pl.title('Initial')
+    M.assign_step_methods()
+    sf=M.step_method_dict[M.f_eo][0]
+    ss=M.step_method_dict[M.p_find][0]
     
-    out, arr = presence_map(M, s, species[species_num], thin=5, burn=500, trace_thin=1)
-    pl.figure()
-    x_disp, samps = mean_response_samples(M, -1, 10, burn=500, thin=1)
-    for s in samps:
-        pl.plot(x_disp, s)
+    # TODO: Have sf take a tiny step, even the determined elements of f_eo should stay close or else something is wrong.
     
-    # p_atfound = probability_traces(M)
-    # p_atnotfound = probability_traces(M,False)
+        
+    # M.isample(10000,0,10)
+    
+    # # mask, x, img_extent = make_covering_raster(2)
+    # # b = basemap.Basemap(*img_extent)
+    # # out = M.p.value(x)
+    # # arr = np.ma.masked_array(out, mask=True-mask)
+    # # b.imshow(arr.T, interpolation='nearest')
+    # # pl.colorbar()
+    # pl.figure()
+    # current_state_map(M, s, species[species_num], mask, x, img_extent, thin=1)
+    # pl.title('Final')
+    # pl.figure()
+    # pl.plot(M.trace('out_prob')[:],'b-',label='out')
+    # pl.plot(M.trace('in_prob')[:],'r-',label='in')    
+    # pl.legend(loc=0)
+    # pl.figure()
+    # out, arr = presence_map(M, s, species[species_num], thin=5, burn=500, trace_thin=1)
+    # # pl.figure()
+    # # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
+    # # for s in samps:
+    # #     pl.plot(x_disp, s)
+    # 
+    # # p_atfound = probability_traces(M)
+    # # p_atnotfound = probability_traces(M,False)
