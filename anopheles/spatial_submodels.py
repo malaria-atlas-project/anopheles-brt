@@ -173,15 +173,12 @@ def lr_spatial(rl=50,**stuff):
     x_fr = pm.Lambda('x_fr', lambda d=ichol, rl=rl, x=x_eo: x[d['pivots'][:rl]])
 
     # Evaluation of field at expert-opinion points
-    f_eo = MvNormalLR('f_eo', np.zeros(x_eo.shape[0]), piv, U, rl, value=np.zeros(x_eo.shape[0]), trace=False)
-
-    in_prob = pm.Lambda('in_prob', lambda f_eo=f_eo, n_in=pts_in.shape[0]: np.mean(pm.invlogit(f_eo[:n_in])))
-    out_prob = pm.Lambda('out_prob', lambda f_eo=f_eo, n_in=pts_in.shape[0]: np.mean(pm.invlogit(f_eo[n_in:])))    
+    U_fr = U[:rl,:rl]
+    L_fr = pm.Lambda('L_fr', lambda U=U_fr: U.T)
+    f_fr = pm.MvNormalChol('f_fr', np.zeros(rl), L_fr)   
 
     @pm.deterministic(trace=False)
-    def krige_wt(f_eo = f_eo, piv=piv, U=U, rl=rl):
-        U_fr = U[:rl,:rl]
-        f_fr = f_eo[piv[:rl]]
+    def krige_wt(f_fr = f_fr, U_fr = U_fr):
         return pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
 
     p = pm.Lambda('p', lambda x_fr=x_fr, C=C, krige_wt=krige_wt: LRP(x_fr, C, krige_wt))
