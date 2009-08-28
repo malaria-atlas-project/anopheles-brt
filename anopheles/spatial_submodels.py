@@ -87,6 +87,10 @@ def rlrmvn(m, piv, U, rl):
     
 MvNormalLR = pm.stochastic_from_dist('MvNormalLR', lrmvn_lp, rlrmvn, mv=True)
 
+# TODO: When you switch inducing points, the 'rest' of f_eo is not at its value determined by
+# the full-rank part & therefore not consistent with the map. You have to recalculate it.
+# Think carefully about whether there should be a Jacobian associated, etc.
+
 class MVNLRMetropolis(pm.AdaptiveMetropolis):
     def __init__(self, mvnlr, cov=None, delay=1000, scales=None, interval=200, greedy=True, shrink_if_necessary=False, verbose=0, tally=False):
         pm.AdaptiveMetropolis.__init__(self, mvnlr, cov, delay, scales, interval, greedy, shrink_if_necessary,verbose, tally)

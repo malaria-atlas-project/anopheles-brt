@@ -233,9 +233,6 @@ if __name__ == '__main__':
     M.assign_step_methods()
     sf=M.step_method_dict[M.f_eo][0]
     ss=M.step_method_dict[M.p_find][0]
-    
-    # TODO: Have sf take a tiny step, even the determined elements of f_eo should stay close or else something is wrong.
-    
         
     M.isample(10000,0,10)
     
