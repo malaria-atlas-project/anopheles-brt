@@ -147,7 +147,7 @@ class LRP(object):
     def __call__(self, x):
         f_out = np.dot(np.asarray(self.C(x,self.x_fr)), self.krige_wt)
         # return pm.invlogit(f_out).reshape(x.shape[:-1])
-        return np.array(f_out > 0, dtype=int)
+        return (f_out > 0).reshape(x.shape[:-1]).astype('int')
         
 def lr_spatial(rl=50,**stuff):
     """A low-rank spatial-only model."""

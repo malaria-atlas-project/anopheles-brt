@@ -234,27 +234,27 @@ if __name__ == '__main__':
     sf=M.step_method_dict[M.f_eo][0]
     ss=M.step_method_dict[M.p_find][0]
         
-    # M.isample(10000,0,10)
-    # 
-    # # mask, x, img_extent = make_covering_raster(2)
-    # # b = basemap.Basemap(*img_extent)
-    # # out = M.p.value(x)
-    # # arr = np.ma.masked_array(out, mask=True-mask)
-    # # b.imshow(arr.T, interpolation='nearest')
-    # # pl.colorbar()
+    M.isample(10000,0,10)
+    
+    # mask, x, img_extent = make_covering_raster(2)
+    # b = basemap.Basemap(*img_extent)
+    # out = M.p.value(x)
+    # arr = np.ma.masked_array(out, mask=True-mask)
+    # b.imshow(arr.T, interpolation='nearest')
+    # pl.colorbar()
+    pl.figure()
+    current_state_map(M, s, species[species_num], mask, x, img_extent, thin=1)
+    pl.title('Final')
+    pl.figure()
+    pl.plot(M.trace('out_prob')[:],'b-',label='out')
+    pl.plot(M.trace('in_prob')[:],'r-',label='in')    
+    pl.legend(loc=0)
+    pl.figure()
+    # out, arr = presence_map(M, s, species[species_num], thin=5, burn=500, trace_thin=1)
     # pl.figure()
-    # current_state_map(M, s, species[species_num], mask, x, img_extent, thin=1)
-    # pl.title('Final')
-    # pl.figure()
-    # pl.plot(M.trace('out_prob')[:],'b-',label='out')
-    # pl.plot(M.trace('in_prob')[:],'r-',label='in')    
-    # pl.legend(loc=0)
-    # pl.figure()
-    # # out, arr = presence_map(M, s, species[species_num], thin=5, burn=500, trace_thin=1)
-    # # pl.figure()
-    # # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
-    # # for s in samps:
-    # #     pl.plot(x_disp, s)
-    # 
-    # # p_atfound = probability_traces(M)
-    # # p_atnotfound = probability_traces(M,False)
+    # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
+    # for s in samps:
+    #     pl.plot(x_disp, s)
+    
+    # p_atfound = probability_traces(M)
+    # p_atnotfound = probability_traces(M,False)
