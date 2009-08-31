@@ -146,7 +146,8 @@ class LRP(object):
         self.krige_wt = krige_wt
     def __call__(self, x):
         f_out = np.dot(np.asarray(self.C(x,self.x_fr)), self.krige_wt)
-        return pm.invlogit(f_out).reshape(x.shape[:-1])
+        # return pm.invlogit(f_out).reshape(x.shape[:-1])
+        return np.array(f_out > 0, dtype=int)
         
 def lr_spatial(rl=50,**stuff):
     """A low-rank spatial-only model."""
@@ -188,8 +189,8 @@ def lr_spatial(rl=50,**stuff):
 # ======================================
 # = Spatial and environmental low-rank =
 # ======================================
-def mod_spatial_mahalanobis(x,y,amp,val,vec,symm=False):
-    return spatial_mahalanobis_covariance(x,y,amp,val,vec,symm)+100
+def mod_spatial_mahalanobis(x,y,val,vec,const_frac,symm=False):
+    return spatial_mahalanobis_covariance(x,y,1,val,vec,symm)*(1.-const_frac) + const_frac
 
 def normalize_env(x, means, stds):
     x_norm = x.copy().reshape(-1,x.shape[-1])
@@ -215,7 +216,8 @@ class LRP_norm(LRP):
 
 def lr_spatial_env(rl=50,**stuff):
     """A low-rank spatial-only model."""
-    amp = pm.Exponential('amp',.1,value=10)
+    # amp = pm.Exponential('amp',.1,value=10)
+    const_frac = pm.Uniform('const_frac',0,1,value=.1)
 
     pts_in = np.hstack((stuff['pts_in'],stuff['env_in']))
     pts_out = np.hstack((stuff['pts_out'],stuff['env_out']))
@@ -227,8 +229,8 @@ def lr_spatial_env(rl=50,**stuff):
     vec = cov_prior.OrthogonalBasis('vec',n_env+1,constrain=False)
 
     @pm.deterministic
-    def C(amp=amp,val=val,vec=vec):
-        return pm.gp.Covariance(mod_spatial_mahalanobis, amp=amp, val=val, vec=vec)
+    def C(val=val,vec=vec,const_frac=const_frac):
+        return pm.gp.Covariance(mod_spatial_mahalanobis, val=val, vec=vec, const_frac=const_frac)
 
     @pm.deterministic(trace=False)
     def ichol(C=C, rl=rl, x=x_eo):
