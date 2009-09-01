@@ -122,13 +122,13 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         # def out_factor(p=out_prob):
         #     if p == 0 or p == 1:
         #         return -np.inf
-        #     return pm.flib.logit(1.-p)
+        #     return pm.flib.logit(1.-p)*100
         # 
         # @pm.potential
         # def in_factor(p=in_prob):
         #     if p == 0 or p == 1:
         #         return -np.inf
-        #     return pm.flib.logit(p)
+        #     return pm.flib.logit(p)*100
             
         alpha_out = pm.Uniform('alpha_out',0,1)
         beta_out = pm.Uniform('beta_out',1,10)
@@ -223,8 +223,7 @@ if __name__ == '__main__':
     species_num = 7
 
     # M = species_MCMC(s, species[species_num], lr_spatial, with_eo = True, with_data = True, env_variables = [])
-    M = species_MCMC(s, species[species_num], lr_spatial_env, with_eo = True, with_data = False, env_variables = ['MARA','SCI'])
-    initialize_by_eo(M)
+    M = species_MCMC(s, species[species_num], lr_spatial_env, with_eo = True, with_data = True, env_variables = ['MARA','SCI'])
     
     pl.close('all')
     mask, x, img_extent = make_covering_raster(5, ['MARA','SCI'])
@@ -250,7 +249,7 @@ if __name__ == '__main__':
     pl.plot(M.trace('in_prob')[:],'r-',label='in')    
     pl.legend(loc=0)
     pl.figure()
-    # out, arr = presence_map(M, s, species[species_num], thin=5, burn=500, trace_thin=1)
+    out, arr = presence_map(M, s, species[species_num], thin=5, burn=500, trace_thin=1)
     # pl.figure()
     # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
     # for s in samps:

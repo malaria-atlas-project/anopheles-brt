@@ -190,7 +190,8 @@ def lr_spatial(rl=50,**stuff):
 # = Spatial and environmental low-rank =
 # ======================================
 def mod_spatial_mahalanobis(x,y,val,vec,const_frac,symm=False):
-    return spatial_mahalanobis_covariance(x,y,1,val,vec,symm)*(1.-const_frac) + const_frac
+    cf = np.asscalar(const_frac)
+    return spatial_mahalanobis_covariance(x,y,1,val,vec,symm)*(1.-cf) + cf
 
 def normalize_env(x, means, stds):
     x_norm = x.copy().reshape(-1,x.shape[-1])
