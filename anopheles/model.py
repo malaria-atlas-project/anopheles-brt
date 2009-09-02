@@ -173,7 +173,7 @@ def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
     else:
         M=pm.MCMC(make_model(session, species, spatial_submodel, **kwds), db=db)
     scalar_stochastics = filter(lambda s: np.prod(np.shape(s.value))<=1, M.stochastics)
-    M.use_step_method(pm.AdaptiveMetropolis, scalar_stochastics)
+    M.use_step_method(MVNLRParentMetropolis, scalar_stochastics, M.f_fr, M.U, M.piv, M.rl)
     return M
 
 def mean_response_samples(M, axis, n, burn=0, thin=1):
@@ -230,7 +230,7 @@ if __name__ == '__main__':
     current_state_map(M, s, species[species_num], mask, x, img_extent, thin=1)
     pl.title('Initial')
     M.assign_step_methods()
-    sf=M.step_method_dict[M.f_eo][0]
+    sf=M.step_method_dict[M.f_fr][0]
     ss=M.step_method_dict[M.p_find][0]
         
     M.isample(10000,0,10)

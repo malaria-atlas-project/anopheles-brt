@@ -3,7 +3,7 @@ import cov_prior
 from mahalanobis_covariance import *
 import pymc as pm
 
-__all__ = ['spatial_hill','hill_fn','hinge','step','MvNormalLR','lr_spatial','MVNLRMetropolis','lr_spatial_env']
+__all__ = ['spatial_hill','hill_fn','hinge','step','lr_spatial','lr_spatial_env','MVNLRParentMetropolis','minimal_jumps','bookend']
 
 def hinge(x, cp):
     "A MaxEnt hinge feature"
@@ -70,73 +70,60 @@ def mod_matern(x,y,diff_degree,amp,scale,symm=False):
     """Matern with the mean integrated out."""
     return pm.gp.matern.geo_rad(x,y,diff_degree=diff_degree,amp=amp,scale=scale,symm=symm)+10000
 
-def lrmvn_lp(x, m, piv, U, rl):
+def bookend(A, Ufro, Ubak):
+    return np.dot(pm.gp.trisolve(Ufro[:,:Ufro.shape[0]], A.T, uplo='U', transa='N'), Ubak[:,:Ubak.shape[0]]).T
+
+def minimal_jumps(piv_old, U_old, piv_new, U_new):
     """
-    lrmvn_lp(x, mu, C)
+    Returns the matrices giving the minimal-squared-error forward and backward jumps
+    when piv_new and U_new are proposed as replacements for piv_old and U_old.
     
-    Low-rank multivariate normal log-likelihood
+    Converts first to the independent unit normals underlying the current and
+    proposed states.
     """
-    if rl != U.shape[0]:
-        return -np.inf
-    return pm.mv_normal_chol_like(x[piv[:rl]], m[piv[:rl]], U[:rl, :rl].T)
+    U_old_sorted = U_old[:,np.argsort(piv_old)]
+    U_new_sorted = U_new[:,np.argsort(piv_new)]
     
-def rlrmvn(m, piv, U, rl):
-    rl = U.shape[0]
-    U_forrand = U[:,np.argsort(piv)]
-    return np.dot(U_forrand.T, np.random.normal(size=rl))
+    oldnew = np.dot(U_old_sorted, U_new_sorted.T)
+    oldold = np.dot(U_old_sorted, U_old_sorted.T)
+    newnew = np.dot(U_new_sorted, U_new_sorted.T)
     
-MvNormalLR = pm.stochastic_from_dist('MvNormalLR', lrmvn_lp, rlrmvn, mv=True)
-
-# TODO: When you switch inducing points, the 'rest' of f_eo is not at its value determined by
-# the full-rank part & therefore not consistent with the map. You have to recalculate it.
-# Think carefully about whether there should be a Jacobian associated, etc.
-
-class MVNLRMetropolis(pm.AdaptiveMetropolis):
-    def __init__(self, mvnlr, cov=None, delay=1000, scales=None, interval=200, greedy=True, shrink_if_necessary=False, verbose=0, tally=False):
-        pm.AdaptiveMetropolis.__init__(self, mvnlr, cov, delay, scales, interval, greedy, shrink_if_necessary,verbose, tally)
-        self.mvnlr = mvnlr
-        self.piv = mvnlr.parents['piv']
-        self.U = mvnlr.parents['U']
-        self.rl = mvnlr.parents['rl']
+    forjump = np.linalg.solve(newnew, oldnew.T)
+    bakjump = np.linalg.inv(np.linalg.solve(oldold, oldnew))
     
-    @classmethod
-    def competence(cls,stochastic):
-        if isinstance(stochastic, MvNormalLR):
-            return 3
-        else:
-            return 0
-
-    def covariance_adjustment(self, f=.9):
-        """Multiply self.proposal_sd by a factor f. This is useful when the current proposal_sd is too large and all jumps are rejected.
-        """
-        pass
-
-    def updateproposal_sd(self):
-        """Compute the Cholesky decomposition of self.C."""
-        pass
-            
+    return bookend(forjump, U_old, U_new), bookend(bakjump, U_old, U_new)
+        
+class MVNLRParentMetropolis(pm.AdaptiveMetropolis):
+    def __init__(self, variables, mvn, U, piv, rl, cov=None, delay=1000, scales=None, interval=200, greedy=True, shrink_if_necessary=False, verbose=0, tally=False):
+        pm.AdaptiveMetropolis.__init__(self, variables, cov, delay, scales, interval, greedy, shrink_if_necessary,verbose, tally)
+        self.mvn = mvn
+        self.piv = piv
+        self.U = U
+        self.rl = rl
+        
     def propose(self):
+        piv_old = self.piv.value
+        U_old = self.U.value
         
-        # from IPython.Debugger import Pdb
-        # Pdb(color_scheme='Linux').set_trace()   
+        pm.AdaptiveMetropolis.propose(self)
+        try:
+            self.logp_plus_loglike
+        except pm.ZeroProbability:
+            self.reject()
+        forjump, bakjump = minimal_jumps(piv_old, U_old, self.piv.value, self.U.value)
         
-        piv = self.piv.value
-        v = self.mvnlr.value[piv[:self.rl]]
-        jump = pm.rmv_normal_cov(np.zeros(self.rl), self.C[piv[:self.rl], :][:,piv[:self.rl]])
-        if self.verbose > 2:
-            print 'Jump :', jump
-
-        new_val = np.empty(self.mvnlr.value.shape)
+        # Symmetric proposal
+        if np.random.randint(2)==0:
+            jump = forjump
+        else:
+            jump = bakjump
         
-        # Jump the full-rank part
-        new_val_fr = v + jump
-        new_val[piv[:self.rl]] = new_val_fr
+        self.mvn.value = np.dot(jump, self.mvn.value)
         
-        # Jump the determined part
-        ind_norms = pm.gp.trisolve(self.U.value[:, :self.rl], new_val_fr, uplo='U', transa='T')
-        new_val[piv[self.rl:]] = np.dot(self.U.value[:, self.rl:].T, ind_norms) 
-
-        self.mvnlr.value = new_val
+    def reject(self):
+        pm.AdaptiveMetropolis.reject(self)
+        self.mvn.revert()
+        
         
 class LRP(object):
     """A closure that can evaluate a low-rank field."""
@@ -236,23 +223,29 @@ def lr_spatial_env(rl=50,**stuff):
     @pm.deterministic(trace=False)
     def ichol(C=C, rl=rl, x=x_eo):
         return C.cholesky(x, rank_limit=rl, apply_pivot=False)
+                
+    @pm.potential
+    def rank_check(d=ichol):
+        if d['U'].shape[0]<rl:
+            return -np.inf
+        else:
+            return 0.
+    
 
     piv = pm.Lambda('piv', lambda d=ichol: d['pivots'])
     U = pm.Lambda('U', lambda d=ichol: d['U'].view(np.ndarray), trace=False)
+    
+    U_fr = pm.Lambda('U_fr', lambda U=U, rl=rl: U[:,:rl], trace=False)
+    L_fr = pm.Lambda('L_fr', lambda U=U_fr: U.T, trace=False)
 
     # Trace the full-rank locations
     x_fr = pm.Lambda('x_fr', lambda d=ichol, rl=rl, x=x_eo: x[d['pivots'][:rl]])
 
     # Evaluation of field at expert-opinion points
-    f_eo = MvNormalLR('f_eo', np.zeros(x_eo.shape[0]), piv, U, rl, value=np.zeros(x_eo.shape[0]), trace=False)
-
-    in_prob = pm.Lambda('in_prob', lambda f_eo=f_eo, n_in=pts_in.shape[0]: np.mean(pm.invlogit(f_eo[:n_in])))
-    out_prob = pm.Lambda('out_prob', lambda f_eo=f_eo, n_in=pts_in.shape[0]: np.mean(pm.invlogit(f_eo[n_in:])))    
+    f_fr = pm.MvNormalChol('f_fr', np.zeros(rl), L_fr)
 
     @pm.deterministic(trace=False)
-    def krige_wt(f_eo = f_eo, piv=piv, U=U, rl=rl):
-        U_fr = U[:rl,:rl]
-        f_fr = f_eo[piv[:rl]]
+    def krige_wt(f_fr=f_fr, U_fr=U_fr):
         return pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
 
     p = pm.Lambda('p', lambda x_fr=x_fr, C=C, krige_wt=krige_wt, means=stuff['env_means'], stds=stuff['env_stds']: LRP_norm(x_fr, C, krige_wt, means, stds))
