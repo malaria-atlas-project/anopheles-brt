@@ -124,6 +124,14 @@ class MVNLRParentMetropolis(pm.AdaptiveMetropolis):
         pm.AdaptiveMetropolis.reject(self)
         self.mvn.revert()
         
+    def _get_logp_plus_loglike(self):
+        sum = logp_of_set(self.markov_blanket) + self.mvn.logp
+        if self.verbose>1:
+            print '\t' + self._id + ' Current log-likelihood plus current log-probability', sum
+        return sum
+        
+    logp_plus_loglike = property(_get_logp_plus_loglike)
+        
         
 class LRP(object):
     """A closure that can evaluate a low-rank field."""
@@ -231,7 +239,6 @@ def lr_spatial_env(rl=50,**stuff):
         else:
             return 0.
     
-
     piv = pm.Lambda('piv', lambda d=ichol: d['pivots'])
     U = pm.Lambda('U', lambda d=ichol: d['U'].view(np.ndarray), trace=False)
     

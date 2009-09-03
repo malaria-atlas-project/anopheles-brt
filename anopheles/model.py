@@ -232,6 +232,12 @@ if __name__ == '__main__':
     M.assign_step_methods()
     sf=M.step_method_dict[M.f_fr][0]
     ss=M.step_method_dict[M.p_find][0]
+    
+    for  i in xrange(100):
+        try:
+            M.data.logp
+        except pm.ZeroProbability:
+            M.f_fr.rand()
         
     M.isample(10000,0,10)
     
