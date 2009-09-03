@@ -125,7 +125,7 @@ class MVNLRParentMetropolis(pm.AdaptiveMetropolis):
         self.mvn.revert()
         
     def _get_logp_plus_loglike(self):
-        sum = logp_of_set(self.markov_blanket) + self.mvn.logp
+        sum = pm.utils.logp_of_set(self.markov_blanket | set([self.mvn]))
         if self.verbose>1:
             print '\t' + self._id + ' Current log-likelihood plus current log-probability', sum
         return sum
