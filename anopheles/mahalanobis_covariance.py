@@ -19,7 +19,7 @@ from utils import mahal, mod_mahal
 
 __all__ = ['mahalanobis_covariance', 'spatial_mahalanobis_covariance']
 
-def spatial_mahalanobis_covariance(x,y,amp,val,vec,symm=None):
+def spatial_mahalanobis_covariance(x,y,amp,val,vec,const_frac=0,symm=None):
     """
     Converts x and y to a matrix of covariances. x and y are assumed to have
     columns (long,lat,t). Parameters are:
@@ -56,22 +56,26 @@ def spatial_mahalanobis_covariance(x,y,amp,val,vec,symm=None):
         else:
             bounds = np.array(np.sqrt(np.linspace(0,ny*ny,n_threads+1)),dtype=int)
 
+    const_frac = np.asscalar(const_frac)
+
     # Target function for threads
-    def targ(C,D,x,y,symm,amp,val,vec,cmin,cmax):
+    def targ(C,D,x,y,symm,amp,val,vec,const_frac,cmin,cmax):
         # from IPython.Debugger import Pdb
         # Pdb(color_scheme='Linux').set_trace()   
         pm.gp.geo_rad(D,x[:,:2],y[:,:2],cmin=cmin,cmax=cmax,symm=symm)
         if x.shape[1]>2:
-            mod_mahal(C,D,x[:,2:],y[:,2:],symm=symm,a=amp,l=val,s=vec,cmin=cmin,cmax=cmax)
+            mod_mahal(C,D,x[:,2:],y[:,2:],symm=symm,a=amp,l=val,s=vec,cf=const_frac,cmin=cmin,cmax=cmax)
         else:
             C[:,cmin:cmax]=D[:,cmin:cmax]
             pm.gp.exponential.raw(C,cmin=cmin,cmax=cmax,symm=symm)
+            C[:,cmin:cmax]*=(1.-cf)
+            C[:,cmin:cmax]+=cf*amp
     
     # Dispatch threads        
     if n_threads <= 1:
-        targ(C,D,x,y,symm,amp,val,vec,0,C.shape[1])
+        targ(C,D,x,y,symm,amp,val,vec,const_frac,0,C.shape[1])
     else:
-        thread_args = [(C,D,x,y,symm,amp,val,vec,bounds[i],bounds[i+1]) for i in xrange(n_threads)]
+        thread_args = [(C,D,x,y,symm,amp,val,vec,const_frac,bounds[i],bounds[i+1]) for i in xrange(n_threads)]
         pm.map_noreturn(targ, thread_args)
 
     if symm:

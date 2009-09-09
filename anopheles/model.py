@@ -209,7 +209,9 @@ def initialize_by_eo(M):
     M.f_eo.value = new_val
     
     
-
+# TODO: Evaluation metrics: kappa etc.
+# TODO: Figure out how to assess convergence even though there's degeneracy: can exchange axis labels in covariance prior and no problem.
+# TODO: Actually if there's convergence without reduction, you're fine.
 if __name__ == '__main__':
     s = Session()
     species = list_species(s)
@@ -223,10 +225,10 @@ if __name__ == '__main__':
     species_num = 7
 
     # M = species_MCMC(s, species[species_num], lr_spatial, with_eo = True, with_data = True, env_variables = [])
-    M = species_MCMC(s, species[species_num], lr_spatial_env, with_eo = True, with_data = True, env_variables = ['MARA','SCI'])
+    M = species_MCMC(s, species[species_num], lr_spatial_env, with_eo = True, with_data = True, env_variables = ['public/anopheles/MARA','public/anopheles/SCI'])
     
     pl.close('all')
-    mask, x, img_extent = make_covering_raster(5, ['MARA','SCI'])
+    mask, x, img_extent = make_covering_raster(5, ['public/anopheles/MARA','public/anopheles/SCI'])
     current_state_map(M, s, species[species_num], mask, x, img_extent, thin=1)
     pl.title('Initial')
     M.assign_step_methods()

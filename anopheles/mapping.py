@@ -12,7 +12,7 @@ def make_covering_raster(thin=1, env_variables=(), **kwds):
 
     a=getattr(mbgw.auxiliary_data,'landSea-e')
     
-    lon,lat,layers = reconcile_multiple_rasters([a]+[data_dir.gethf(n) for n in env_variables])
+    lon,lat,layers = reconcile_multiple_rasters([a]+[get_datafile(n) for n in env_variables])
 
     lon = lon[::thin]
     lat = lat[::thin][::-1]

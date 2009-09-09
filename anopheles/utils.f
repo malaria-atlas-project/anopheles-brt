@@ -269,13 +269,14 @@ cf2py threadsafe
       END
 
 
-      SUBROUTINE mod_mahal(c,ds,x,y,symm,a,l,s,nx,ny,nd,cmin,cmax)
+      SUBROUTINE mod_mahal(c,ds,x,y,symm,a,l,s,cf,nx,ny,nd,cmin,cmax)
 cf2py intent(hide) nx,ny,nd
 cf2py intent(inplace) c
 cf2py threadsafe
       DOUBLE PRECISION x(nx,nd), y(ny,nd), s(nd+1,nd+1), l(nd+1)
       DOUBLE PRECISION c(nx,ny), dev(nd+1), this, a, tdev(nd+1)
       DOUBLE PRECISION ds(nx,ny)
+      DOUBLE PRECISION cf
       INTEGER i,j,k,m,nx,ny,nd,cmin,cmax
       LOGICAL symm
       
@@ -308,7 +309,7 @@ cf2py threadsafe
                     
 !                     print *,dev(1),tdev(1),dsqrt(this)
 
-                    c(i,j) = dexp(-dsqrt(this))*a*a
+                    c(i,j) = (dexp(-dsqrt(this))*(1.0D0-cf)+cf)*a*a
 
                 end do              
                 
@@ -334,7 +335,7 @@ cf2py threadsafe
                       this = this + tdev(k)*tdev(k)/l(k)
                   end do
               
-                  c(i,j) = dexp(-dsqrt(this))*a*a
+                  c(i,j) = (dexp(-dsqrt(this))*(1.0D0-cf)+cf)*a*a
 
               end do
           end if

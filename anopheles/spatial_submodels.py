@@ -100,10 +100,17 @@ class MVNLRParentMetropolis(pm.AdaptiveMetropolis):
         self.piv = piv
         self.U = U
         self.rl = rl
+        for s in self.markov_blanket:
+            if s.__name__ == 'data':
+                self.data = s
+                break
         
     def propose(self):
         piv_old = self.piv.value
         U_old = self.U.value
+        
+        self.cur_mvn_val = self.mvn.value
+        self.mvn_jumped = False
         
         pm.AdaptiveMetropolis.propose(self)
         try:
@@ -119,13 +126,17 @@ class MVNLRParentMetropolis(pm.AdaptiveMetropolis):
             jump = bakjump
         
         self.mvn.value = np.dot(jump, self.mvn.value)
+        self.mvn_jumped = True
         
     def reject(self):
         pm.AdaptiveMetropolis.reject(self)
-        self.mvn.revert()
+        if self.mvn_jumped:
+            if np.any(self.mvn.last_value != self.cur_mvn_val):
+                raise RuntimeError, 'Rejection is going to fail'
+            self.mvn.revert()
         
     def _get_logp_plus_loglike(self):
-        sum = pm.utils.logp_of_set(self.markov_blanket | set([self.mvn]))
+        sum = pm.utils.logp_of_set(self.markov_blanket + [self.mvn])
         if self.verbose>1:
             print '\t' + self._id + ' Current log-likelihood plus current log-probability', sum
         return sum
@@ -185,8 +196,7 @@ def lr_spatial(rl=50,**stuff):
 # = Spatial and environmental low-rank =
 # ======================================
 def mod_spatial_mahalanobis(x,y,val,vec,const_frac,symm=False):
-    cf = np.asscalar(const_frac)
-    return spatial_mahalanobis_covariance(x,y,1,val,vec,symm)*(1.-cf) + cf
+    return spatial_mahalanobis_covariance(x,y,1,val,vec,const_frac,symm)
 
 def normalize_env(x, means, stds):
     x_norm = x.copy().reshape(-1,x.shape[-1])
