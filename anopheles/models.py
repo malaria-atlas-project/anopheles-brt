@@ -18,7 +18,7 @@ from sqlalchemygeom import Geometry
 from sqlalchemy.orm import relation, backref, join, mapper, sessionmaker 
 from connection_string import connection_string
 
-engine = create_engine(connection_string, echo=True)
+engine = create_engine(connection_string, echo=False)
 metadata = MetaData()
 metadata.bind = engine
 Session = sessionmaker(bind=engine)
@@ -26,11 +26,7 @@ Session = sessionmaker(bind=engine)
 from sqlalchemy.ext.declarative import declarative_base
 Base = declarative_base(metadata=metadata)
 
-__all__ = ['Anopheline', 'Source', 'Site', 'ExpertOpinion', 'Presence', 'SamplePeriod', 'Session', 'World', 'AdminUnit', 'Map', 'Sample',]
-
-unique_species = Table('unique_species', metadata, 
-autoload=True
-)
+__all__ = ['Anopheline', 'Anopheline2', 'Source', 'Site', 'ExpertOpinion', 'Presence', 'SamplePeriod', 'Session', 'World', 'Map', 'Collection', 'Identification','CollectionMethod', 'IdentificationMethod']
 
 """
 update vector_anopheline set anopheline2_id = 
@@ -70,6 +66,12 @@ class Anopheline2(Base):
         name = "<i>Anopheles (%s) %s</i> %s" % (self.sub_genus, species, self.author)
         return name.replace("&", "&amp;")
 
+class IdentificationMethod(Base):
+    __table__ = Table('vector_identificationmethod', metadata, autoload=True)
+
+class CollectionMethod(Base):
+    __table__ = Table('vector_collectionmethod', metadata, autoload=True)
+
 class Source(Base):
     __table__ = Table('source', metadata, autoload=True)
 
@@ -80,6 +82,14 @@ class Site(Base):
     """
     __table__ = Table('site', metadata, Column('geom', Geometry(4326)), autoload=True)
     sample_periods = relation("SamplePeriod", backref="sites")
+
+class SiteCoordinates(Base):
+    """
+    Represents a georeferenced site. The geometry returns a multipoint shapely object.
+    The sample_periods property returns all sample periods linked to the site, aggregated across all studies.
+    """
+    __table__ = Table('site_coordinates', metadata, Column('geom', Geometry(4326)), autoload=True)
+    site = relation("Site", backref="site_coordinates")
 
 class ExpertOpinion(Base):
     __tablename__ = "vector_expertopinion"
@@ -104,9 +114,15 @@ class SamplePeriod(Base):
     Represents a vector sample at a location. May have a specified time period.
     vector_site_sample_period is a view which aggregates samples across studies. 
     """
+    #NB - A view 
     __tablename__ = "vector_sampleperiod"
     id = Column(Integer, primary_key=True)
     site_id = Column(Integer, ForeignKey('site.site_id'))
+    source_id = Column(Integer, ForeignKey('source.enl_id'))
+    presence_id = Column(Integer)
+    complex = Column(String)
+    anopheline_id = Column(Integer, ForeignKey('vector_anopheline.id'))
+    anopheline = relation(Anopheline, backref="sample_period")
     anopheline2_id = Column(Integer, ForeignKey('vector_anopheline2.id'))
     anopheline2 = relation(Anopheline2, backref="sample_period")
     start_month = Column(Integer, nullable=True)
@@ -114,46 +130,36 @@ class SamplePeriod(Base):
     end_month = Column(Integer, nullable=True)
     end_year = Column(Integer, nullable=True)
 
-class SiteSamplePeriod(Base):
-    """
-    Represents a vector sample at a location. May have a specified time period.
-    vector_site_sample_period is a view which aggregates samples across studies. 
-    """
-    __tablename__ = "vector_site_sample_period"
-    id = Column(Integer, primary_key=True)
-    site_id = Column(Integer, ForeignKey('site.site_id'))
-    anopheline_id = Column(Integer, ForeignKey('vector_anopheline.id'))
-    anopheline = relation(Anopheline, backref="sample_period")
-    anopheline2_id = Column(Integer, ForeignKey('vector_anopheline2.id'))
-    anopheline2 = relation(Anopheline2, backref="site_sample_period")
-    start_month = Column(Integer, nullable=True)
-    start_year = Column(Integer, nullable=True)
-    end_month = Column(Integer, nullable=True)
-    end_year = Column(Integer, nullable=True)
-    sample_aggregate_check = Column(Integer, nullable=True)
+class Identification(Base):
+    __table__ = Table('vector_identification', metadata, autoload=True)
 
-class Sample(Base):
+class Collection(Base):
     """ 
     A set of mosquitos collected by a specific method 
     """ 
-    __table__ = Table('vector_sample', metadata, autoload=True)
+    __tablename__ = "vector_collection"
+    id = Column(Integer, primary_key=True)
+    ordinal = Column(Integer)
+    count = Column(Integer)
+    sample_period_id = Column(Integer, ForeignKey('vector_sampleperiod.id'))
+    sample_period = relation(SamplePeriod, backref="sample")
 
 class Region(Base):
     __table__ = Table('vector_region', metadata, autoload=True)
 
-class AdminUnit(Base):
-    """
-    Represents a vector sample at a location. May have a specified time period.
-    vector_site_sample_period is a view which aggregates samples across studies. 
-    """
-    __tablename__ = "adminunit"
-    id = Column(Integer, primary_key=True)
-    geom = Column(Geometry(4326))
-    admin_level_id = Column(String)
-    parent_id  = Column(Integer, ForeignKey('adminunit.id'))
-    name = Column(String)
-    dublin_core_id = Column(Integer)
-    gaul_code = Column(Integer)
+#class AdminUnit(Base):
+#    """
+#    Represents a vector sample at a location. May have a specified time period.
+#    vector_site_sample_period is a view which aggregates samples across studies. 
+#    """
+#    __tablename__ = "adminunit"
+#    id = Column(Integer, primary_key=True)
+#    geom = Column(Geometry(4326))
+#    admin_level_id = Column(String)
+#    parent_id  = Column(Integer, ForeignKey('adminunit.id'))
+#    name = Column(String)
+#    dublin_core_id = Column(Integer)
+#    gaul_code = Column(Integer)
 
 class LayerStyle(Base):
     __tablename__ = "vector_layerstyle"
