@@ -18,7 +18,7 @@ from sqlalchemygeom import Geometry
 from sqlalchemy.orm import relation, backref, join, mapper, sessionmaker 
 from connection_string import connection_string
 
-engine = create_engine(connection_string, echo=False)
+engine = create_engine(connection_string, echo=True)
 metadata = MetaData()
 metadata.bind = engine
 Session = sessionmaker(bind=engine)

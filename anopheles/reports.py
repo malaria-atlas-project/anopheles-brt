@@ -51,12 +51,48 @@ q = session.query(Anopheline.name,
     ).order_by(Anopheline.name.desc())
 
 
+#reports.append(
+#    ExcelReport(
+#        'Sites and sample periods by species',
+#        q.outerjoin((sampleperiod_subq, Anopheline.id==sampleperiod_subq.c.anopheline2_id)),
+#        headers = ["", "Unique sites", "Temporally unique collections",],
+#        totals = [1,2]
+#    )
+#)
 reports.append(
     ExcelReport(
         'Sites and sample periods by species',
-        q.outerjoin((sampleperiod_subq, Anopheline.id==sampleperiod_subq.c.anopheline2_id)),
+        """
+        select (select abbreviation from vector_anopheline va where va.id = vector_sampleperiod.anopheline_id),count(distinct(site_id)), count(*) from vector_sampleperiod group by anopheline_id order by 1
+        """,
         headers = ["", "Unique sites", "Temporally unique collections",],
         totals = [1,2]
+    )
+)
+
+reports.append(
+    ExcelReport(
+    'Sites by species and area type',
+    """
+    select
+    a.name,
+    (select count(*) from site where has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as all_sites,
+    (select count(*) from site where area_type = 'point' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as point_count,
+    (select count(*) from site where area_type = 'wide area' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as wide_area,
+    (select count(*) from site where area_type = 'polygon small' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as polygon_small,
+    (select count(*) from site where area_type = 'polygon large' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as polygon_large,
+    (select count(*) from site where area_type = 'not specified' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as not_specified,
+    (select count(*) from site where (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as all_sites_null_geom,
+    (select count(*) from site where area_type = 'point' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as point_count_null_geom,
+    (select count(*) from site where area_type = 'wide area' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as wide_area_null_geom,
+    (select count(*) from site where area_type = 'polygon small' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as polygon_small_null_geom,
+    (select count(*) from site where area_type = 'polygon large' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as polygon_large_null_geom,
+    (select count(*) from site where area_type = 'not specified' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as not_specified_null_geom
+    from vector_anopheline a
+    order by a.name desc;
+    """,
+    headers = ["", "All sites", "Points", "Wide area", "Polygon small", "Polygon large", "Not specified", "All sites", "Points", "Wide area", "Polygon small", "Polygon large", "Not specified",],
+    totals = range(1,13)
     )
 )
 
@@ -88,6 +124,16 @@ reports.append(
 
 reports.append(
     ExcelReport(
+    'vector collections with na and a count',
+    """
+    select source_id, site_id, sample_period_id, (select abbreviation from vector_anopheline where id = vsp.anopheline_id), vc.count from vector_collection vc inner join vector_sampleperiod vsp on vsp.id = vc.sample_period_id where vc.collection_method_id = 21 and vc.count is not null and ordinal <> 1;
+    """,
+    headers = ["source_id", "site_id", "sample_period_id", "anopheline", "count",]
+    )
+)
+
+reports.append(
+    ExcelReport(
     'Map text',
     """
     select abbreviation, author, missing_occurrence
@@ -111,6 +157,16 @@ reports.append(
 
 reports.append(
     ExcelReport(
+    'admin0-vs-country',
+    """
+    select au.name, c.name as country_name, au.country_id, c.pf_endemic from adminunit au, country c where admin_level = '0' and au.country_id = c.id order by 1;
+    """,
+    headers = ["admin0_name", "country_name", "country_code", "pf_endemic", ]
+    )
+)
+
+reports.append(
+    ExcelReport(
     'Blank countries',
     """
     select full_name, (select min(source_id) from vector_sampleperiod vsp where vsp.site_id = site.site_id), site_id from site where (country in ('', ' ', '  ') or country is null) and has_vector_data is true order by 2;
@@ -119,49 +175,24 @@ reports.append(
     )
 )
 
-reports.append(
-    ExcelReport(
-    'Datasheet random source check',
-    """
-    select ss.source_id, s.full_name, va.abbreviation, ss.count
-    from
-    site s,
-    vector_anopheline va,
-    (select source_id, site_id, anopheline_id, count(*) as count from vector_sampleperiod group by 1,2,3) as ss
-    where s.site_id = ss.site_id and va.id = ss.anopheline_id and ss.source_id in
-    (select source_to_check from vector_tempdatasheetloaded) 
-    order by source_id;
-    """,
-    headers = ["source_id", "full_name", "abbreviation",  "count", ]
-    )
-)
+#reports.append(
+#    ExcelReport(
+#    'Datasheet random source check',
+#    """
+#    select ss.source_id, s.full_name, va.abbreviation, ss.count
+#    from
+#    site s,
+#    vector_anopheline va,
+#    (select source_id, site_id, anopheline_id, count(*) as count from vector_sampleperiod group by 1,2,3) as ss
+#    where s.site_id = ss.site_id and va.id = ss.anopheline_id and ss.source_id in
+#    (select source_to_check from vector_tempdatasheetloaded) 
+#    order by source_id;
+#    """,
+#    headers = ["source_id", "full_name", "abbreviation",  "count", ]
+#    )
+#)
 
 
-reports.append(
-    ExcelReport(
-    'Sites by species and area type',
-    """
-    select
-    a.name,
-    (select count(*) from site where geom is not null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as all_sites,
-    (select count(*) from site where area_type = 'point' and geom is not null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as point_count,
-    (select count(*) from site where area_type = 'wide area' and geom is not null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as wide_area,
-    (select count(*) from site where area_type = 'polygon small' and geom is not null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as polygon_small,
-    (select count(*) from site where area_type = 'polygon large' and geom is not null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as polygon_large,
-    (select count(*) from site where area_type = 'not specified' and geom is not null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as not_specified,
-    (select count(*) from site where geom is null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as all_sites_null_geom,
-    (select count(*) from site where area_type = 'point' and geom is null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as point_count_null_geom,
-    (select count(*) from site where area_type = 'wide area' and geom is null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as wide_area_null_geom,
-    (select count(*) from site where area_type = 'polygon small' and geom is null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as polygon_small_null_geom,
-    (select count(*) from site where area_type = 'polygon large' and geom is null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as polygon_large_null_geom,
-    (select count(*) from site where area_type = 'not specified' and geom is null and site_id in (select distinct(site_id) from vector_site_sample_period vsp where a.id = vsp.anopheline_id))as not_specified_null_geom
-    from vector_anopheline a
-    order by a.name desc;
-    """,
-    headers = ["", "All sites", "Points", "Wide area", "Polygon small", "Polygon large", "Not specified", "All sites", "Points", "Wide area", "Polygon small", "Polygon large", "Not specified",],
-    totals = range(1,13)
-    )
-)
 
 reports.append(
     ExcelReport(
@@ -187,7 +218,7 @@ reports.append(
         (
             select s.site_id, count(*) as c
             from site s, vector_presence vp
-            where geom is null
+            where (not has_geometry)
             and s.site_id = vp.site_id
             group by s.site_id
         ) as ss
@@ -209,7 +240,7 @@ reports.append(
     """
     select distinct source_id, site.full_name, site.site_id from vector_sampleperiod, site
     where exists (select * from vector_sampleperiod vsp where vsp.site_id = site.site_id) and vector_sampleperiod.site_id in
-    (select site_id from site_latlong group by site_id having count(*) > 1) and area_type = 'point'
+    (select site_id from site_coordinates group by site_id having count(*) > 1) and area_type = 'point'
     and vector_sampleperiod.site_id = site.site_id
     order by source_id desc
     """
@@ -220,9 +251,9 @@ reports.append(
     ExcelReport(
     "Bad sequence in ordinals",
 """
-select distinct(source_id) 
+select distinct source_id, site_id  
 from vector_sampleperiod where site_id in 
-(select site_id as sum_ord from site_latlong
+(select site_id as sum_ord from site_coordinates
 group by site_id
 having not (
     (sum(ordinal) = 1 and count(*) = 1) or
@@ -235,34 +266,41 @@ having not (
     (sum(ordinal) = 36 and count(*) = 8))
 )
 ;
-"""
+""",
+headers = ["source_id", "site_id",] 
 ))
 
-reports.append(
-    ExcelReport(
-    "Non matching sample aggregates",
-"""
-select source_id, sample_period_id, sample_aggregate_check as ALLN, ss.c as counted from vector_sampleperiod vsp,  (
-select sample_period_id, sum(count)  as c from vector_collection group by sample_period_id
-) as ss
-where ss.sample_period_id = vsp.id
-and vsp.sample_aggregate_check <> ss.c
-;
-"""
-))
+#reports.append(
+#    ExcelReport(
+#    "Non matching sample aggregates",
+#"""
+#select source_id, sample_period_id, sample_aggregate_check as ALLN, ss.c as counted from vector_sampleperiod vsp,  (
+#select sample_period_id, sum(count)  as c from vector_collection group by sample_period_id
+#) as ss
+#where ss.sample_period_id = vsp.id
+#and vsp.sample_aggregate_check <> ss.c
+#;
+#"""
+#))
 
 reports.append(
     ExcelReport(
     "Extra coords in point and wide area",
 """
-select vp1.source_id, vp1.site_id, (select full_name from site sss where sss.site_id = vp1.site_id) from vector_presence vp1 where vp1.site_id in (
-select sll.site_id from site s, site_latlong sll 
-where s.site_id = sll.site_id 
+select vsp.source_id, vsp.site_id, (select full_name from site sss where sss.site_id = vsp.site_id) 
+from vector_sampleperiod vsp where vsp.site_id in (
+select sc.site_id from site s, site_coordinates sc 
+where s.site_id = sc.site_id 
 and s.area_type in ('point', 'wide area')
-and exists(select * from vector_presence where s.site_id = vector_presence.site_id)
-group by sll.site_id
+group by sc.site_id
 having count(*) > 1
-"""
+)
+group by 1,2
+order by 1,2
+
+;
+""",
+headers = ["source_id", "site_id",] 
 ))
 
 reports.append(
@@ -400,43 +438,43 @@ LEFT JOIN
 (select min(date_from_month_year(start_month, start_year)) as min_date, max(date_from_month_year(end_month, end_year)) as max_date, count(*) as nsamples, site_id, vector_presence_id from vector_sampleperiod group by site_id, vector_presence_id) as sp
 on (sp.site_id = s.site_id and p.id = sp.vector_presence_id)
 LEFT JOIN
-(select site_id, min(identification_method_id) as vim_id, vector_presence_id from vector_site_sample_period vsp inner join vector_identification vi on vi.sample_period_id = vsp.id where vi.ordinal=1 group by site_id, vector_presence_id, identification_method_id) as si1
+(select site_id, min(identification_method_id) as vim_id, vector_presence_id from vector_sampleperiod vsp inner join vector_identification vi on vi.sample_period_id = vsp.id where vi.ordinal=1 group by site_id, vector_presence_id, identification_method_id) as si1
 on (si1.site_id = s.site_id and p.id = si1.vector_presence_id)
 LEFT JOIN
-(select site_id, min(identification_method_id) as vim_id, vector_presence_id from vector_site_sample_period vsp inner join vector_identification vi on vi.sample_period_id = vsp.id where vi.ordinal=2 group by site_id, vector_presence_id, identification_method_id) as si2
+(select site_id, min(identification_method_id) as vim_id, vector_presence_id from vector_sampleperiod vsp inner join vector_identification vi on vi.sample_period_id = vsp.id where vi.ordinal=2 group by site_id, vector_presence_id, identification_method_id) as si2
 on (si2.site_id = s.site_id and p.id = si2.vector_presence_id)
 LEFT JOIN
-(select site_id, min(identification_method_id) as vim_id, vector_presence_id from vector_site_sample_period vsp inner join vector_identification vi on vi.sample_period_id = vsp.id where vi.ordinal=3 group by site_id, vector_presence_id, identification_method_id) as si3
+(select site_id, min(identification_method_id) as vim_id, vector_presence_id from vector_sampleperiod vsp inner join vector_identification vi on vi.sample_period_id = vsp.id where vi.ordinal=3 group by site_id, vector_presence_id, identification_method_id) as si3
 on (si3.site_id = s.site_id and p.id = si3.vector_presence_id)
 LEFT JOIN
-(select site_id, min(identification_method_id) as vim_id, vector_presence_id from vector_site_sample_period vsp inner join vector_identification vi on vi.sample_period_id = vsp.id where vi.ordinal=4 group by site_id, vector_presence_id, identification_method_id) as si4
+(select site_id, min(identification_method_id) as vim_id, vector_presence_id from vector_sampleperiod vsp inner join vector_identification vi on vi.sample_period_id = vsp.id where vi.ordinal=4 group by site_id, vector_presence_id, identification_method_id) as si4
 on (si4.site_id = s.site_id and p.id = si4.vector_presence_id)
 LEFT JOIN
-(select site_id, min(collection_method_id) as sm_id, vector_presence_id from vector_site_sample_period vsp inner join vector_collection vc on vc.sample_period_id = vsp.id where vc.ordinal=1 group by site_id, vector_presence_id, collection_method_id) as smp1
+(select site_id, min(collection_method_id) as sm_id, vector_presence_id from vector_sampleperiod vsp inner join vector_collection vc on vc.sample_period_id = vsp.id where vc.ordinal=1 group by site_id, vector_presence_id, collection_method_id) as smp1
 on (smp1.site_id = s.site_id and p.id = smp1.vector_presence_id)
 LEFT JOIN
-(select site_id, min(collection_method_id) as sm_id, vector_presence_id from vector_site_sample_period vsp inner join vector_collection vc on vc.sample_period_id = vsp.id where vc.ordinal=2 group by site_id, vector_presence_id, collection_method_id) as smp2
+(select site_id, min(collection_method_id) as sm_id, vector_presence_id from vector_sampleperiod vsp inner join vector_collection vc on vc.sample_period_id = vsp.id where vc.ordinal=2 group by site_id, vector_presence_id, collection_method_id) as smp2
 on (smp2.site_id = s.site_id and p.id = smp2.vector_presence_id)
 LEFT JOIN
-(select site_id, min(collection_method_id) as sm_id, vector_presence_id from vector_site_sample_period vsp inner join vector_collection vc on vc.sample_period_id = vsp.id where vc.ordinal=3 group by site_id, vector_presence_id, collection_method_id) as smp3
+(select site_id, min(collection_method_id) as sm_id, vector_presence_id from vector_sampleperiod vsp inner join vector_collection vc on vc.sample_period_id = vsp.id where vc.ordinal=3 group by site_id, vector_presence_id, collection_method_id) as smp3
 on (smp3.site_id = s.site_id and p.id = smp3.vector_presence_id)
 LEFT JOIN
-(select site_id, min(collection_method_id) as sm_id, vector_presence_id from vector_site_sample_period vsp inner join vector_collection vc on vc.sample_period_id = vsp.id where vc.ordinal=4 group by site_id, vector_presence_id, collection_method_id) as smp4
+(select site_id, min(collection_method_id) as sm_id, vector_presence_id from vector_sampleperiod vsp inner join vector_collection vc on vc.sample_period_id = vsp.id where vc.ordinal=4 group by site_id, vector_presence_id, collection_method_id) as smp4
 on (smp4.site_id = s.site_id and p.id = smp4.vector_presence_id)
 LEFT JOIN
-(select site_id, sum(coalesce(vc.count, 1)) as sm_count, vector_presence_id from vector_site_sample_period vsp inner join vector_collection vc on vc.sample_period_id = vsp.id where vc.ordinal=1 group by site_id, vector_presence_id) as pa1 
+(select site_id, sum(coalesce(vc.count, 1)) as sm_count, vector_presence_id from vector_sampleperiod vsp inner join vector_collection vc on vc.sample_period_id = vsp.id where vc.ordinal=1 group by site_id, vector_presence_id) as pa1 
 on (pa1.site_id = s.site_id and p.id = pa1.vector_presence_id)
 LEFT JOIN
-(select site_id, sum(coalesce(vc.count, 1)) as sm_count, vector_presence_id from vector_site_sample_period vsp inner join vector_collection vc on vc.sample_period_id = vsp.id where vc.ordinal=2 group by site_id, vector_presence_id) as pa2 
+(select site_id, sum(coalesce(vc.count, 1)) as sm_count, vector_presence_id from vector_sampleperiod vsp inner join vector_collection vc on vc.sample_period_id = vsp.id where vc.ordinal=2 group by site_id, vector_presence_id) as pa2 
 on (pa2.site_id = s.site_id and p.id = pa2.vector_presence_id)
 LEFT JOIN
-(select site_id, sum(coalesce(vc.count, 1)) as sm_count, vector_presence_id from vector_site_sample_period vsp inner join vector_collection vc on vc.sample_period_id = vsp.id where vc.ordinal=3 group by site_id, vector_presence_id) as pa3 
+(select site_id, sum(coalesce(vc.count, 1)) as sm_count, vector_presence_id from vector_sampleperiod vsp inner join vector_collection vc on vc.sample_period_id = vsp.id where vc.ordinal=3 group by site_id, vector_presence_id) as pa3 
 on (pa3.site_id = s.site_id and p.id = pa3.vector_presence_id)
 LEFT JOIN
-(select site_id, sum(coalesce(vc.count, 1)) as sm_count, vector_presence_id from vector_site_sample_period vsp inner join vector_collection vc on vc.sample_period_id = vsp.id where vc.ordinal=4 group by site_id, vector_presence_id) as pa4 
+(select site_id, sum(coalesce(vc.count, 1)) as sm_count, vector_presence_id from vector_sampleperiod vsp inner join vector_collection vc on vc.sample_period_id = vsp.id where vc.ordinal=4 group by site_id, vector_presence_id) as pa4 
 on (pa4.site_id = s.site_id and p.id = pa4.vector_presence_id)
 LEFT JOIN
-(select site_id, sum(coalesce(vc.count, 1)) as sm_count, vector_presence_id from vector_site_sample_period vsp inner join vector_collection vc on vc.sample_period_id = vsp.id group by site_id, vector_presence_id) as pa_all
+(select site_id, sum(coalesce(vc.count, 1)) as sm_count, vector_presence_id from vector_sampleperiod vsp inner join vector_collection vc on vc.sample_period_id = vsp.id group by site_id, vector_presence_id) as pa_all
 on (pa_all.site_id = s.site_id and p.id = pa_all.vector_presence_id)
 WHERE 
 s.site_id in (select site_id from temp_kv2)
