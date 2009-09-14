@@ -98,6 +98,18 @@ reports.append(
 
 reports.append(
     ExcelReport(
+        'Sites in sea',
+        """
+        SELECT site_id, st_distance, site_coordinate_id, source_id, latitude, 
+        longitude
+        FROM sites_in_sea;
+        """,
+        headers = ["site_id", "st_distance", "site_coordinate_id", "source_id", "latitude", "longitude",]
+    )
+)
+
+reports.append(
+    ExcelReport(
     'No name but has coords',
     """
     select full_name, site_id from site where exists (select * from site_coordinates sc where sc.site_id = site.site_id) and full_name in (Null, '', ' ', '  ');
@@ -107,30 +119,30 @@ reports.append(
     )
 )
 
-reports.append(
-    ExcelReport(
-    'vector collections with na in all 4',
-    """
-    select source_id, site_id, (select abbreviation from vector_anopheline where id = vector_sampleperiod.anopheline_id) from
-    vector_sampleperiod where id in (select sample_period_id from vector_collection
-    where collection_method_id = 21
-    group by sample_period_id
-    having sum(ordinal) = 10)
-    order by 1,2;
-    """,
-    headers = ["source_id", "site_id", "anopheline",]
-    )
-)
+#reports.append(
+#    ExcelReport(
+#    'vector collections with na in all 4',
+#    """
+#    select source_id, site_id, (select abbreviation from vector_anopheline where id = vector_sampleperiod.anopheline_id) from
+#    vector_sampleperiod where id in (select sample_period_id from vector_collection
+#    where collection_method_id = 21
+#    group by sample_period_id
+#    having sum(ordinal) = 10)
+#    order by 1,2;
+#    """,
+#    headers = ["source_id", "site_id", "anopheline",]
+#    )
+#)
 
-reports.append(
-    ExcelReport(
-    'vector collections with na and a count',
-    """
-    select source_id, site_id, sample_period_id, (select abbreviation from vector_anopheline where id = vsp.anopheline_id), vc.count from vector_collection vc inner join vector_sampleperiod vsp on vsp.id = vc.sample_period_id where vc.collection_method_id = 21 and vc.count is not null and ordinal <> 1;
-    """,
-    headers = ["source_id", "site_id", "sample_period_id", "anopheline", "count",]
-    )
-)
+#reports.append(
+#    ExcelReport(
+#    'vector collections with na and a count',
+#    """
+#    select source_id, site_id, sample_period_id, (select abbreviation from vector_anopheline where id = vsp.anopheline_id), vc.count from vector_collection vc inner join vector_sampleperiod vsp on vsp.id = vc.sample_period_id where vc.collection_method_id = 21 and vc.count is not null and ordinal <> 1;
+#    """,
+#    headers = ["source_id", "site_id", "sample_period_id", "anopheline", "count",]
+#    )
+#)
 
 reports.append(
     ExcelReport(
@@ -284,6 +296,7 @@ headers = ["source_id", "site_id",]
 #))
 
 reports.append(
+    #sa.id = 1 refers to extra coords anomaly
     ExcelReport(
     "Extra coords in point and wide area",
 """
@@ -295,12 +308,13 @@ and s.area_type in ('point', 'wide area')
 group by sc.site_id
 having count(*) > 1
 )
+and vsp.site_id not in (select site_id from site_site_anomaly_check sa where sa.siteanomaly_id = 1)
 group by 1,2
 order by 1,2
 
 ;
 """,
-headers = ["source_id", "site_id",] 
+headers = ["source_id", "site_id", "full_name",] 
 ))
 
 reports.append(
