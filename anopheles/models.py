@@ -18,7 +18,7 @@ from sqlalchemygeom import Geometry
 from sqlalchemy.orm import relation, backref, join, mapper, sessionmaker 
 from connection_string import connection_string
 
-engine = create_engine(connection_string, echo=True)
+engine = create_engine(connection_string, echo=False)
 metadata = MetaData()
 metadata.bind = engine
 Session = sessionmaker(bind=engine)
@@ -108,6 +108,9 @@ class Presence(Base):
     subspecies_id = Column(Integer)
     site_id = Column(Integer, ForeignKey('site.site_id'))
     source_id = Column(Integer, ForeignKey('source.enl_id'))
+
+class SamplePeriodView(Base):
+    __table__ = Table('vector_sampleperiod_site_presence_absence', metadata, autoload=True)
 
 class SamplePeriod(Base):
     """
