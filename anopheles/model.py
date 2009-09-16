@@ -230,8 +230,8 @@ if __name__ == '__main__':
             'MODIS-hdf5/evi.mean.geographic.world.2001-to-2006',
             'MODIS-hdf5/nighttime-land-temp.mean.geographic.world.2001-to-2006',
             'MODIS-hdf5/raw-data.elevation.geographic.world.version-5']
-    from map_utils import reconcile_multiple_rasters
-    o = reconcile_multiple_rasters([getattr(mbgw.auxiliary_data,'landSea-e')]+[get_datafile(n) for n in env])
+    # from map_utils import reconcile_multiple_rasters
+    # o = reconcile_multiple_rasters([getattr(mbgw.auxiliarqy_data,'landSea-e')]+[get_datafile(n) for n in env])
     # import pylab as pl
     # for a in o[2]:
     #     pl.figure()
