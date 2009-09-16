@@ -72,6 +72,20 @@ reports.append(
 
 reports.append(
     ExcelReport(
+        'Combinations of species',
+        """
+select va.abbreviation, vs.abbreviation, ss.complex, count from
+(select anopheline_id, subspecies_id, complex, count(*) from vector_sampleperiod group by 1,2,3) as ss
+join vector_anopheline va on ss.anopheline_id = va.id
+join vector_subspecies vs on ss.subspecies_id = vs.id
+order by 1, 2, 3;
+        """,
+        headers = ["Species 1", "Species 2", "Complex", "Count",],
+        ))
+
+
+reports.append(
+    ExcelReport(
     'Sites by species and area type',
     """
     select

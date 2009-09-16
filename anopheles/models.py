@@ -26,7 +26,7 @@ Session = sessionmaker(bind=engine)
 from sqlalchemy.ext.declarative import declarative_base
 Base = declarative_base(metadata=metadata)
 
-__all__ = ['Anopheline', 'Anopheline2', 'Source', 'Site', 'ExpertOpinion', 'Presence', 'SamplePeriod', 'Session', 'World', 'Map', 'Collection', 'Identification','CollectionMethod', 'IdentificationMethod']
+__all__ = ['Anopheline', 'Anopheline2', 'Source', 'Site', 'SiteCoordinates', 'ExpertOpinion', 'Presence', 'SamplePeriod', 'SamplePeriodView','Session', 'World', 'Map', 'Collection', 'Identification','CollectionMethod', 'IdentificationMethod', 'Region',]
 
 """
 update vector_anopheline set anopheline2_id = 
@@ -110,7 +110,7 @@ class Presence(Base):
     source_id = Column(Integer, ForeignKey('source.enl_id'))
 
 class SamplePeriodView(Base):
-    __table__ = Table('vector_sampleperiod_site_presence_absence', metadata, autoload=True)
+    __table__ = Table('vector_sampleperiod_site_presence_absence', metadata, Column('id', Integer(), primary_key=True), autoload=True)
 
 class SamplePeriod(Base):
     """
@@ -150,6 +150,32 @@ class Collection(Base):
 class Region(Base):
     __table__ = Table('vector_region', metadata, autoload=True)
 
+    def is_valid(self):
+        if self.minx is None or self.miny is None or self.maxx is None or self.maxy is None:
+            return False
+        if self.minx > self.maxx and self.miny > self.maxy:
+            return False
+        return True
+             
+    def update(self, new_region):
+        #look out for nulls in update
+        if not self.minx:
+            self.minx = new_region.minx
+        if not self.miny:
+            self.miny = new_region.miny
+        self.minx = min(self.minx, new_region.minx) or self.minx
+        self.miny = min(self.miny, new_region.miny) or self.miny
+        self.maxx = max(self.maxx, new_region.maxx)
+        self.maxy = max(self.maxy, new_region.maxy)
+        
+    def expand(self, proportion):
+        dX = self.maxx - self.minx
+        dY = self.maxy - self.miny
+        self.minx = self.minx - (dX * proportion)
+        self.maxx = self.maxx + (dX * proportion)
+        self.miny = self.miny - (dY * proportion)
+        self.maxy = self.maxy + (dY * proportion)
+
 #class AdminUnit(Base):
 #    """
 #    Represents a vector sample at a location. May have a specified time period.
@@ -184,6 +210,7 @@ class Map(Base):
     sub_genus = Column(String)
     species = Column(String)
     author = Column(String)
+    map_text = Column(String)
     is_complex  = Column(Boolean)
     region_id = Column(Integer, ForeignKey('vector_region.id'))
     region = relation(Region, backref="vector_map")
