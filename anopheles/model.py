@@ -215,6 +215,7 @@ def initialize_by_eo(M):
 if __name__ == '__main__':
     s = Session()
     species = list_species(s)
+    import mbgw
 
     # m=make_model(s, species[1], spatial_hill, with_data=False)
     # m=make_model(s, species[1], lr_spatial)
@@ -223,12 +224,23 @@ if __name__ == '__main__':
     from mpl_toolkits import basemap
     import pylab as pl
     species_num = 7
-
+    
     # M = species_MCMC(s, species[species_num], lr_spatial, with_eo = True, with_data = True, env_variables = [])
-    M = species_MCMC(s, species[species_num], lr_spatial_env, with_eo = True, with_data = True, env_variables = ['public/anopheles/MARA','public/anopheles/SCI'])
+    env = ['MODIS-hdf5/daytime-land-temp.mean.geographic.world.2001-to-2006',
+            'MODIS-hdf5/evi.mean.geographic.world.2001-to-2006',
+            'MODIS-hdf5/nighttime-land-temp.mean.geographic.world.2001-to-2006',
+            'MODIS-hdf5/raw-data.elevation.geographic.world.version-5']
+    from map_utils import reconcile_multiple_rasters
+    o = reconcile_multiple_rasters([getattr(mbgw.auxiliary_data,'landSea-e')]+[get_datafile(n) for n in env])
+    # import pylab as pl
+    # for a in o[2]:
+    #     pl.figure()
+    #     pl.imshow(a)
+    # env = ['public/anopheles/MARA','public/anopheles/SCI']
+    M = species_MCMC(s, species[species_num], lr_spatial_env, with_eo = True, with_data = True, env_variables = env)
     
     pl.close('all')
-    mask, x, img_extent = make_covering_raster(5, ['public/anopheles/MARA','public/anopheles/SCI'])
+    mask, x, img_extent = make_covering_raster(5, env)
     current_state_map(M, s, species[species_num], mask, x, img_extent, thin=1)
     pl.title('Initial')
     M.assign_step_methods()

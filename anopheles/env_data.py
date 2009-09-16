@@ -18,6 +18,7 @@ import anopheles
 import map_utils
 import hashlib
 import tables as tb
+import warnings
 
 __all__ = ['get_datafile','extract_environment']
 
@@ -34,10 +35,10 @@ def get_datafile(name):
     
     if not os.path.exists(data_path):
         os.mkdir(data_path)
-    
+
     res = os.system('rsync map1.zoo.ox.ac.uk:%s %s'%(remote_file, data_file))
     if res > 0:
-        raise RuntimeError, 'Failed to synchronize %s with server.'%name
+        warnings.warn('Failed to synchronize %s with server.'%name)
     
     return tb.openFile(data_file).root
 
@@ -60,13 +61,14 @@ def extract_environment(name, x):
         grid_lon = hr.long[:]
     grid_lat = hr.lat[:]
     
-    grid_data = hr.data[:]
+    grid_data = hr.data
     if hasattr(hr, 'mask'):
-        grid_mask = hr.mask[:]
+        grid_mask = hr.mask
     else:
         grid_mask = None
+    grid_chunk = hr.data.chunkshape
     
-    eval = map_utils.interp_geodata(grid_lon, grid_lat, grid_data, x[:,0], x[:,1], grid_mask)
+    eval = map_utils.interp_geodata(grid_lon, grid_lat, grid_data, x[:,0], x[:,1], grid_mask, grid_chunk)
     
     hf = tb.openFile(os.path.join('anopheles-caches',fname),'w')
     hf.createArray('/','eval',eval)

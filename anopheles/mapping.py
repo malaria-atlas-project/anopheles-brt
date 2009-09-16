@@ -3,8 +3,9 @@ from env_data import *
 from map_utils import reconcile_multiple_rasters, grid_convert
 from query_to_rec import *
 
-__all__ = ['make_covering_raster', 'presence_map','current_state_map', 'current_state_slice']
+__all__ = ['make_covering_raster','presence_map','current_state_map','current_state_slice']
 
+# TODO: reconcile_multiple_rasters and this function need a maxres argument.
 def make_covering_raster(thin=1, env_variables=(), **kwds):
     # FIXME: This needs to be tolerant of multiple rasters in the environmental variables and land/sea mask.
     import mbgw
