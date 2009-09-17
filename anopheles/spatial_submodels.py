@@ -259,7 +259,7 @@ def lr_spatial_env(rl=50,**stuff):
     x_fr = pm.Lambda('x_fr', lambda d=ichol, rl=rl, x=x_eo: x[d['pivots'][:rl]])
 
     # Evaluation of field at expert-opinion points
-    f_fr = pm.MvNormalChol('f_fr', np.zeros(rl), L_fr)
+    f_fr = pm.MvNormalChol('f_fr', np.zeros(rl), L_fr, value=np.ones(rl)*2)
 
     @pm.deterministic(trace=False)
     def krige_wt(f_fr=f_fr, U_fr=U_fr):

@@ -13,6 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+from mpl_toolkits import basemap
+b = basemap.Basemap(0,0,1,1)
 import pymc as pm
 import numpy as np
 from models import Session
@@ -26,6 +28,12 @@ from utils import bin_ubls
 import datetime
 
 __all__ = ['make_model', 'species_MCMC', 'probability_traces','potential_traces']
+
+def bin_ubl_like(x, p_eval, p_find, breaks):
+    "The ubl likelihood function, document this."
+    return bin_ubls(x[0], x[0]+x[1]+x[2], p_find, breaks, p_eval)
+
+BinUBL = pm.stochastic_from_dist('BinUBL', bin_ubl_like)
     
 def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = ()):
     """
@@ -98,11 +106,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
             env_x = np.empty((len(x),0))
 
         p_eval = p(np.hstack((x, env_x)))
-
-        @pm.observed
-        @pm.stochastic(trace=False)
-        def data(value = [found, others_found, zero], p_eval=p_eval, p_find=p_find, breaks=breaks):
-            return bin_ubls(value[0], value[0]+value[1]+value[2], p_find, breaks, p_eval)
+        
+        data = pm.robust_init(BinUBL, 100, 'data', p_eval=p_eval, p_find=p_find, breaks=breaks, value=[found, others_found, zero], observed=True, trace=False)
     
     # ==============================
     # = Expert-opinion likelihoods =
@@ -215,7 +220,6 @@ def initialize_by_eo(M):
 if __name__ == '__main__':
     s = Session()
     species = list_species(s)
-    import mbgw
 
     # m=make_model(s, species[1], spatial_hill, with_data=False)
     # m=make_model(s, species[1], lr_spatial)
@@ -224,6 +228,8 @@ if __name__ == '__main__':
     from mpl_toolkits import basemap
     import pylab as pl
     species_num = 7
+
+    pl.close('all')
     
     # M = species_MCMC(s, species[species_num], lr_spatial, with_eo = True, with_data = True, env_variables = [])
     env = ['MODIS-hdf5/daytime-land-temp.mean.geographic.world.2001-to-2006',
@@ -231,27 +237,23 @@ if __name__ == '__main__':
             'MODIS-hdf5/nighttime-land-temp.mean.geographic.world.2001-to-2006',
             'MODIS-hdf5/raw-data.elevation.geographic.world.version-5']
     # from map_utils import reconcile_multiple_rasters
-    # o = reconcile_multiple_rasters([getattr(mbgw.auxiliarqy_data,'landSea-e')]+[get_datafile(n) for n in env])
+    # o = reconcile_multiple_rasters([get_datafile(n) for n in env+['MODIS-hdf5/raw-data.land-water.geographic.world.version-4']], thin=100)
     # import pylab as pl
-    # for a in o[2]:
+    # for i in xrange(len(o[2])):
     #     pl.figure()
-    #     pl.imshow(a)
-    # env = ['public/anopheles/MARA','public/anopheles/SCI']
+    #     pl.imshow(grid_convert(o[2][i],'x+y+','y+x+'))
+    #     pl.title((env+['MODIS-hdf5/raw-data.land-water.geographic.world.version-4'])[i])
+    #     pl.colorbar()
+
     M = species_MCMC(s, species[species_num], lr_spatial_env, with_eo = True, with_data = True, env_variables = env)
     
-    pl.close('all')
-    mask, x, img_extent = make_covering_raster(5, env)
+    mask, x, img_extent = make_covering_raster(100, env)
+    pl.figure()
     current_state_map(M, s, species[species_num], mask, x, img_extent, thin=1)
     pl.title('Initial')
     M.assign_step_methods()
     sf=M.step_method_dict[M.f_fr][0]
     ss=M.step_method_dict[M.p_find][0]
-    
-    for  i in xrange(100):
-        try:
-            M.data.logp
-        except pm.ZeroProbability:
-            M.f_fr.rand()
         
     M.isample(10000,0,10)
     
@@ -262,18 +264,19 @@ if __name__ == '__main__':
     # b.imshow(arr.T, interpolation='nearest')
     # pl.colorbar()
     pl.figure()
-    current_state_map(M, s, species[species_num], mask, x, img_extent, thin=1)
+    current_state_map(M, s, species[species_num], mask, x, img_extent, thin=100)
     pl.title('Final')
-    pl.figure()
-    pl.plot(M.trace('out_prob')[:],'b-',label='out')
-    pl.plot(M.trace('in_prob')[:],'r-',label='in')    
-    pl.legend(loc=0)
-    pl.figure()
-    out, arr = presence_map(M, s, species[species_num], thin=5, burn=500, trace_thin=1)
     # pl.figure()
-    # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
-    # for s in samps:
-    #     pl.plot(x_disp, s)
-    
-    # p_atfound = probability_traces(M)
-    # p_atnotfound = probability_traces(M,False)
+    # pl.plot(M.trace('out_prob')[:],'b-',label='out')
+    # pl.plot(M.trace('in_prob')[:],'r-',label='in')    
+    # pl.legend(loc=0)
+    # pl.figure()
+    # out, arr = presence_map(M, s, species[species_num], thin=100, burn=500, trace_thin=1)
+    # # pl.figure()
+    # # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
+    # # for s in samps:
+    # #     pl.plot(x_disp, s)
+    # 
+    # # p_atfound = probability_traces(M)
+    # # p_atnotfound = probability_traces(M,False)
+    pl.show()

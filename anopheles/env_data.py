@@ -36,22 +36,25 @@ def get_datafile(name):
     if not os.path.exists(data_path):
         os.mkdir(data_path)
 
-    res = os.system('rsync map1.zoo.ox.ac.uk:%s %s'%(remote_file, data_file))
+    res = os.system('rsync --quiet map1.zoo.ox.ac.uk:%s %s'%(remote_file, data_file))
     if res > 0:
         warnings.warn('Failed to synchronize %s with server.'%name)
     
     return tb.openFile(data_file).root
 
-def extract_environment(name, x):
+def extract_environment(name, x, cache=True):
     
-    x_hash = hashlib.sha1(x.data).hexdigest()
-    fname = os.path.split(name)[1] + '_' + x_hash + '.hdf5'
-    if 'anopheles-caches' in os.listdir('.'):
-        if fname in os.listdir('anopheles-caches'):
-            hf = tb.openFile(os.path.join('anopheles-caches',fname))
-            return hf.root.eval[:]
+    """Expects ALL locations to be in decimal degrees."""
     
-    print 'Evaluation of environmental layer %s on array with SHA1 hash %s not found, recomputing.'%(name, hashlib.sha1(x.data).hexdigest())
+    if cache:
+        x_hash = hashlib.sha1(x.data).hexdigest()
+        fname = os.path.split(name)[1] + '_' + x_hash + '.hdf5'
+        if 'anopheles-caches' in os.listdir('.'):
+            if fname in os.listdir('anopheles-caches'):
+                hf = tb.openFile(os.path.join('anopheles-caches',fname))
+                return hf.root.eval[:]
+    
+        print 'Evaluation of environmental layer %s on array with SHA1 hash %s not found, recomputing.'%(name, hashlib.sha1(x.data).hexdigest())
     
     hr = get_datafile(name)
     
@@ -62,16 +65,26 @@ def extract_environment(name, x):
     grid_lat = hr.lat[:]
     
     grid_data = hr.data
+    
+    if hasattr(grid_data.attrs,'view'):
+        view = grid_data.attrs.view
+    else:
+        warnings.warn("Assuming map-view for %s because key 'view' not found in its data array's attrs."%data._v_file.filename)
+        view = 'y-x+'
+    
     if hasattr(hr, 'mask'):
         grid_mask = hr.mask
     else:
         grid_mask = None
     grid_chunk = hr.data.chunkshape
     
-    eval = map_utils.interp_geodata(grid_lon, grid_lat, grid_data, x[:,0], x[:,1], grid_mask, grid_chunk)
+    eval = map_utils.interp_geodata(grid_lon, grid_lat, grid_data, x[:,0], x[:,1], grid_mask, grid_chunk, view=view)
     
-    hf = tb.openFile(os.path.join('anopheles-caches',fname),'w')
-    hf.createArray('/','eval',eval)
-    hf.close()
+    hr._v_file.close()
+    
+    if cache:
+        hf = tb.openFile(os.path.join('anopheles-caches',fname),'w')
+        hf.createArray('/','eval',eval)
+        hf.close()
     
     return eval

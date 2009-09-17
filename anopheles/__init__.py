@@ -1,3 +1,5 @@
+from mpl_toolkits import basemap
+b = basemap.Basemap(0,0,1,1)
 import os,sys
 import anopheles
 
