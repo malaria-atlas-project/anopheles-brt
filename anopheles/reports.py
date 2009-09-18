@@ -126,7 +126,7 @@ reports.append(
     (select count(*) from site where area_type = 'polygon large' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as polygon_large_null_geom,
     (select count(*) from site where area_type = 'not specified' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as not_specified_null_geom
     from vector_anopheline2 a
-    where a.id != 8 
+    where a.id not in (8, 54)
     order by a.name asc;
     """,
     headers = ["", "All sites", "Points", "Wide area", "Polygon small", "Polygon large", "Not specified", "All sites", "Points", "Wide area", "Polygon small", "Polygon large", "Not specified",],
@@ -145,6 +145,16 @@ reports.append(
         headers = ["site_id", "st_distance", "site_coordinate_id", "source_id", "latitude", "longitude",]
     )
 )
+reports.append(
+    ExcelReport(
+        'Wrong country',
+        """
+        SELECT site_id, full_name FROM site where ;
+        """,
+        headers = ["site_id", "st_distance", "site_coordinate_id", "source_id", "latitude", "longitude",]
+    )
+)
+
 
 reports.append(
     ExcelReport(
