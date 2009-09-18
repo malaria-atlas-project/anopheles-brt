@@ -1,6 +1,6 @@
 from sqlalchemy.orm import join
 from sqlalchemy.sql import func, exists, and_, not_
-from models import Anopheline, Site, Presence, SamplePeriod, Session
+from models import Anopheline, Site, SamplePeriod, Session
 from sqlalchemygeom import *
 
 session = Session(autocommit=True)
@@ -63,7 +63,7 @@ reports.append(
     ExcelReport(
         'Sites and sample periods by species',
         """
-        select (select abbreviation from vector_anopheline va where va.id = vector_sampleperiod.anopheline_id),count(distinct(site_id)), count(*) from vector_sampleperiod group by anopheline_id order by 1
+        select (select abbreviation from vector_anopheline2 va where va.id = vector_sampleperiod.anopheline2_id),count(distinct(site_id)), count(*) from vector_sampleperiod where anopheline2_id != 8 group by anopheline2_id order by 1
         """,
         headers = ["", "Unique sites", "Temporally unique collections",],
         totals = [1,2]
@@ -72,15 +72,38 @@ reports.append(
 
 reports.append(
     ExcelReport(
+        'Non matching sample aggregates',
+
+        """
+select source_id, (select full_name from site sss where sss.site_id = vector_sampleperiod.site_id), id from vector_sampleperiod where 
+id in (
+select vsp.id 
+from 
+vector_sampleperiod vsp
+join vector_collection vc
+on (vc.sample_period_id = vsp.id)
+group by vsp.id
+having (sum(coalesce(vc.count, 1)) > 0)
+) and vector_sampleperiod.sample_aggregate =0
+order by 1,2
+;
+        """,
+        headers = ["enl_id", "site_id", "sample_period_id", ],
+        )
+    )
+
+reports.append(
+    ExcelReport(
         'Combinations of species',
         """
-select va.abbreviation, vs.abbreviation, ss.complex, count from
-(select anopheline_id, subspecies_id, complex, count(*) from vector_sampleperiod group by 1,2,3) as ss
+select va.abbreviation, vs.abbreviation, va2.abbreviation, ss.complex, count from
+(select anopheline_id, anopheline2_id, subspecies_id, complex, count(*) from vector_sampleperiod group by 1,2,3,4) as ss
 join vector_anopheline va on ss.anopheline_id = va.id
 join vector_subspecies vs on ss.subspecies_id = vs.id
+left join vector_anopheline2 va2 on va2.id = ss.anopheline_id
 order by 1, 2, 3;
         """,
-        headers = ["Species 1", "Species 2", "Complex", "Count",],
+        headers = ["Species 1", "Species 2", "Anopheline2", "Complex", "Count",],
         ))
 
 
@@ -90,20 +113,21 @@ reports.append(
     """
     select
     a.name,
-    (select count(*) from site where has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as all_sites,
-    (select count(*) from site where area_type = 'point' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as point_count,
-    (select count(*) from site where area_type = 'wide area' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as wide_area,
-    (select count(*) from site where area_type = 'polygon small' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as polygon_small,
-    (select count(*) from site where area_type = 'polygon large' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as polygon_large,
-    (select count(*) from site where area_type = 'not specified' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as not_specified,
-    (select count(*) from site where (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as all_sites_null_geom,
-    (select count(*) from site where area_type = 'point' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as point_count_null_geom,
-    (select count(*) from site where area_type = 'wide area' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as wide_area_null_geom,
-    (select count(*) from site where area_type = 'polygon small' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as polygon_small_null_geom,
-    (select count(*) from site where area_type = 'polygon large' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as polygon_large_null_geom,
-    (select count(*) from site where area_type = 'not specified' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline_id))as not_specified_null_geom
-    from vector_anopheline a
-    order by a.name desc;
+    (select count(*) from site where has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as all_sites,
+    (select count(*) from site where area_type = 'point' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as point_count,
+    (select count(*) from site where area_type = 'wide area' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as wide_area,
+    (select count(*) from site where area_type = 'polygon small' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as polygon_small,
+    (select count(*) from site where area_type = 'polygon large' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as polygon_large,
+    (select count(*) from site where area_type = 'not specified' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as not_specified,
+    (select count(*) from site where (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as all_sites_null_geom,
+    (select count(*) from site where area_type = 'point' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as point_count_null_geom,
+    (select count(*) from site where area_type = 'wide area' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as wide_area_null_geom,
+    (select count(*) from site where area_type = 'polygon small' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as polygon_small_null_geom,
+    (select count(*) from site where area_type = 'polygon large' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as polygon_large_null_geom,
+    (select count(*) from site where area_type = 'not specified' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as not_specified_null_geom
+    from vector_anopheline2 a
+    where a.id != 8 
+    order by a.name asc;
     """,
     headers = ["", "All sites", "Points", "Wide area", "Polygon small", "Polygon large", "Not specified", "All sites", "Points", "Wide area", "Polygon small", "Polygon large", "Not specified",],
     totals = range(1,13)

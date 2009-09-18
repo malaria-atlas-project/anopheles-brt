@@ -26,7 +26,7 @@ Session = sessionmaker(bind=engine)
 from sqlalchemy.ext.declarative import declarative_base
 Base = declarative_base(metadata=metadata)
 
-__all__ = ['Anopheline', 'Anopheline2', 'Source', 'Site', 'SiteCoordinates', 'ExpertOpinion', 'Presence', 'SamplePeriod', 'SamplePeriodView','Session', 'World', 'Map', 'Collection', 'Identification','CollectionMethod', 'IdentificationMethod', 'Region',]
+__all__ = ['Anopheline', 'Anopheline2', 'Source', 'Site', 'SiteCoordinates', 'ExpertOpinion', 'SamplePeriod', 'SamplePeriodView','Session', 'World', 'Map', 'Collection', 'Identification','CollectionMethod', 'IdentificationMethod', 'Region',]
 
 """
 update vector_anopheline set anopheline2_id = 
@@ -98,17 +98,6 @@ class ExpertOpinion(Base):
     anopheline2_id = Column(Integer, ForeignKey('vector_anopheline2.id'))
     anopheline2 = relation(Anopheline2, backref="expert_opinion")
 
-class Presence(Base):
-    __tablename__ = "vector_presence"
-    id = Column(Integer, primary_key=True)
-    anopheline_id = Column(Integer, ForeignKey('vector_anopheline.id'))
-    anopheline = relation(Anopheline, backref="presences")
-    anopheline2_id = Column(Integer, ForeignKey('vector_anopheline2.id'))
-    anopheline2 = relation(Anopheline2, backref="presences")
-    subspecies_id = Column(Integer)
-    site_id = Column(Integer, ForeignKey('site.site_id'))
-    source_id = Column(Integer, ForeignKey('source.enl_id'))
-
 class SamplePeriodView(Base):
     __table__ = Table('vector_sampleperiod_site_presence_absence', metadata, Column('id', Integer(), primary_key=True), autoload=True)
 
@@ -122,7 +111,6 @@ class SamplePeriod(Base):
     id = Column(Integer, primary_key=True)
     site_id = Column(Integer, ForeignKey('site.site_id'))
     source_id = Column(Integer, ForeignKey('source.enl_id'))
-    presence_id = Column(Integer)
     complex = Column(String)
     anopheline_id = Column(Integer, ForeignKey('vector_anopheline.id'))
     anopheline = relation(Anopheline, backref="sample_period")
@@ -132,6 +120,7 @@ class SamplePeriod(Base):
     start_year = Column(Integer, nullable=True)
     end_month = Column(Integer, nullable=True)
     end_year = Column(Integer, nullable=True)
+    sample_aggregate = Column(Integer, nullable=True)
 
 class Identification(Base):
     __table__ = Table('vector_identification', metadata, autoload=True)
