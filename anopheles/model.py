@@ -13,6 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import matplotlib
+matplotlib.use('PDF')
+
 from mpl_toolkits import basemap
 b = basemap.Basemap(0,0,1,1)
 import pymc as pm
@@ -114,27 +117,16 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     # ==============================
     
     if with_eo:
-        # sens_strength = pm.Uninformative('sens_strength',1000,observed=True)
-        # spec_strength = pm.Uninformative('spec_strength',1000,observed=True)    
         if spatial_variables.has_key('in_prob'):
             in_prob = spatial_variables['in_prob']
             out_prob = spatial_variables['out_prob']
         else:
-            in_prob = pm.Lambda('in_prob', lambda p=p, x=pts_in, e=env_in: np.mean(p(np.hstack((x, e))))*.9999+.00005)
-            out_prob = pm.Lambda('out_prob', lambda p=p, x=pts_out, e=env_out: np.mean(p(np.hstack((x,e))))*.9999+.00005)    
-
-        # @pm.potential
-        # def out_factor(p=out_prob):
-        #     if p == 0 or p == 1:
-        #         return -np.inf
-        #     return pm.flib.logit(1.-p)*100
-        # 
-        # @pm.potential
-        # def in_factor(p=in_prob):
-        #     if p == 0 or p == 1:
-        #         return -np.inf
-        #     return pm.flib.logit(p)*100
-            
+            p_eval_in = pm.Lambda('p_eval_in', lambda p=p, x=pts_in, e=env_in: p(np.hstack((x, e))))
+            p_eval_out = pm.Lambda('p_eval_out', lambda p=p, x=pts_out, e=env_out: p(np.hstack((x, e))))
+            p_eval_eo = pm.Lambda('p_eval_eo', lambda p_eval_in=p_eval_in, p_eval_out=p_eval_out: np.concatenate((p_eval_in,p_eval_out)))
+            in_prob = pm.Lambda('in_prob', lambda p_eval = p_eval_in: np.mean(p_eval)*.9999+.00005)
+            out_prob = pm.Lambda('out_prob', lambda p_eval = p_eval_out: np.mean(p_eval)*.9999+.00005)    
+        
         alpha_out = pm.Uniform('alpha_out',0,1)
         beta_out = pm.Uniform('beta_out',1,10)
         alpha_in = pm.Uniform('alpha_in',1,10)
@@ -147,6 +139,44 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         @pm.potential
         def in_factor(a=alpha_in, b=beta_in, p=in_prob):
             return pm.beta_like(p,a,b)
+    
+
+    # ========================
+    # = Hard expert opinions =
+    # ========================
+    elev = np.concatenate([extract_environment('MODIS-hdf5/raw-data.elevation.geographic.world.version-5', pts * 180./np.pi)  for pts in [pts_in, pts_out]])
+    where_high = np.where(elev > 1000)
+    where_north = np.where(np.concatenate((pts_in[:,0], pts_out[:,0]))*180./np.pi>20)
+
+    for i in xrange(10000):
+        
+        try:
+            
+            @pm.potential
+            def elev_check(p_eval=p_eval_eo, where_high=where_high):
+                if np.any(p_eval[where_high]):
+                    return -np.inf
+                else:
+                    return 0
+            
+            # @pm.potential
+            # def north_check(p_eval=p_eval_eo, where_high=where_north):
+            #     if np.any(p_eval[where_high]):
+            #         return -np.inf
+            #     else:
+            #         return 0
+                    
+            data.logp
+            
+        except pm.ZeroProbability:
+            for key in ['val','vec','const_frac','f_fr']:
+                try:
+                    spatial_variables[key].rand()
+                except AttributeError:
+                    pass
+
+    
+    
         
     out = locals()
     out.update(spatial_variables)
@@ -251,6 +281,8 @@ if __name__ == '__main__':
     pl.figure()
     current_state_map(M, s, species[species_num], mask, x, img_extent, thin=1)
     pl.title('Initial')
+    pl.savefig('initial.pdf')
+    
     M.assign_step_methods()
     sf=M.step_method_dict[M.f_fr][0]
     ss=M.step_method_dict[M.p_find][0]
@@ -266,17 +298,20 @@ if __name__ == '__main__':
     pl.figure()
     current_state_map(M, s, species[species_num], mask, x, img_extent, thin=100)
     pl.title('Final')
+    pl.savefig('final.pdf')
+    pl.figure()
+    pl.plot(M.trace('out_prob')[:],'b-',label='out')
+    pl.plot(M.trace('in_prob')[:],'r-',label='in')    
+    pl.legend(loc=0)
+    pl.figure()
+    out, arr = presence_map(M, s, species[species_num], thin=100, burn=500, trace_thin=1)
     # pl.figure()
-    # pl.plot(M.trace('out_prob')[:],'b-',label='out')
-    # pl.plot(M.trace('in_prob')[:],'r-',label='in')    
-    # pl.legend(loc=0)
-    # pl.figure()
-    # out, arr = presence_map(M, s, species[species_num], thin=100, burn=500, trace_thin=1)
-    # # pl.figure()
-    # # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
-    # # for s in samps:
-    # #     pl.plot(x_disp, s)
-    # 
-    # # p_atfound = probability_traces(M)
-    # # p_atnotfound = probability_traces(M,False)
-    pl.show()
+    # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
+    # for s in samps:
+    #     pl.plot(x_disp, s)
+    pl.savefig('prob.pdf')
+    
+    pl.figure()
+    p_atfound = probability_traces(M)
+    p_atnotfound = probability_traces(M,False)
+    pl.savefig('presence.pdf')
