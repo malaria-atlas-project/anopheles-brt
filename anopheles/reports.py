@@ -51,14 +51,36 @@ q = session.query(Anopheline.name,
     ).order_by(Anopheline.name.desc())
 
 
-#reports.append(
-#    ExcelReport(
-#        'Sites and sample periods by species',
-#        q.outerjoin((sampleperiod_subq, Anopheline.id==sampleperiod_subq.c.anopheline2_id)),
-#        headers = ["", "Unique sites", "Temporally unique collections",],
-#        totals = [1,2]
-#    )
-#)
+reports.append(
+    ExcelReport(
+        'Sundaicus',
+        """
+        select ss1.source_id, ss2.site_id, ss2.km
+        from
+        (
+        select distinct site_id, source_id from  
+        vector_sampleperiod where anopheline2_id = 52
+        ) 
+        as ss1,
+
+        (
+        select st_distance(eo.geom, pac.geom) * 111.1 as km, site_id
+        from 
+        vector_expertopinion eo, 
+        vector_site_presence_absence_coordinates pac
+        where 
+        eo.anopheline2_id = 52
+        and
+        pac.anopheline2_id = 52
+        ) as ss2
+        where ss1.site_id = ss2.site_id
+        order by 1,2
+        ;
+        """,
+        headers = ["source", "site_id", "distance",]
+    )
+)
+
 reports.append(
     ExcelReport(
         'Sites and sample periods by species',
@@ -91,6 +113,19 @@ order by 1,2
         headers = ["enl_id", "site_id", "sample_period_id", ],
         )
     )
+
+reports.append(
+    ExcelReport(
+        'Presences outside eo',
+        """
+        select distinct va2.abbreviation, source_id from 
+        vector_presence_outside_eo vpeo
+        join vector_anopheline2 va2
+        on va2.id = vpeo.anopheline2_id
+        """,
+        headers = ["species", "source_id", "site_id",],
+    )
+)
 
 reports.append(
     ExcelReport(
@@ -330,18 +365,17 @@ having not (
 headers = ["source_id", "site_id",] 
 ))
 
-#reports.append(
-#    ExcelReport(
-#    "Non matching sample aggregates",
-#"""
-#select source_id, sample_period_id, sample_aggregate_check as ALLN, ss.c as counted from vector_sampleperiod vsp,  (
-#select sample_period_id, sum(count)  as c from vector_collection group by sample_period_id
-#) as ss
-#where ss.sample_period_id = vsp.id
-#and vsp.sample_aggregate_check <> ss.c
-#;
-#"""
-#))
+reports.append(
+    ExcelReport(
+    "Presences outside EO",
+"""
+select va2.abbreviation, source_id, site_id
+from vector_presence_outside_eo vpeo
+join vector_anopheline2 va2
+on va2.id = vpeo.anopheline_id
+""",
+headers = ["species", "source_id", "site_id",] 
+))
 
 reports.append(
     #sa.id = 1 refers to extra coords anomaly

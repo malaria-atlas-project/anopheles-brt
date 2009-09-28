@@ -26,7 +26,7 @@ Session = sessionmaker(bind=engine)
 from sqlalchemy.ext.declarative import declarative_base
 Base = declarative_base(metadata=metadata)
 
-__all__ = ['Anopheline', 'Anopheline2', 'Source', 'Site', 'SiteCoordinates', 'ExpertOpinion', 'SamplePeriod', 'SamplePeriodView','Session', 'World', 'Map', 'Collection', 'Identification','CollectionMethod', 'IdentificationMethod', 'Region',]
+__all__ = ['Anopheline', 'Anopheline2', 'Source', 'Site', 'SiteCoordinates', 'ExpertOpinion', 'SamplePeriod', 'SamplePeriodView','SitePresenceAbsenceView','Session', 'World', 'Map', 'Collection', 'Identification','CollectionMethod', 'IdentificationMethod', 'Region',]
 
 """
 update vector_anopheline set anopheline2_id = 
@@ -57,6 +57,7 @@ class Anopheline2(Base):
     species = Column(String)
     author = Column(String)
     is_complex  = Column(Boolean)
+    region  = Column(String)
     def __repr__(self):
         return self.name
     def get_scientific_name(self):
@@ -100,6 +101,9 @@ class ExpertOpinion(Base):
 
 class SamplePeriodView(Base):
     __table__ = Table('vector_sampleperiod_site_presence_absence', metadata, Column('id', Integer(), primary_key=True), autoload=True)
+
+class SitePresenceAbsenceView(Base):
+    __table__ = Table('vector_site_presence_absence_coordinates', metadata, Column('site_id', Integer(), primary_key=True), autoload=True)
 
 class SamplePeriod(Base):
     """
@@ -200,6 +204,7 @@ class Map(Base):
     species = Column(String)
     author = Column(String)
     map_text = Column(String)
+    larval_habitat = Column(String)
     is_complex  = Column(Boolean)
     region_id = Column(Integer, ForeignKey('vector_region.id'))
     region = relation(Region, backref="vector_map")
@@ -208,6 +213,9 @@ class Map(Base):
         if self.is_complex:
             species += '*'
         name = "<i>Anopheles (%s) %s</i> %s" % (self.sub_genus, species, self.author)
+        #FIXME:hack with maculatus
+        if self.abbreviation == 'maculatus':
+            name = "Maculatus subgroup"
         return name.replace("&", "&amp;")
 
 class AnophelineLayer(Base):
