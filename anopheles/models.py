@@ -58,14 +58,11 @@ class Anopheline2(Base):
     author = Column(String)
     is_complex  = Column(Boolean)
     region  = Column(String)
+    scientific_name  = Column(String)
     def __repr__(self):
         return self.name
     def get_scientific_name(self):
-        species = self.species
-        if self.is_complex:
-            species += '*'
-        name = "<i>Anopheles (%s) %s</i> %s" % (self.sub_genus, species, self.author)
-        return name.replace("&", "&amp;")
+        return scientific_name.replace('<em>', '<i>').replace('</em>', '</i>')
 
 class IdentificationMethod(Base):
     __table__ = Table('vector_identificationmethod', metadata, autoload=True)
