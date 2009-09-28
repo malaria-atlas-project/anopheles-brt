@@ -49,20 +49,16 @@ class Anopheline(Base):
 class Anopheline2(Base):
     """
     """
-    __tablename__ = "vector_anopheline2"
-    id = Column(Integer, primary_key=True)
-    name = Column(String)
-    abbreviation = Column(String)
-    sub_genus = Column(String)
-    species = Column(String)
-    author = Column(String)
-    is_complex  = Column(Boolean)
-    region  = Column(String)
-    scientific_name  = Column(String)
+    __table__ = Table('vector_anopheline2', metadata, autoload=True)
     def __repr__(self):
         return self.name
     def get_scientific_name(self):
-        return scientific_name.replace('<em>', '<i>').replace('</em>', '</i>')
+        return self.scientific_name.replace('<em>', '<i>').replace('</em>', '</i>')
+
+class TagComment(Base):
+    __table__ = Table('vector_tagcomment', metadata, autoload=True)
+    anopheline2 = relation("Anopheline2", backref=backref("tag_comment", uselist=False))
+    
 
 class IdentificationMethod(Base):
     __table__ = Table('vector_identificationmethod', metadata, autoload=True)
@@ -196,24 +192,12 @@ class Map(Base):
     __tablename__ = "vector_map"
     id = Column(Integer, primary_key=True)
     name = Column(String)
-    abbreviation = Column(String)
-    sub_genus = Column(String)
-    species = Column(String)
-    author = Column(String)
+    anopheline2_id = Column(Integer, ForeignKey('vector_anopheline2.id'))
+    anopheline2 = relation("Anopheline2")
     map_text = Column(String)
     larval_habitat = Column(String)
-    is_complex  = Column(Boolean)
     region_id = Column(Integer, ForeignKey('vector_region.id'))
     region = relation(Region, backref="vector_map")
-    def get_scientific_name(self):
-        species = self.species
-        if self.is_complex:
-            species += '*'
-        name = "<i>Anopheles (%s) %s</i> %s" % (self.sub_genus, species, self.author)
-        #FIXME:hack with maculatus
-        if self.abbreviation == 'maculatus':
-            name = "Maculatus subgroup"
-        return name.replace("&", "&amp;")
 
 class AnophelineLayer(Base):
     __tablename__ = "vector_anophelinelayer"
