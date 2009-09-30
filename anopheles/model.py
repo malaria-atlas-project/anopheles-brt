@@ -27,6 +27,7 @@ from mahalanobis_covariance import mahalanobis_covariance
 from map_utils import multipoly_sample
 from mapping import *
 from spatial_submodels import *
+from constraints import *
 from utils import bin_ubls
 import datetime
 
@@ -38,10 +39,23 @@ def bin_ubl_like(x, p_eval, p_find, breaks):
 
 BinUBL = pm.stochastic_from_dist('BinUBL', bin_ubl_like)
     
-def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = ()):
+def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}):
     """
     Generates a PyMC probability model with a plug-in spatial submodel.
     The likelihood and expert-opinion layers are common.
+    
+    Constraints are hard expert opinions. The keys should be either
+    'location' or members of env_variables. The values should be functions
+    that take two arguments labelled 'x' and 'p'. The first will be either 
+    a 2xn array of locations or a length-n array of environmental variable 
+    values. The second will be a length-n array of evaluations of p. The 
+    return value should be a boolean. If True, p is acceptable; if False, 
+    it is not.
+    
+    These constraints will be exposed with names '%s_constraint'%key. They
+    can be opened and closed as normal.
+    
+    Note that constraints will not be created unless with_eo=True.
     """
 
     # =========
@@ -112,20 +126,17 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         
         data = pm.robust_init(BinUBL, 100, 'data', p_eval=p_eval, p_find=p_find, breaks=breaks, value=[found, others_found, zero], observed=True, trace=False)
     
-    # ==============================
-    # = Expert-opinion likelihoods =
-    # ==============================
-    
     if with_eo:
-        if spatial_variables.has_key('in_prob'):
-            in_prob = spatial_variables['in_prob']
-            out_prob = spatial_variables['out_prob']
-        else:
-            p_eval_in = pm.Lambda('p_eval_in', lambda p=p, x=pts_in, e=env_in: p(np.hstack((x, e))))
-            p_eval_out = pm.Lambda('p_eval_out', lambda p=p, x=pts_out, e=env_out: p(np.hstack((x, e))))
-            p_eval_eo = pm.Lambda('p_eval_eo', lambda p_eval_in=p_eval_in, p_eval_out=p_eval_out: np.concatenate((p_eval_in,p_eval_out)))
-            in_prob = pm.Lambda('in_prob', lambda p_eval = p_eval_in: np.mean(p_eval)*.9999+.00005)
-            out_prob = pm.Lambda('out_prob', lambda p_eval = p_eval_out: np.mean(p_eval)*.9999+.00005)    
+        
+        # ==============================
+        # = Expert-opinion likelihoods =
+        # ==============================        
+
+        p_eval_in = pm.Lambda('p_eval_in', lambda p=p, x=pts_in, e=env_in: p(np.hstack((x, e))))
+        p_eval_out = pm.Lambda('p_eval_out', lambda p=p, x=pts_out, e=env_out: p(np.hstack((x, e))))
+        p_eval_eo = pm.Lambda('p_eval_eo', lambda p_eval_in=p_eval_in, p_eval_out=p_eval_out: np.concatenate((p_eval_in,p_eval_out)))
+        in_prob = pm.Lambda('in_prob', lambda p_eval = p_eval_in: np.mean(p_eval)*.9999+.00005)
+        out_prob = pm.Lambda('out_prob', lambda p_eval = p_eval_out: np.mean(p_eval)*.9999+.00005)    
         
         alpha_out = pm.Uniform('alpha_out',0,1)
         beta_out = pm.Uniform('beta_out',1,10)
@@ -141,42 +152,21 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
             return pm.beta_like(p,a,b)
     
 
-    # ========================
-    # = Hard expert opinions =
-    # ========================
-    elev = np.concatenate([extract_environment('MODIS-hdf5/raw-data.elevation.geographic.world.version-5', pts * 180./np.pi)  for pts in [pts_in, pts_out]])
-    where_high = np.where(elev > 1000)
-    where_north = np.where(np.concatenate((pts_in[:,0], pts_out[:,0]))*180./np.pi>20)
-
-    for i in xrange(10000):
+        # ========================
+        # = Hard expert opinions =
+        # ========================
+    
+        env_eo = np.vstack((env_in, env_out))
+        pts_eo = np.vstack((pts_in,pts_out))
+        env_dict = dict(zip(env_variables,env_eo.T))
         
-        try:
-            
-            @pm.potential
-            def elev_check(p_eval=p_eval_eo, where_high=where_high):
-                if np.any(p_eval[where_high]):
-                    return -np.inf
-                else:
-                    return 0
-            
-            # @pm.potential
-            # def north_check(p_eval=p_eval_eo, where_high=where_north):
-            #     if np.any(p_eval[where_high]):
-            #         return -np.inf
-            #     else:
-            #         return 0
-                    
-            data.logp
-            
-        except pm.ZeroProbability:
-            for key in ['val','vec','const_frac','f_fr']:
-                try:
-                    spatial_variables[key].rand()
-                except AttributeError:
-                    pass
-
-    
-    
+        constraints = {}
+        for k in constraint_fns.iterkeys():
+            if k=='location':
+                x_constraint = pts_eo
+            else:
+                x_constraint = env_dict[k]
+            constraints[k] = Constraint(logp=constraint_fns[k], doc="", name='%s_constraint'%k, parents={'x': x_constraint, 'p': p_eval_eo})
         
     out = locals()
     out.update(spatial_variables)
@@ -266,6 +256,13 @@ if __name__ == '__main__':
             'MODIS-hdf5/evi.mean.geographic.world.2001-to-2006',
             'MODIS-hdf5/nighttime-land-temp.mean.geographic.world.2001-to-2006',
             'MODIS-hdf5/raw-data.elevation.geographic.world.version-5']
+            
+    def elev_check(x,p):
+        return np.all(1-p[np.where(x>2000)])
+
+    def north_check(x,p):
+        return np.all(1-p[np.where(x[:,1]*np.pi/180.>20)])
+
     # from map_utils import reconcile_multiple_rasters
     # o = reconcile_multiple_rasters([get_datafile(n) for n in env+['MODIS-hdf5/raw-data.land-water.geographic.world.version-4']], thin=100)
     # import pylab as pl
@@ -275,7 +272,7 @@ if __name__ == '__main__':
     #     pl.title((env+['MODIS-hdf5/raw-data.land-water.geographic.world.version-4'])[i])
     #     pl.colorbar()
 
-    M = species_MCMC(s, species[species_num], lr_spatial_env, with_eo = True, with_data = True, env_variables = env)
+    M = species_MCMC(s, species[species_num], lr_spatial_env, with_eo = True, with_data = True, env_variables = env, constraint_fns={'location':north_check, 'MODIS-hdf5/raw-data.elevation.geographic.world.version-5': elev_check})
     
     mask, x, img_extent = make_covering_raster(100, env)
     pl.figure()
