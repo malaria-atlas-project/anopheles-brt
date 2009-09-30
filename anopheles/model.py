@@ -160,13 +160,13 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         pts_eo = np.vstack((pts_in,pts_out))
         env_dict = dict(zip(env_variables,env_eo.T))
         
-        constraints = {}
+        constraint_dict = {}
         for k in constraint_fns.iterkeys():
             if k=='location':
                 x_constraint = pts_eo
             else:
                 x_constraint = env_dict[k]
-            constraints[k] = Constraint(logp=constraint_fns[k], doc="", name='%s_constraint'%k, parents={'x': x_constraint, 'p': p_eval_eo})
+            constraint_dict[k] = Constraint(penalty_value = -1e5, logp=constraint_fns[k], doc="", name='%s_constraint'%k, parents={'x': x_constraint, 'p': p_eval_eo})
         
     out = locals()
     out.update(spatial_variables)
@@ -194,9 +194,9 @@ def potential_traces(M, in_or_out = 'in'):
 
 def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
     if db is None:
-        M=pm.MCMC(make_model(session, species, spatial_submodel, **kwds), db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
+        M=LatchingMCMC(make_model(session, species, spatial_submodel, **kwds), db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
     else:
-        M=pm.MCMC(make_model(session, species, spatial_submodel, **kwds), db=db)
+        M=LatchingMCMC(make_model(session, species, spatial_submodel, **kwds), db=db)
     scalar_stochastics = filter(lambda s: np.prod(np.shape(s.value))<=1, M.stochastics)
     M.use_step_method(MVNLRParentMetropolis, scalar_stochastics, M.f_fr, M.U, M.piv, M.rl)
     return M
@@ -258,10 +258,10 @@ if __name__ == '__main__':
             'MODIS-hdf5/raw-data.elevation.geographic.world.version-5']
             
     def elev_check(x,p):
-        return np.all(1-p[np.where(x>2000)])
+        return np.sum(p[np.where(x>2000)])
 
     def north_check(x,p):
-        return np.all(1-p[np.where(x[:,1]*np.pi/180.>20)])
+        return np.sum(p[np.where(x[:,1]*180./np.pi>20)])
 
     # from map_utils import reconcile_multiple_rasters
     # o = reconcile_multiple_rasters([get_datafile(n) for n in env+['MODIS-hdf5/raw-data.land-water.geographic.world.version-4']], thin=100)
@@ -284,31 +284,31 @@ if __name__ == '__main__':
     sf=M.step_method_dict[M.f_fr][0]
     ss=M.step_method_dict[M.p_find][0]
         
-    M.isample(10000,0,10)
+    M.isample(10000,10,10,verbose=1)
     
-    # mask, x, img_extent = make_covering_raster(2)
-    # b = basemap.Basemap(*img_extent)
-    # out = M.p.value(x)
-    # arr = np.ma.masked_array(out, mask=True-mask)
-    # b.imshow(arr.T, interpolation='nearest')
-    # pl.colorbar()
-    pl.figure()
-    current_state_map(M, s, species[species_num], mask, x, img_extent, thin=100)
-    pl.title('Final')
-    pl.savefig('final.pdf')
-    pl.figure()
-    pl.plot(M.trace('out_prob')[:],'b-',label='out')
-    pl.plot(M.trace('in_prob')[:],'r-',label='in')    
-    pl.legend(loc=0)
-    pl.figure()
-    out, arr = presence_map(M, s, species[species_num], thin=100, burn=500, trace_thin=1)
+    # # mask, x, img_extent = make_covering_raster(2)
+    # # b = basemap.Basemap(*img_extent)
+    # # out = M.p.value(x)
+    # # arr = np.ma.masked_array(out, mask=True-mask)
+    # # b.imshow(arr.T, interpolation='nearest')
+    # # pl.colorbar()
     # pl.figure()
-    # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
-    # for s in samps:
-    #     pl.plot(x_disp, s)
-    pl.savefig('prob.pdf')
-    
-    pl.figure()
-    p_atfound = probability_traces(M)
-    p_atnotfound = probability_traces(M,False)
-    pl.savefig('presence.pdf')
+    # current_state_map(M, s, species[species_num], mask, x, img_extent, thin=100)
+    # pl.title('Final')
+    # pl.savefig('final.pdf')
+    # pl.figure()
+    # pl.plot(M.trace('out_prob')[:],'b-',label='out')
+    # pl.plot(M.trace('in_prob')[:],'r-',label='in')    
+    # pl.legend(loc=0)
+    # pl.figure()
+    # out, arr = presence_map(M, s, species[species_num], thin=100, burn=500, trace_thin=1)
+    # # pl.figure()
+    # # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
+    # # for s in samps:
+    # #     pl.plot(x_disp, s)
+    # pl.savefig('prob.pdf')
+    # 
+    # pl.figure()
+    # p_atfound = probability_traces(M)
+    # p_atnotfound = probability_traces(M,False)
+    # pl.savefig('presence.pdf')

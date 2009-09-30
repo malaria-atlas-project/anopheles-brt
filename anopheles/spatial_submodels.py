@@ -220,7 +220,7 @@ class LRP_norm(LRP):
         x_norm = normalize_env(x, self.means, self.stds)
         return LRP.__call__(self, x_norm.reshape(x.shape))
 
-def lr_spatial_env(rl=50,**stuff):
+def lr_spatial_env(rl=200,**stuff):
     """A low-rank spatial-only model."""
     # amp = pm.Exponential('amp',.1,value=10)
     const_frac = pm.Uniform('const_frac',0,1,value=.1)
