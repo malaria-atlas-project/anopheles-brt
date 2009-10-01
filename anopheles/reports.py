@@ -50,7 +50,6 @@ q = session.query(Anopheline.name,
     func.coalesce(sampleperiod_subq.c.sampleperiod_count, 0)
     ).order_by(Anopheline.name.desc())
 
-
 reports.append(
     ExcelReport(
         'Sundaicus',
@@ -83,7 +82,7 @@ reports.append(
 
 reports.append(
     ExcelReport(
-        'Sites and sample periods by species',
+        'Sites and sample periods by all species',
         """
         select (select abbreviation from vector_anopheline2 va where va.id = vector_sampleperiod.anopheline2_id),count(distinct(site_id)), count(*) from vector_sampleperiod where anopheline2_id != 8 group by anopheline2_id order by 1
         """,
@@ -94,21 +93,95 @@ reports.append(
 
 reports.append(
     ExcelReport(
-        'Non matching sample aggregates',
-
+        'Sites and sample periods by 40 DVS',
         """
-select source_id, (select full_name from site sss where sss.site_id = vector_sampleperiod.site_id), id from vector_sampleperiod where 
-id in (
-select vsp.id 
-from 
-vector_sampleperiod vsp
-join vector_collection vc
-on (vc.sample_period_id = vsp.id)
-group by vsp.id
-having (sum(coalesce(vc.count, 1)) > 0)
-) and vector_sampleperiod.sample_aggregate =0
-order by 1,2
-;
+        SELECT  
+        (select name from vector_anopheline2 va where va.id = vs.anopheline2_id), 
+        count(distinct(site_id)),  
+        count(*)  
+        from vector_sampleperiod vs 
+        join vector_tagcomment vt 
+        on vs.anopheline2_id = vt.anopheline2_id 
+        where vt.to_be_mapped 
+        group by vs.anopheline2_id order by 1 
+        ; 
+        """,
+        headers = ["", "Unique sites", "Temporally unique collections",],
+        totals = [1,2]
+    )
+)
+
+reports.append(
+    ExcelReport(
+    'Sites by species and area type all species',
+    """
+    select
+    a.name,
+    (select count(*) from site where has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as all_sites,
+    (select count(*) from site where area_type = 'point' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as point_count,
+    (select count(*) from site where area_type = 'wide area' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as wide_area,
+    (select count(*) from site where area_type = 'polygon small' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as polygon_small,
+    (select count(*) from site where area_type = 'polygon large' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as polygon_large,
+    (select count(*) from site where area_type = 'not specified' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as not_specified,
+    (select count(*) from site where (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as all_sites_null_geom,
+    (select count(*) from site where area_type = 'point' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as point_count_null_geom,
+    (select count(*) from site where area_type = 'wide area' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as wide_area_null_geom,
+    (select count(*) from site where area_type = 'polygon small' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as polygon_small_null_geom,
+    (select count(*) from site where area_type = 'polygon large' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as polygon_large_null_geom,
+    (select count(*) from site where area_type = 'not specified' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as not_specified_null_geom
+    from vector_anopheline2 a
+    order by a.name asc;
+    """,
+    headers = ["", "All sites", "Points", "Wide area", "Polygon small", "Polygon large", "Not specified", "All sites", "Points", "Wide area", "Polygon small", "Polygon large", "Not specified",],
+    totals = range(1,13)
+    )
+)
+
+reports.append(
+    ExcelReport(
+    'Sites and area type by 40 DVS',
+    """
+    select
+    a.name,
+    (select count(*) from site where has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id)) as all_sites,
+    (select count(*) from site where area_type = 'point' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as point_count,
+    (select count(*) from site where area_type = 'wide area' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as wide_area,
+    (select count(*) from site where area_type = 'polygon small' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as polygon_small,
+    (select count(*) from site where area_type = 'polygon large' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as polygon_large,
+    (select count(*) from site where area_type = 'not specified' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as not_specified,
+    (select count(*) from site where (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as all_sites_null_geom,
+    (select count(*) from site where area_type = 'point' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as point_count_null_geom,
+    (select count(*) from site where area_type = 'wide area' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as wide_area_null_geom,
+    (select count(*) from site where area_type = 'polygon small' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as polygon_small_null_geom,
+    (select count(*) from site where area_type = 'polygon large' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as polygon_large_null_geom,
+    (select count(*) from site where area_type = 'not specified' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as not_specified_null_geom
+    from vector_anopheline2 a
+    join vector_tagcomment vt
+    on vt.anopheline2_id = a.id
+    where vt.to_be_mapped
+    order by a.name asc;
+    """,
+    headers = ["", "All sites", "Points", "Wide area", "Polygon small", "Polygon large", "Not specified", "All sites", "Points", "Wide area", "Polygon small", "Polygon large", "Not specified",],
+    totals = range(1,13)
+    )
+)
+
+reports.append(
+    ExcelReport(
+        'Non matching sample aggregates',
+        """
+        select source_id, (select full_name from site sss where sss.site_id = vector_sampleperiod.site_id), id from vector_sampleperiod where 
+        id in (
+        select vsp.id 
+        from 
+        vector_sampleperiod vsp
+        join vector_collection vc
+        on (vc.sample_period_id = vsp.id)
+        group by vsp.id
+        having (sum(coalesce(vc.count, 1)) > 0)
+        ) and vector_sampleperiod.sample_aggregate =0
+        order by 1,2
+        ;
         """,
         headers = ["enl_id", "site_id", "sample_period_id", ],
         )
@@ -142,32 +215,6 @@ order by 1, 2, 3;
         ))
 
 
-reports.append(
-    ExcelReport(
-    'Sites by species and area type',
-    """
-    select
-    a.name,
-    (select count(*) from site where has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as all_sites,
-    (select count(*) from site where area_type = 'point' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as point_count,
-    (select count(*) from site where area_type = 'wide area' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as wide_area,
-    (select count(*) from site where area_type = 'polygon small' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as polygon_small,
-    (select count(*) from site where area_type = 'polygon large' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as polygon_large,
-    (select count(*) from site where area_type = 'not specified' and has_geometry and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as not_specified,
-    (select count(*) from site where (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as all_sites_null_geom,
-    (select count(*) from site where area_type = 'point' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as point_count_null_geom,
-    (select count(*) from site where area_type = 'wide area' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as wide_area_null_geom,
-    (select count(*) from site where area_type = 'polygon small' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as polygon_small_null_geom,
-    (select count(*) from site where area_type = 'polygon large' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as polygon_large_null_geom,
-    (select count(*) from site where area_type = 'not specified' and (not has_geometry) and site_id in (select distinct(site_id) from vector_sampleperiod vsp where a.id = vsp.anopheline2_id))as not_specified_null_geom
-    from vector_anopheline2 a
-    where a.id not in (8, 54)
-    order by a.name asc;
-    """,
-    headers = ["", "All sites", "Points", "Wide area", "Polygon small", "Polygon large", "Not specified", "All sites", "Points", "Wide area", "Polygon small", "Polygon large", "Not specified",],
-    totals = range(1,13)
-    )
-)
 
 reports.append(
     ExcelReport(
@@ -300,34 +347,34 @@ reports.append(
     headers = ["full_name", "site_id", "source_id",]
 ))
 
-reports.append(
-    ExcelReport(
-    "Rename me",
-    """
-    #FIXME: ??
-    select s.author_main, s.author_initials, s.enl_id, ss1.count
-    from
-        source s,
-        (select vsp.source_id, count(*) as count
-        from vector_sampleperiod vsp,
-        (
-            select s.site_id, count(*) as c
-            from site s, vector_presence vp
-            where (not has_geometry)
-            and s.site_id = vp.site_id
-            group by s.site_id
-        ) as ss
-        where
-        ss.site_id = vp.site_id
-        group by vp.source_id
-        ) as ss1
-        where
-        ss1.source_id = s.enl_id
-    order by count;
-    """,
-    headers = ["", "Unique sites", "Temporally unique collections",] 
-    )
-)
+#reports.append(
+#    ExcelReport(
+#    "Rename me",
+#    """
+#    #FIXME: ??
+#    select s.author_main, s.author_initials, s.enl_id, ss1.count
+#    from
+#        source s,
+#        (select vsp.source_id, count(*) as count
+#        from vector_sampleperiod vsp,
+#        (
+#            select s.site_id, count(*) as c
+#            from site s, vector_presence vp
+#            where (not has_geometry)
+#            and s.site_id = vp.site_id
+#            group by s.site_id
+#        ) as ss
+#        where
+#        ss.site_id = vp.site_id
+#        group by vp.source_id
+#        ) as ss1
+#        where
+#        ss1.source_id = s.enl_id
+#    order by count;
+#    """,
+#    headers = ["", "Unique sites", "Temporally unique collections",] 
+#    )
+#)
 
 reports.append(
     ExcelReport(
