@@ -1,5 +1,10 @@
-import sys
-for mod in ['query_to_rec','query','models','spatial_submodels','utils']:
+from mpl_toolkits import basemap
+b = basemap.Basemap(0,0,1,1)
+import os,sys
+import anopheles
+
+
+for mod in ['query_to_rec','query','models','model','spatial_submodels','utils','env_data','mahalanobis_covariance','mapping']:
     try:
         exec('from %s import *'%mod)
     except ImportError:
