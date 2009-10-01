@@ -1,6 +1,6 @@
 from sqlalchemy.orm import join
 from sqlalchemy.sql import func, exists, and_, not_
-from models import Anopheline, Site, Presence, SamplePeriod, Session, World
+from models import Anopheline, Site, SamplePeriod, Session, World
 from sqlalchemygeom import *
 
 __all__ = ['IncompleteDataError', 'list_species', 'species_query',]

@@ -97,15 +97,15 @@ class LatchingMCMC(pymc.MCMC):
         
         open_constraints = filter(lambda x:x.penalty_value != 0, self.constraints)
         all_closed = None
+        i=-1
 
         try:
-            while self._current_iter < self._iter and not self.status == 'halt':
+            while i < self._iter and not self.status == 'halt':
                 if self.status == 'paused':
                     break
                     
                 # Check constraints
                 if all_closed is None:
-                    i=-1
                     for c in open_constraints:
                         if c.logp == 0:
                             if self.verbose > 0:
@@ -117,6 +117,8 @@ class LatchingMCMC(pymc.MCMC):
                         i=0
                         if self.verbose > 0:
                             print 'All constraints closed!'
+                    if self.verbose > 1:
+                        self.print_constraints()
             
                 else:
                     i = self._current_iter - all_closed

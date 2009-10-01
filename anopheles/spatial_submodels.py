@@ -220,6 +220,15 @@ class LRP_norm(LRP):
         x_norm = normalize_env(x, self.means, self.stds)
         return LRP.__call__(self, x_norm.reshape(x.shape))
 
+def shapecheck_mv_normal_chol_like(x,mu,sig):
+    """blah"""
+    if sig.shape[1] != sig.shape[0]:
+        return -np.inf
+    else:
+        return pm.mv_normal_chol_like(x,mu,sig)
+        
+ShapecheckMvNormalChol = pm.stochastic_from_dist('shapecheck_mv_normal_chol', shapecheck_mv_normal_chol_like, pm.rmv_normal_chol, mv=True)
+
 def lr_spatial_env(rl=200,**stuff):
     """A low-rank spatial-only model."""
     # amp = pm.Exponential('amp',.1,value=10)
@@ -259,11 +268,14 @@ def lr_spatial_env(rl=200,**stuff):
     x_fr = pm.Lambda('x_fr', lambda d=ichol, rl=rl, x=x_eo: x[d['pivots'][:rl]])
 
     # Evaluation of field at expert-opinion points
-    f_fr = pm.MvNormalChol('f_fr', np.zeros(rl), L_fr, value=np.ones(rl)*2)
+    f_fr = ShapecheckMvNormalChol('f_fr', np.zeros(rl), L_fr, value=np.ones(rl)*2)
 
     @pm.deterministic(trace=False)
     def krige_wt(f_fr=f_fr, U_fr=U_fr):
-        return pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
+        if U_fr.shape == f_fr.shape*2:
+            return pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
+        else:
+            return None
 
     p = pm.Lambda('p', lambda x_fr=x_fr, C=C, krige_wt=krige_wt, means=stuff['env_means'], stds=stuff['env_stds']: LRP_norm(x_fr, C, krige_wt, means, stds))
 
