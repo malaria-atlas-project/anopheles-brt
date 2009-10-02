@@ -15,18 +15,22 @@
 
 import numpy as np
 
-from query import species_query, list_species
-from models import *
+
+from anopheles_query import *
 from map_utils import multipoly_sample
 import tables as tb
 import sys, os
+import shapely
 
-__all__ = ['site_to_rec', 'sitelist_to_recarray', 'list_species', 'species_query', 'map_extents', 'multipoint_to_ndarray', 'sample_eo', 'map_extents']
+__all__ = ['site_to_rec', 'sitelist_to_recarray', 'list_species', 'species_query', 'map_extents', 'multipoint_to_ndarray', 'sample_eo', 'map_extents', 'point_to_ndarray']
 
 
 def multipoint_to_ndarray(mp):
     "Converts a multipont to a coordinate array IN RADIANS."
     return np.array([[p.x, p.y] for p in mp.geoms])*np.pi/180.
+
+def point_to_ndarray(p):
+    return np.array([p.x, p.y])*np.pi/180.
 
 def site_to_rec(s):
     """
