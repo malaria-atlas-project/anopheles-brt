@@ -20,7 +20,7 @@ from mpl_toolkits import basemap
 b = basemap.Basemap(0,0,1,1)
 import pymc as pm
 import numpy as np
-from models import Session
+from anopheles_query import Session
 from query_to_rec import *
 from env_data import *
 from mahalanobis_covariance import mahalanobis_covariance
@@ -31,6 +31,7 @@ from constraints import *
 from utils import bin_ubls
 import datetime
 import warnings
+import shapely
 
 __all__ = ['make_model', 'species_MCMC', 'probability_traces','potential_traces']
 
@@ -38,7 +39,7 @@ def bin_ubl_like(x, p_eval, p_find, breaks):
     "The ubl likelihood function, document this."
     return bin_ubls(x[0], x[0]+x[1]+x[2], p_find, breaks, p_eval)
 
-BinUBL = pm.stochastic_from_dist('BinUBL', bin_ubl_like)
+BinUBL = pm.stochastic_from_dist('BinUBL', bin_ubl_like, mv=True)
     
 def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}):
     """
@@ -107,9 +108,17 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         others_found = []
         totals = []
     
+        multipoints = False
         for site in sites:
-            x.append(multipoint_to_ndarray(site[0]))
-            breaks.append(breaks[-1] + len(site[0].geoms))
+            if isinstance(site[0], shapely.geometry.multipoint.MultiPoint):
+                x.append(multipoint_to_ndarray(site[0]))
+                breaks.append(breaks[-1] + len(site[0].geoms))
+                multipoints = True
+            if isinstance(site[0], shapely.geometry.point.Point):
+                x.append(np.atleast_2d(point_to_ndarray(site[0])))
+                breaks.append(breaks[-1] + 1)
+            else:
+                raise ValueError, 'Your list of sites has something in it that is neither a multipoint nor a point, you fruitcake.'
             found.append(site[1] if site[1] is not None else 0)
             zero.append(site[2] if site[2] is not None else 0)
             others_found.append(site[3] if site[3] is not None else 0)
@@ -131,7 +140,11 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
 
         p_eval = p(np.hstack((x, env_x)))
         
-        data = pm.robust_init(BinUBL, 100, 'data', p_eval=p_eval, p_find=p_find, breaks=breaks, value=[found, others_found, zero], observed=True, trace=False)
+        if multipoints:
+            # FIXME: This will probably error out.
+            data = pm.robust_init(BinUBL, 100, 'data', p_eval=p_eval, p_find=p_find, breaks=breaks, value=[found, others_found, zero], observed=True, trace=False)
+        else:
+            data = pm.robust_init(pm.Binomial, 100, 'data', n=found+others_found+zero, p=p_eval*p_find, value=found, observed=True, trace=False)
     
     if with_eo:
         
