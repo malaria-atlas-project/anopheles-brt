@@ -70,8 +70,9 @@ def extract_environment(name, x, cache=True):
     if hasattr(grid_data.attrs,'view'):
         view = grid_data.attrs.view
     else:
-        warnings.warn("Assuming map-view for %s because key 'view' not found in its data array's attrs."%grid_data._v_file.filename)
-        view = 'y-x+'
+        raise ValueError, "Key 'view' not found in data array's attrs for datafile %s. \n\
+    I could assume a default view, but you would suffer bitterly. \n\
+    I could not bear it, human."%grid_data._v_file.filename
     
     if hasattr(hr, 'mask'):
         grid_mask = hr.mask

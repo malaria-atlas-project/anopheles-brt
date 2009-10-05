@@ -28,6 +28,7 @@ from map_utils import multipoly_sample
 from mapping import *
 from spatial_submodels import *
 from constraints import *
+from cov_prior import GivensStepper
 from utils import bin_ubls
 import datetime
 import warnings
@@ -90,6 +91,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     # ==========
     
     p_find = pm.Uniform('p_find',0,1)
+    # p_find = pm.Uniform('p_find',.9,1)
     spatial_variables = spatial_submodel(**locals())
     p = spatial_variables['p']
     
@@ -144,7 +146,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
             # FIXME: This will probably error out due to the new shape-checking in PyMC.
             data = pm.robust_init(BinUBL, 100, 'data', p_eval=p_eval, p_find=p_find, breaks=breaks, value=[found, others_found, zero], observed=True, trace=False)
         else:
-            data = pm.robust_init(pm.Binomial, 100, 'data', n=found+others_found+zero, p=p_eval*p_find, value=found, observed=True, trace=False)
+            # data = pm.robust_init(pm.Binomial, 100, 'data', n=found+others_found+zero, p=p_eval*p_find, value=found, observed=True, trace=False)
+            pm.Binomial('data', n=found+others_found+zero, p=p_eval*p_find, value=found, observed=True, trace=False)
     
     if with_eo:
         
@@ -239,6 +242,7 @@ def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
         M=LatchingMCMC(make_model(session, species, spatial_submodel, **kwds), db=db)
     scalar_stochastics = filter(lambda s: np.prod(np.shape(s.value))<=1, M.stochastics)
     M.use_step_method(MVNLRParentMetropolis, scalar_stochastics, M.f_fr, M.U, M.piv, M.rl)
+    M.use_step_method(GivensStepper, M.vec)
     return M
 
 def mean_response_samples(M, axis, n, burn=0, thin=1):
@@ -291,7 +295,6 @@ if __name__ == '__main__':
 
     pl.close('all')
     
-    # M = species_MCMC(s, species[species_num], lr_spatial, with_eo = True, with_data = True, env_variables = [])
     # env = ['MODIS-hdf5/daytime-land-temp.mean.geographic.world.2001-to-2006',
     #         'MODIS-hdf5/evi.mean.geographic.world.2001-to-2006',
     #         'MODIS-hdf5/nighttime-land-temp.mean.geographic.world.2001-to-2006',
@@ -344,20 +347,20 @@ if __name__ == '__main__':
     # current_state_map(M, s, species[species_num], mask, x, img_extent, thin=100)
     # pl.title('Final')
     # pl.savefig('final.pdf')
-    pl.figure()
-    pl.plot(M.trace('out_prob')[:],'b-',label='out')
-    pl.plot(M.trace('in_prob')[:],'r-',label='in')    
-    pl.legend(loc=0)
-    
-    pl.figure()
-    out, arr = presence_map(M, s, species[species_num], thin=100, burn=500, trace_thin=1)
     # pl.figure()
-    # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
-    # for s in samps:
-    #     pl.plot(x_disp, s)
-    pl.savefig('prob.pdf')
-    
+    # pl.plot(M.trace('out_prob')[:],'b-',label='out')
+    # pl.plot(M.trace('in_prob')[:],'r-',label='in')    
+    # pl.legend(loc=0)
+    # 
     # pl.figure()
-    # p_atfound = probability_traces(M)
-    # p_atnotfound = probability_traces(M,False)
-    # pl.savefig('presence.pdf')
+    # out, arr = presence_map(M, s, species[species_num], thin=100, burn=500, trace_thin=1)
+    # # pl.figure()
+    # # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
+    # # for s in samps:
+    # #     pl.plot(x_disp, s)
+    # pl.savefig('prob.pdf')
+    # 
+    # # pl.figure()
+    # # p_atfound = probability_traces(M)
+    # # p_atnotfound = probability_traces(M,False)
+    # # pl.savefig('presence.pdf')

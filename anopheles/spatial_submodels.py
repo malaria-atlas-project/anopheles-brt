@@ -229,7 +229,7 @@ def shapecheck_mv_normal_chol_like(x,mu,sig):
         
 ShapecheckMvNormalChol = pm.stochastic_from_dist('shapecheck_mv_normal_chol', shapecheck_mv_normal_chol_like, pm.rmv_normal_chol, mv=True)
 
-def lr_spatial_env(rl=200,**stuff):
+def lr_spatial_env(rl=50,**stuff):
     """A low-rank spatial-only model."""
     # amp = pm.Exponential('amp',.1,value=10)
     const_frac = pm.Uniform('const_frac',0,1,value=.1)
@@ -241,7 +241,7 @@ def lr_spatial_env(rl=200,**stuff):
     n_env = stuff['env_in'].shape[1]
     
     val = pm.Gamma('val',4,4,value=np.ones(n_env+1))
-    vec = cov_prior.OrthogonalBasis('vec',n_env+1,constrain=False)
+    vec = cov_prior.OrthogonalBasis('vec',n_env+1,constrain=True)
 
     @pm.deterministic
     def C(val=val,vec=vec,const_frac=const_frac):
