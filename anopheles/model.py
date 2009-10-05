@@ -141,7 +141,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         p_eval = p(np.hstack((x, env_x)))
         
         if multipoints:
-            # FIXME: This will probably error out.
+            # FIXME: This will probably error out due to the new shape-checking in PyMC.
             data = pm.robust_init(BinUBL, 100, 'data', p_eval=p_eval, p_find=p_find, breaks=breaks, value=[found, others_found, zero], observed=True, trace=False)
         else:
             data = pm.robust_init(pm.Binomial, 100, 'data', n=found+others_found+zero, p=p_eval*p_find, value=found, observed=True, trace=False)
@@ -178,31 +178,35 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     
         env_eo = np.vstack((env_in, env_out))
         pts_eo = np.vstack((pts_in,pts_out))
-        env_dict = dict(zip(env_variables,env_eo.T))
+        env_dict = dict(zip(env_variables,env_x.T))
+        env_dict_eo = dict(zip(env_variables,env_eo.T))
         
         constraint_dict = {}
         p_wherefound = np.ones(len(wherefound[0]))
         p_in_eo = np.ones(n_in)
         for k in constraint_fns.iterkeys():
             if k=='location':
-                x_constraint = pts_eo
+                x_constraint = x
+                x_constraint_eo = pts_eo
             else:
                 x_constraint = env_dict[k]
+                x_constraint_eo = env_dict_eo[k]
             
             # Make mighty sure that the constraint is satisfied at all datapoints.
             constraint_wherefound = constraint_fns[k](x=x_constraint[wherefound], p=p_wherefound)
-            if np.any(constraint_wherefound>0):
+            if constraint_wherefound>0:
                 raise ValueError, 'Constraint function %s with input variable %s is violated the following locations where %s was found: \n%s' %\
-                                    (constraint_fns[k].__name__, k, species[1], x_wherefound[np.where(constraint_wherefound>0)])
+                                    (constraint_fns[k].__name__, k, species[1], x_wherefound[np.where(constraint_wherefound>0)]*180./np.pi)
                                     
             # Make kind of sure that the constraint is satisfied in most of the expert opinion region.
-            constraint_in_eo = constraint_fns[x](x=x_constraint[:n_in], p=p_in_eo)
-            if np.any(constraint_in_eo>0):
-                warnings.warn('Constraint function %s with input variable %s is violated at %d\% of the expert opinion region for %s.' %\
-                                    (constraint_fns[k].__name__, k, np.sum(constraint_in_eo)/float(n_in), species[1]))
+            constraint_in_eo = constraint_fns[k](x=x_constraint_eo[:n_in], p=p_in_eo)
+            if constraint_in_eo>0:
+                warnings.warn('Constraint function %s with input variable %s is violated on %f of the expert opinion region for %s.' %\
+                                    (constraint_fns[k].__name__, k, constraint_in_eo/float(n_in), species[1]))
             
-            # Make sure the constraint isn't violated in the data
-            constraint_dict[k] = Constraint(penalty_value = -1e100, logp=constraint_fns[k], doc="", name='%s_constraint'%k, parents={'x': x_constraint, 'p': p_eval_eo})
+            # Make sure the constraint doesn't get violated in the range of the species.
+            constraint_dict[k] = Constraint(penalty_value = -1e100, logp=constraint_fns[k], doc="", name='%s_constraint'%k, parents={'x': x_constraint_eo, 'p': p_eval_eo})
+
         
     out = locals()
     out.update(spatial_variables)
@@ -283,21 +287,25 @@ if __name__ == '__main__':
     
     from mpl_toolkits import basemap
     import pylab as pl
-    species_num = 7
+    species_num = 20
 
     pl.close('all')
     
     # M = species_MCMC(s, species[species_num], lr_spatial, with_eo = True, with_data = True, env_variables = [])
-    env = ['MODIS-hdf5/daytime-land-temp.mean.geographic.world.2001-to-2006',
-            'MODIS-hdf5/evi.mean.geographic.world.2001-to-2006',
-            'MODIS-hdf5/nighttime-land-temp.mean.geographic.world.2001-to-2006',
-            'MODIS-hdf5/raw-data.elevation.geographic.world.version-5']
-            
+    # env = ['MODIS-hdf5/daytime-land-temp.mean.geographic.world.2001-to-2006',
+    #         'MODIS-hdf5/evi.mean.geographic.world.2001-to-2006',
+    #         'MODIS-hdf5/nighttime-land-temp.mean.geographic.world.2001-to-2006',
+    #         'MODIS-hdf5/raw-data.elevation.geographic.world.version-5']
+    # mask, x, img_extent = make_covering_raster(100, env)
+
+    env = ['MAPdata/MARA','MAPdata/SCI']
+    mask, x, img_extent = make_covering_raster(5, env)
+
     def elev_check(x,p):
         return np.sum(p[np.where(x>2000)])
 
     def loc_check(x,p):
-        outside_lat = np.abs(x[:,1]*180./np.pi)>20
+        outside_lat = np.abs(x[:,1]*180./np.pi)>30
         # outside_lon = 
         return np.sum(p[np.where(outside_lat)])
 
@@ -310,20 +318,21 @@ if __name__ == '__main__':
     #     pl.title((env+['MODIS-hdf5/raw-data.land-water.geographic.world.version-4'])[i])
     #     pl.colorbar()
 
-    cf = {'location':loc_check, 'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
-    M = species_MCMC(s, species[species_num], lr_spatial_env, with_eo = True, with_data = True, env_variables = env, constraint_fns=cf)
+    # cf = {'location':loc_check, 'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
+    # cf = {'location':loc_check}
+    cf = {}
+    M = species_MCMC(s, species[species_num], lr_spatial_env, with_eo = False, with_data = True, env_variables = env, constraint_fns=cf)
     
-    # mask, x, img_extent = make_covering_raster(100, env)
     # pl.figure()
     # current_state_map(M, s, species[species_num], mask, x, img_extent, thin=1)
     # pl.title('Initial')
     # pl.savefig('initial.pdf')
     # 
-    # M.assign_step_methods()
-    # sf=M.step_method_dict[M.f_fr][0]
-    # ss=M.step_method_dict[M.p_find][0]
-    #     
-    # M.isample(10000,10,10,verbose=1)
+    M.assign_step_methods()
+    sf=M.step_method_dict[M.f_fr][0]
+    ss=M.step_method_dict[M.p_find][0]
+        
+    M.isample(10000,5000,10,verbose=1)
     # 
     # # mask, x, img_extent = make_covering_raster(2)
     # # b = basemap.Basemap(*img_extent)
@@ -335,18 +344,19 @@ if __name__ == '__main__':
     # current_state_map(M, s, species[species_num], mask, x, img_extent, thin=100)
     # pl.title('Final')
     # pl.savefig('final.pdf')
+    pl.figure()
+    pl.plot(M.trace('out_prob')[:],'b-',label='out')
+    pl.plot(M.trace('in_prob')[:],'r-',label='in')    
+    pl.legend(loc=0)
+    
+    pl.figure()
+    out, arr = presence_map(M, s, species[species_num], thin=100, burn=500, trace_thin=1)
     # pl.figure()
-    # pl.plot(M.trace('out_prob')[:],'b-',label='out')
-    # pl.plot(M.trace('in_prob')[:],'r-',label='in')    
-    # pl.legend(loc=0)
-    # pl.figure()
-    # out, arr = presence_map(M, s, species[species_num], thin=100, burn=500, trace_thin=1)
-    # # pl.figure()
-    # # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
-    # # for s in samps:
-    # #     pl.plot(x_disp, s)
-    # pl.savefig('prob.pdf')
-    # 
+    # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
+    # for s in samps:
+    #     pl.plot(x_disp, s)
+    pl.savefig('prob.pdf')
+    
     # pl.figure()
     # p_atfound = probability_traces(M)
     # p_atnotfound = probability_traces(M,False)

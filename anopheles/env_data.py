@@ -19,6 +19,7 @@ import map_utils
 import hashlib
 import tables as tb
 import warnings
+import numpy as np
 
 __all__ = ['get_datafile','extract_environment']
 
@@ -69,14 +70,17 @@ def extract_environment(name, x, cache=True):
     if hasattr(grid_data.attrs,'view'):
         view = grid_data.attrs.view
     else:
-        warnings.warn("Assuming map-view for %s because key 'view' not found in its data array's attrs."%data._v_file.filename)
+        warnings.warn("Assuming map-view for %s because key 'view' not found in its data array's attrs."%grid_data._v_file.filename)
         view = 'y-x+'
     
     if hasattr(hr, 'mask'):
         grid_mask = hr.mask
     else:
         grid_mask = None
-    grid_chunk = hr.data.chunkshape
+    if np.prod(hr.data.shape) > 1e8:
+        grid_chunk = hr.data.chunkshape
+    else:
+        grid_chunk=None
     
     eval = map_utils.interp_geodata(grid_lon, grid_lat, grid_data, x[:,0], x[:,1], grid_mask, grid_chunk, view=view)
     

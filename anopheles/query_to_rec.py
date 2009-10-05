@@ -41,11 +41,14 @@ def site_to_rec(s):
     m = s[0]
     if m is None:
         return None
-    if m.geoms._length > 0:
-        raise ValueError, 'This is a multipoint.'
+    if hasattr(m,'geoms'):
+        if m.geoms._length > 0:
+            raise ValueError, 'This is a multipoint.'
+        else:
+            p = m.geoms[0]
     else:
-        p = m.geoms.next()
-        return p.x, p.y, n
+        p = m
+    return p.x, p.y, n
     
 def sitelist_to_recarray(sl):
     """
