@@ -3,7 +3,12 @@ import cov_prior
 from mahalanobis_covariance import *
 import pymc as pm
 
-__all__ = ['spatial_hill','hill_fn','hinge','step','lr_spatial','lr_spatial_env','MVNLRParentMetropolis','minimal_jumps','bookend']
+__all__ = ['spatial_hill','hill_fn','hinge','step','lr_spatial','lr_spatial_env','MVNLRParentMetropolis','minimal_jumps','bookend','spatial_env','nogp_spatial_env']
+
+def threshold(f):
+    return f > 0
+def invlogit(f):
+    return pm.flib.invlogit(f.ravel()).reshape(f.shape)
 
 def hinge(x, cp):
     "A MaxEnt hinge feature"
@@ -38,7 +43,7 @@ class hill_fn(object):
             ax=0
         else:
             ax=-1
-        return pm.invlogit(np.sum(tdev**2/self.val,axis=ax)*self.amp).reshape(x.shape[:-1])
+        return f2p(np.sum(tdev**2/self.val,axis=ax)*self.amp)
 
 
 def spatial_hill(**kerap):
@@ -150,10 +155,9 @@ class LRP(object):
         self.x_fr = x_fr
         self.C = C
         self.krige_wt = krige_wt
+        self.f2p = threshold
     def __call__(self, x):
-        f_out = np.dot(np.asarray(self.C(x,self.x_fr)), self.krige_wt)
-        # return pm.invlogit(f_out).reshape(x.shape[:-1])
-        return (f_out > 0).reshape(x.shape[:-1]).astype('int')
+        return self.f2p(np.dot(np.asarray(self.C(x,self.x_fr)), self.krige_wt).reshape(x.shape[:-1]))
         
 def lr_spatial(rl=50,**stuff):
     """A low-rank spatial-only model."""
@@ -240,7 +244,8 @@ def lr_spatial_env(rl=200,**stuff):
     
     n_env = stuff['env_in'].shape[1]
     
-    val = pm.Gamma('val',4,4,value=np.ones(n_env+1))
+    # val = pm.Gamma('val',4,4,value=np.ones(n_env+1))
+    val = pm.Exponential('val',.01,value=np.ones(n_env+1))
     vec = cov_prior.OrthogonalBasis('vec',n_env+1,constrain=True)
 
     @pm.deterministic
@@ -278,5 +283,115 @@ def lr_spatial_env(rl=200,**stuff):
             return None
 
     p = pm.Lambda('p', lambda x_fr=x_fr, C=C, krige_wt=krige_wt, means=stuff['env_means'], stds=stuff['env_stds']: LRP_norm(x_fr, C, krige_wt, means, stds))
+
+    return locals()
+    
+def spatial_env(**stuff):
+    """A spatial-only model."""
+    # amp = pm.Exponential('amp',.1,value=10)
+    const_frac = pm.Uniform('const_frac',0,1,value=.1)
+
+    pts_in = np.hstack((stuff['pts_in'],stuff['env_in']))
+    pts_out = np.hstack((stuff['pts_out'],stuff['env_out']))
+    x_eo = normalize_env(np.vstack((pts_in, pts_out)), stuff['env_means'], stuff['env_stds'])
+    x_fr = x_eo
+    rl = x_eo.shape[0]
+
+    n_env = stuff['env_in'].shape[1]
+
+    # val = pm.Gamma('val',4,4,value=np.ones(n_env+1))
+    val = pm.Exponential('val',.01,value=np.ones(n_env+1))
+    vec = cov_prior.OrthogonalBasis('vec',n_env+1,constrain=True)
+
+    @pm.deterministic
+    def C(val=val,vec=vec,const_frac=const_frac):
+        return pm.gp.FullRankCovariance(mod_spatial_mahalanobis, val=val, vec=vec, const_frac=const_frac)
+
+    @pm.deterministic(trace=False)
+    def U_fr(C=C, x=x_eo):
+        try:
+            return C.cholesky(x)
+        except np.linalg.LinAlgError:
+            return None
+
+    @pm.potential
+    def rank_check(U=U_fr):
+        if U is None:
+            return -np.inf
+        else:
+            return 0.
+
+    L_fr = pm.Lambda('L',lambda U=U_fr: U.T)
+
+    # Evaluation of field at expert-opinion points
+    f_fr = pm.MvNormalChol('f_fr', np.zeros(rl), L_fr, value=np.ones(rl)*2)
+
+    @pm.deterministic(trace=False)
+    def krige_wt(f_fr=f_fr, U_fr=U_fr):
+        if U_fr.shape == f_fr.shape*2:
+            return pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
+        else:
+            return None
+
+    p = pm.Lambda('p', lambda x_fr=x_eo, C=C, krige_wt=krige_wt, means=stuff['env_means'], stds=stuff['env_stds']: LRP_norm(x_fr, C, krige_wt, means, stds))
+
+    return locals()
+
+class RotatedLinearWithHill(object):
+    """A closure used by nongp_spatial_env"""
+    def __init__(self, coefs, basis, const,val,vec,ctr,hillamp):
+
+        self.f2p = threshold
+
+        self.coefs = coefs
+        self.basis = basis
+        self.const = const
+        self.val = val
+        self.vec = vec
+        self.ctr = ctr
+        self.hillamp = hillamp
+    def __call__(self, x):
+        xenv = x.reshape(-1,x.shape[-1])[:,2:]
+        linpart = np.dot(np.dot(xrav, self.basis), self.coefs) + self.const
+        
+        xspat = x.reshape(-1,x.shape[-1])[:,:2]
+        dev = xrav-self.ctr
+        tdev = np.dot(dev, self.vec)        
+        
+        if len(dev.shape)==1:
+            ax=0
+        else:
+            ax=-1
+        quadpart = np.sum(tdev**2/self.val,axis=ax)
+        
+        return self.f2p((linpart+quadpart*self.hillamp).reshape(x.shape[:-1]))
+    
+def nogp_spatial_env(**stuff):
+    """A low-rank spatial-only model."""
+
+    pts_in = np.hstack((stuff['pts_in'],stuff['env_in']))
+    pts_out = np.hstack((stuff['pts_out'],stuff['env_out']))
+    x_eo = normalize_env(np.vstack((pts_in, pts_out)), stuff['env_means'], stuff['env_stds'])
+    x_fr = x_eo
+    rl = x_eo.shape[0]
+
+    n_env = stuff['env_in'].shape[1]
+
+    vec = cov_prior.OrthogonalBasis('vec',n_env,constrain=True)
+    const = pm.Uninformative('const',value=1)
+    hillamp = pm.Normal('hillamp',0,1,value=0)
+    coefs = pm.Normal('coefs',0,1,value=np.zeros(n_env))
+    
+    @pm.stochastic
+    def ctr(value=np.array([0,0])):
+        "This makes the center uniformly distributed over the surface of the earth."
+        if value[0] < -np.pi or value[0] > np.pi or value[1] < -np.pi/2. or value[1] > np.pi/2.:
+            return -np.inf
+        return np.cos(value[1])
+
+    bump_val = pm.Gamma('bump_val', 2, 2, size=2)
+    bump_vec = cov_prior.OrthogonalBasis('bump_vec',2)
+        
+    p = pm.Lambda('p', lambda coefs=coefs, basis=vec, const=const, bv = bump_val, be=bump_vec, ctr=ctr,ha=hillamp: RotatedLinearWithHill(coefs,basis,const,bv,be,ctr,ha))
 
     return locals()

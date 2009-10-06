@@ -42,7 +42,7 @@ def bin_ubl_like(x, p_eval, p_find, breaks):
 
 BinUBL = pm.stochastic_from_dist('BinUBL', bin_ubl_like, mv=True)
     
-def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}):
+def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}, n_in=1000, n_out=1000):
     """
     Generates a PyMC probability model with a plug-in spatial submodel.
     The likelihood and expert-opinion layers are common.
@@ -64,9 +64,6 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     # =========
     # = Query =
     # =========
-    
-    n_in = 1000
-    n_out = 1000
     
     sites, eo = species_query(session, species[0])
     pts_in, pts_out = sample_eo(session, species, n_in, n_out)
@@ -146,8 +143,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
             # FIXME: This will probably error out due to the new shape-checking in PyMC.
             data = pm.robust_init(BinUBL, 100, 'data', p_eval=p_eval, p_find=p_find, breaks=breaks, value=[found, others_found, zero], observed=True, trace=False)
         else:
+            data = pm.Binomial('data', n=found+others_found+zero, p=p_eval*p_find, value=found, observed=True, trace=False)
             # data = pm.robust_init(pm.Binomial, 100, 'data', n=found+others_found+zero, p=p_eval*p_find, value=found, observed=True, trace=False)
-            data = pm.robust_init(pm.Binomial, 100, 'data', n=found+others_found+zero, p=p_eval*p_find, value=found, observed=True, trace=False)
     
     if with_eo:
         
@@ -238,12 +235,14 @@ def potential_traces(M, in_or_out = 'in'):
 def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
     print 'Environment variables: ',kwds['env_variables']
     print 'Constraints: ',kwds['constraint_fns']
+    print 'Spatial submodel: ',spatial_submodel.__name__
     if db is None:
         M=LatchingMCMC(make_model(session, species, spatial_submodel, **kwds), db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
     else:
         M=LatchingMCMC(make_model(session, species, spatial_submodel, **kwds), db=db)
     scalar_stochastics = filter(lambda s: np.prod(np.shape(s.value))<=1, M.stochastics)
-    M.use_step_method(MVNLRParentMetropolis, scalar_stochastics, M.f_fr, M.U, M.piv, M.rl)
+    if spatial_submodel.__name__ == 'lr_spatial':    
+        M.use_step_method(MVNLRParentMetropolis, scalar_stochastics, M.f_fr, M.U, M.piv, M.rl)
     M.use_step_method(GivensStepper, M.vec)
     return M
 
@@ -286,7 +285,7 @@ def initialize_by_eo(M):
 if __name__ == '__main__':
     s = Session()
     species = list_species(s)
-
+    
     # m=make_model(s, species[1], spatial_hill, with_data=False)
     # m=make_model(s, species[1], lr_spatial)
     # M = pm.MCMC(m)
@@ -294,50 +293,50 @@ if __name__ == '__main__':
     from mpl_toolkits import basemap
     import pylab as pl
     species_num = 20
-
+    
     pl.close('all')
+    
+    def elev_check(x,p):
+        return np.sum(p[np.where(x>2000)])
+    
+    def loc_check(x,p):
+        outside_lat = np.abs(x[:,1]*180./np.pi)>40
+        outside_lon = x[:,0]*180./np.pi > -20
+        return np.sum(p[np.where(outside_lat + outside_lon)])
     
     # env = ['MODIS-hdf5/daytime-land-temp.mean.geographic.world.2001-to-2006',
     #         'MODIS-hdf5/evi.mean.geographic.world.2001-to-2006',
     #         'MODIS-hdf5/nighttime-land-temp.mean.geographic.world.2001-to-2006',
     #         'MODIS-hdf5/raw-data.elevation.geographic.world.version-5']
     # mask, x, img_extent = make_covering_raster(100, env)
-
+    
     env = ['MAPdata/MARA','MAPdata/SCI']
     mask, x, img_extent = make_covering_raster(5, env)
-
-    def elev_check(x,p):
-        return np.sum(p[np.where(x>2000)])
-
-    def loc_check(x,p):
-        outside_lat = np.abs(x[:,1]*180./np.pi)>30
-        # outside_lon = 
-        return np.sum(p[np.where(outside_lat)])
-
-    # from map_utils import reconcile_multiple_rasters
-    # o = reconcile_multiple_rasters([get_datafile(n) for n in env+['MODIS-hdf5/raw-data.land-water.geographic.world.version-4']], thin=100)
-    # import pylab as pl
-    # for i in xrange(len(o[2])):
-    #     pl.figure()
-    #     pl.imshow(grid_convert(o[2][i],'x+y+','y+x+'))
-    #     pl.title((env+['MODIS-hdf5/raw-data.land-water.geographic.world.version-4'])[i])
-    #     pl.colorbar()
-
-    # cf = {'location':loc_check, 'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
-    # cf = {'location':loc_check}
-    cf = {}
-    M = species_MCMC(s, species[species_num], lr_spatial_env, with_eo = True, with_data = True, env_variables = env, constraint_fns=cf)
     
-    # pl.figure()
-    # current_state_map(M, s, species[species_num], mask, x, img_extent, thin=1)
-    # pl.title('Initial')
-    # pl.savefig('initial.pdf')
-    # 
+    # cf = {'location':loc_check, 'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
+    # cf = {'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
+    cf = {'location':loc_check}
+    # cf = {}
+    
+    spatial_submodel = nogp_spatial_env
+    n_in = n_out = 1000
+    
+    # spatial_submodel = lr_spatial_env
+    # n_in = n_out = 1000
+    
+    # spatial_submodel = spatial_env
+    # n_out = 400
+    # n_in = 100
+    
+    # TODO: Try an additive version to make it easier to satisfy spatial constraints.
+    
+    M = species_MCMC(s, species[species_num], spatial_submodel, with_eo = True, with_data = True, env_variables = env, constraint_fns=cf,n_in=n_in,n_out=n_out)
+    
     M.assign_step_methods()
-    sf=M.step_method_dict[M.f_fr][0]
-    ss=M.step_method_dict[M.p_find][0]
+    # sf=M.step_method_dict[M.f_fr][0]    
+    # ss=M.step_method_dict[M.p_find][0]
         
-    M.isample(10000,5000,10,verbose=1)
+    M.isample(10000,0,10,verbose=1)
     # 
     # # mask, x, img_extent = make_covering_raster(2)
     # # b = basemap.Basemap(*img_extent)

@@ -7,6 +7,7 @@ from query_to_rec import *
 import hashlib
 import tables
 import os
+import pymc as pm
 from mpl_toolkits import basemap
 
 __all__ = ['presence_map','current_state_map','current_state_slice']
@@ -17,9 +18,6 @@ try:
         
         import mbgw
         from mbgw import auxiliary_data
-
-        def conv(a):
-            return grid_convert(a,'x+y+','y+x+')
 
         a='MODIS-hdf5/raw-data.land-water.geographic.world.version-4'
         
@@ -91,13 +89,13 @@ def presence_map(M, session, species, burn=0, thin=1, trace_thin=1, **kwds):
 def current_state_map(M, session, species, mask, x, img_extent, thin=1, **kwds):
     "Maps the current state of the model."
 
-    out = M.p.value(x)
+    out = pm.value(M.p)(x)
 
     b = basemap.Basemap(*img_extent)
     arr = np.ma.masked_array(out, mask=True-mask)
 
     b.imshow(grid_convert(arr,'x+y+','y+x+'), interpolation='nearest')    
-    b.plot(M.x_fr.value[:,0]*180./np.pi, M.x_fr.value[:,1]*180./np.pi, 'g.', markersize=2)
+    b.plot(pm.value(M.x_fr)[:,0]*180./np.pi, pm.value(M.x_fr)[:,1]*180./np.pi, 'g.', markersize=2)
     # b.drawcoastlines(color=(.9,.4,.5))
     # pl.colorbar()    
 
