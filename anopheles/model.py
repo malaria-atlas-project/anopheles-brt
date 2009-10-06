@@ -147,7 +147,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
             data = pm.robust_init(BinUBL, 100, 'data', p_eval=p_eval, p_find=p_find, breaks=breaks, value=[found, others_found, zero], observed=True, trace=False)
         else:
             # data = pm.robust_init(pm.Binomial, 100, 'data', n=found+others_found+zero, p=p_eval*p_find, value=found, observed=True, trace=False)
-            pm.Binomial('data', n=found+others_found+zero, p=p_eval*p_find, value=found, observed=True, trace=False)
+            data = pm.robust_init(pm.Binomial, 100, 'data', n=found+others_found+zero, p=p_eval*p_find, value=found, observed=True, trace=False)
     
     if with_eo:
         
@@ -236,6 +236,8 @@ def potential_traces(M, in_or_out = 'in'):
     pl.plot(a/(a+b))
 
 def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
+    print 'Environment variables: ',kwds['env_variables']
+    print 'Constraints: ',kwds['constraint_fns']
     if db is None:
         M=LatchingMCMC(make_model(session, species, spatial_submodel, **kwds), db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
     else:
@@ -324,7 +326,7 @@ if __name__ == '__main__':
     # cf = {'location':loc_check, 'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
     # cf = {'location':loc_check}
     cf = {}
-    M = species_MCMC(s, species[species_num], lr_spatial_env, with_eo = False, with_data = True, env_variables = env, constraint_fns=cf)
+    M = species_MCMC(s, species[species_num], lr_spatial_env, with_eo = True, with_data = True, env_variables = env, constraint_fns=cf)
     
     # pl.figure()
     # current_state_map(M, s, species[species_num], mask, x, img_extent, thin=1)
