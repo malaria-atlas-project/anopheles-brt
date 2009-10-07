@@ -339,34 +339,28 @@ def spatial_env(**stuff):
 
 class RotatedLinearWithHill(object):
     """A closure used by nongp_spatial_env"""
-    def __init__(self, coefs, basis, const,val,vec,ctr,hillamp):
+    def __init__(self,const,coefs,val,vec,ctr,norm_means,norm_stds,hillpower):
 
-        # self.f2p = threshold
-        self.f2p = invlogit
+        self.f2p = threshold
+        # self.f2p = invlogit
 
         self.coefs = coefs
-        self.basis = basis
         self.const = const
         self.val = val
         self.vec = vec
         self.ctr = ctr
-        self.hillamp = hillamp
+        self.norm_means = norm_means
+        self.norm_stds = norm_stds
+        self.hillpower=hillpower
 
     def __call__(self, x):
-        xenv = x.reshape(-1,x.shape[-1])[:,2:]
-        linpart = np.dot(np.dot(xenv, self.basis), self.coefs)
+        x_ = normalize_env(x,self.norm_means,self.norm_stds)
+        x__ = np.dot(x_.reshape(-1,x.shape[-1])-self.ctr,self.vec)
         
-        xspat = x.reshape(-1,x.shape[-1])[:,:2]
-        dev = xspat-self.ctr
-        tdev = np.dot(dev, self.vec)        
+        linpart = np.dot(x__, self.coefs)
+        quadpart = -np.sum((x__**2/self.val)**self.hillpower,axis=1)
         
-        if len(dev.shape)==1:
-            ax=0
-        else:
-            ax=-1
-        quadpart = np.sum(tdev**2/self.val,axis=ax)
-        
-        return self.f2p((linpart + quadpart*self.hillamp*0 + self.const).reshape(x.shape[:-1]))
+        return self.f2p((linpart + quadpart + self.const).reshape(x.shape[:-1]))
     
 def nogp_spatial_env(**stuff):
     """A low-rank spatial-only model."""
@@ -379,21 +373,21 @@ def nogp_spatial_env(**stuff):
 
     n_env = stuff['env_in'].shape[1]
 
-    vec = cov_prior.OrthogonalBasis('vec',n_env,constrain=True)
     const = pm.Uninformative('const',value=1)
-    hillamp = pm.Normal('hillamp',0,1,value=0)
-    coefs = pm.Normal('coefs',0,1,value=np.zeros(n_env))
+    coefs = pm.Normal('coefs',0,1,value=np.zeros(n_env+2))
     
     @pm.stochastic
-    def ctr(value=np.array([0,0])):
+    def ctr(value=np.zeros(n_env+2)):
         "This makes the center uniformly distributed over the surface of the earth."
         if value[0] < -np.pi or value[0] > np.pi or value[1] < -np.pi/2. or value[1] > np.pi/2.:
             return -np.inf
-        return np.cos(value[1])
+        return np.cos(value[1]) + pm.normal_like(value[2:],0,1)
 
-    bump_val = pm.Gamma('bump_val', 2, 2, size=2)
-    bump_vec = cov_prior.OrthogonalBasis('bump_vec',2)
+    val = pm.Exponential('bump_val', .001, size=(n_env+2),value=np.ones(n_env+2)*20.)
+    vec = cov_prior.OrthogonalBasis('bump_vec',(n_env+2))
+    
+    hillpower = pm.Exponential('hillpower',.001,value=1)
         
-    p = pm.Lambda('p', lambda coefs=coefs, basis=vec, const=const, bv = bump_val, be=bump_vec, ctr=ctr,ha=hillamp: RotatedLinearWithHill(coefs,basis,const,bv,be,ctr,ha))
+    p = pm.Lambda('p', lambda coefs=coefs, const=const, bv = val, be=vec, ctr=ctr, hillpower=hillpower: RotatedLinearWithHill(const,coefs,bv,be,ctr,stuff['env_means'],stuff['env_stds'],hillpower))
 
     return locals()

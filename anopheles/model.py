@@ -315,8 +315,8 @@ if __name__ == '__main__':
     
     # cf = {'location':loc_check, 'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
     # cf = {'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
-    # cf = {'location':loc_check}
-    cf = {}
+    cf = {'location'  :loc_check}
+    # cf = {}
     
     spatial_submodel = nogp_spatial_env
     n_in = n_out = 1000
