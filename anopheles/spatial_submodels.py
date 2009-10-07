@@ -353,10 +353,10 @@ class RotatedLinearWithHill(object):
         self.hillamp = hillamp
     def __call__(self, x):
         xenv = x.reshape(-1,x.shape[-1])[:,2:]
-        linpart = np.dot(np.dot(xrav, self.basis), self.coefs) + self.const
+        linpart = np.dot(np.dot(env, self.basis), self.coefs) + self.const
         
         xspat = x.reshape(-1,x.shape[-1])[:,:2]
-        dev = xrav-self.ctr
+        dev = xspat-self.ctr
         tdev = np.dot(dev, self.vec)        
         
         if len(dev.shape)==1:
