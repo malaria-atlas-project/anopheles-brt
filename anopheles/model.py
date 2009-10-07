@@ -304,19 +304,19 @@ if __name__ == '__main__':
         outside_lon = x[:,0]*180./np.pi > -20
         return np.sum(p[np.where(outside_lat + outside_lon)])
     
-    # env = ['MODIS-hdf5/daytime-land-temp.mean.geographic.world.2001-to-2006',
-    #         'MODIS-hdf5/evi.mean.geographic.world.2001-to-2006',
-    #         'MODIS-hdf5/nighttime-land-temp.mean.geographic.world.2001-to-2006',
-    #         'MODIS-hdf5/raw-data.elevation.geographic.world.version-5']
-    # mask, x, img_extent = make_covering_raster(100, env)
+    env = ['MODIS-hdf5/daytime-land-temp.mean.geographic.world.2001-to-2006',
+            'MODIS-hdf5/evi.mean.geographic.world.2001-to-2006',
+            'MODIS-hdf5/nighttime-land-temp.mean.geographic.world.2001-to-2006',
+            'MODIS-hdf5/raw-data.elevation.geographic.world.version-5']
+    mask, x, img_extent = make_covering_raster(100, env)
     
-    env = ['MAPdata/MARA','MAPdata/SCI']
-    mask, x, img_extent = make_covering_raster(5, env)
+    # env = ['MAPdata/MARA','MAPdata/SCI']
+    # mask, x, img_extent = make_covering_raster(5, env)
     
     # cf = {'location':loc_check, 'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
     # cf = {'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
-    cf = {'location':loc_check}
-    # cf = {}
+    # cf = {'location':loc_check}
+    cf = {}
     
     spatial_submodel = nogp_spatial_env
     n_in = n_out = 1000

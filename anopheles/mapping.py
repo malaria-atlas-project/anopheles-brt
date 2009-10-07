@@ -16,8 +16,6 @@ try:
     from map_utils import reconcile_multiple_rasters
     def make_covering_raster(thin=1, env_variables=(), **kwds):
         
-        import mbgw
-        from mbgw import auxiliary_data
 
         a='MODIS-hdf5/raw-data.land-water.geographic.world.version-4'
         

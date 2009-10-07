@@ -341,7 +341,8 @@ class RotatedLinearWithHill(object):
     """A closure used by nongp_spatial_env"""
     def __init__(self, coefs, basis, const,val,vec,ctr,hillamp):
 
-        self.f2p = threshold
+        # self.f2p = threshold
+        self.f2p = invlogit
 
         self.coefs = coefs
         self.basis = basis
@@ -364,7 +365,7 @@ class RotatedLinearWithHill(object):
             ax=-1
         quadpart = np.sum(tdev**2/self.val,axis=ax)
         
-        return self.f2p((linpart+quadpart*self.hillamp).reshape(x.shape[:-1]))
+        return self.f2p((linpart*0+quadpart*self.hillamp).reshape(x.shape[:-1]))
     
 def nogp_spatial_env(**stuff):
     """A low-rank spatial-only model."""
