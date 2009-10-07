@@ -351,9 +351,10 @@ class RotatedLinearWithHill(object):
         self.vec = vec
         self.ctr = ctr
         self.hillamp = hillamp
+
     def __call__(self, x):
         xenv = x.reshape(-1,x.shape[-1])[:,2:]
-        linpart = np.dot(np.dot(env, self.basis), self.coefs) + self.const
+        linpart = np.dot(np.dot(xenv, self.basis), self.coefs)
         
         xspat = x.reshape(-1,x.shape[-1])[:,:2]
         dev = xspat-self.ctr
@@ -365,7 +366,7 @@ class RotatedLinearWithHill(object):
             ax=-1
         quadpart = np.sum(tdev**2/self.val,axis=ax)
         
-        return self.f2p((linpart*0+quadpart*self.hillamp).reshape(x.shape[:-1]))
+        return self.f2p((linpart + quadpart*self.hillamp*0 + self.const).reshape(x.shape[:-1]))
     
 def nogp_spatial_env(**stuff):
     """A low-rank spatial-only model."""
