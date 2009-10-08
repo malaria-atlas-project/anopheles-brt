@@ -341,8 +341,8 @@ class RotatedLinearWithHill(object):
     """A closure used by nongp_spatial_env"""
     def __init__(self,const,coefs,val,vec,ctr,norm_means,norm_stds,hillpower):
 
-        self.f2p = threshold
-        # self.f2p = invlogit
+        # self.f2p = threshold
+        self.f2p = invlogit
 
         self.coefs = coefs
         self.const = const
@@ -376,7 +376,7 @@ def nogp_spatial_env(**stuff):
 
     n_env = stuff['env_in'].shape[1]
 
-    const = pm.Uninformative('const',value=40)
+    const = pm.Uninformative('const',value=1)
     coefs = pm.Normal('coefs',0,1,value=np.zeros(n_env+2))
     
     @pm.stochastic
