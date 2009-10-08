@@ -386,8 +386,8 @@ def nogp_spatial_env(**stuff):
             return -np.inf
         return np.cos(value[1]) + pm.normal_like(value[2:],0,1)
 
-    val = pm.Exponential('bump_val', .001, size=(n_env+2),value=np.ones(n_env+2))
-    vec = cov_prior.OrthogonalBasis('bump_vec',(n_env+2),observed=True)
+    val = pm.Exponential('val', .001, size=(n_env+2),value=np.ones(n_env+2))
+    vec = cov_prior.OrthogonalBasis('vec',(n_env+2))
     
     # hillpower = pm.Exponential('hillpower',.001,value=1)
     hillpower = 1.
