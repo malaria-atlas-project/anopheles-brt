@@ -339,7 +339,7 @@ def spatial_env(**stuff):
 
 class RotatedLinearWithHill(object):
     """A closure used by nongp_spatial_env"""
-    def __init__(self,const,coefs,val,vec,ctr,norm_means,norm_stds,hillpower):
+    def __init__(self,const,coefs,val,vec,ctr,norm_means,norm_stds,hillpower,spval,spctr):
 
         # self.f2p = threshold
         self.f2p = invlogit
@@ -352,15 +352,19 @@ class RotatedLinearWithHill(object):
         self.norm_means = norm_means
         self.norm_stds = norm_stds
         self.hillpower=hillpower
+        self.spval=spval
+        self.spctr=spctr
 
     def __call__(self, x):
         x_ = normalize_env(x,self.norm_means,self.norm_stds)
-        x__ = np.dot((x_.reshape(-1,x.shape[-1])-self.ctr),self.vec)/np.sqrt(self.val)
+        x__ = np.dot((x_[:,2:].reshape(-1,x.shape[-1]-2)-self.ctr),self.vec)/np.sqrt(self.val)
         
         linpart = np.dot(x__, self.coefs)
         quadpart = -np.sum((x__**2)**self.hillpower,axis=1)
         
-        out = self.f2p((linpart*0 + quadpart + self.const).reshape(x.shape[:-1]))
+        spatial_quadpart = -np.sum((x_[:,:2]-self.spctr)**2/self.spval,axis=1)
+        
+        out = self.f2p((linpart + quadpart + self.const + spatial_quadpart).reshape(x.shape[:-1]))
         if np.any(np.isnan(out)):
             raise ValueError  
         return out
@@ -377,21 +381,25 @@ def nogp_spatial_env(**stuff):
     n_env = stuff['env_in'].shape[1]
 
     const = pm.Uninformative('const',value=1)
-    coefs = pm.Normal('coefs',0,1,value=np.zeros(n_env+2))
+    coefs = pm.Normal('coefs',0,1,value=np.zeros(n_env))
     
     @pm.stochastic
-    def ctr(value=np.zeros(n_env+2)):
+    def spctr(value=np.zeros(2)):
         "This makes the center uniformly distributed over the surface of the earth."
         if value[0] < -np.pi or value[0] > np.pi or value[1] < -np.pi/2. or value[1] > np.pi/2.:
             return -np.inf
         return np.cos(value[1]) + pm.normal_like(value[2:],0,1)
 
-    val = pm.Exponential('val', .001, size=(n_env+2),value=np.ones(n_env+2))
-    vec = cov_prior.OrthogonalBasis('vec',(n_env+2))
+    ctr = pm.Uninformative('ctr',value=np.zeros(n_env))
+    val = pm.Exponential('val', .001, value=np.ones(n_env))
+    vec = cov_prior.OrthogonalBasis('vec',(n_env))
+    
+    spval = pm.Exponential('spval',.001,value=np.ones(2))
     
     # hillpower = pm.Exponential('hillpower',.001,value=1)
     hillpower = 1.
         
-    p = pm.Lambda('p', lambda coefs=coefs, const=const, bv = val, be=vec, ctr=ctr, hillpower=hillpower: RotatedLinearWithHill(const,coefs,bv,be,ctr,stuff['env_means'],stuff['env_stds'],hillpower))
+    p = pm.Lambda('p', lambda coefs=coefs, const=const, bv = val, be=vec, ctr=ctr, hillpower=hillpower, spval=spval, spctr=spctr: \
+                            RotatedLinearWithHill(const,coefs,bv,be,ctr,stuff['env_means'],stuff['env_stds'],hillpower,spval,spctr))
 
     return locals()
