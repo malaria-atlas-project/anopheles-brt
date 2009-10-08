@@ -93,7 +93,7 @@ def current_state_map(M, session, species, mask, x, img_extent, thin=1, **kwds):
     arr = np.ma.masked_array(out, mask=True-mask)
 
     b.imshow(grid_convert(arr,'x+y+','y+x+'), interpolation='nearest')    
-    b.plot(pm.value(M.x_fr)[:,0]*180./np.pi, pm.value(M.x_fr)[:,1]*180./np.pi, 'g.', markersize=2)
+    # b.plot(pm.value(M.x_fr)[:,0]*180./np.pi, pm.value(M.x_fr)[:,1]*180./np.pi, 'g.', markersize=2)
     # b.drawcoastlines(color=(.9,.4,.5))
     # pl.colorbar()    
 

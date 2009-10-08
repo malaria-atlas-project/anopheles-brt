@@ -53,7 +53,9 @@ def extract_environment(name, x, cache=True):
         if 'anopheles-caches' in os.listdir('.'):
             if fname in os.listdir('anopheles-caches'):
                 hf = tb.openFile(os.path.join('anopheles-caches',fname))
-                return hf.root.eval[:]
+                out = hf.root.eval[:]
+                hf.close()
+                return out
     
         print 'Evaluation of environmental layer %s on array with SHA1 hash %s not found, recomputing.'%(name, hashlib.sha1(x.data).hexdigest())
     

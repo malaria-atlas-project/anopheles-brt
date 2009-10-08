@@ -28,7 +28,7 @@ from map_utils import multipoly_sample
 from mapping import *
 from spatial_submodels import *
 from constraints import *
-from cov_prior import GivensStepper
+from cov_prior import GivensStepper, OrthogonalBasis
 from utils import bin_ubls
 import datetime
 import warnings
@@ -65,7 +65,6 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     # = Query =
     # =========
     
-    sites, eo = species_query(session, species[0])
     pts_in, pts_out = sample_eo(session, species, n_in, n_out)
     
     # ========================
@@ -92,42 +91,13 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     spatial_variables = spatial_submodel(**locals())
     p = spatial_variables['p']
     
-    # Forget about non-records
-    sites = filter(lambda s:s[0] is not None, sites)
-    
     # ==============
     # = Likelihood =
     # ==============
 
     if with_data:
-        x = []
-        breaks = [0]
-        found = []
-        zero = []
-        others_found = []
-        totals = []
-    
-        multipoints = False
-        for site in sites:
-            if isinstance(site[0], shapely.geometry.multipoint.MultiPoint):
-                x.append(multipoint_to_ndarray(site[0]))
-                breaks.append(breaks[-1] + len(site[0].geoms))
-                multipoints = True
-            if isinstance(site[0], shapely.geometry.point.Point):
-                x.append(np.atleast_2d(point_to_ndarray(site[0])))
-                breaks.append(breaks[-1] + 1)
-            else:
-                raise ValueError, 'Your list of sites has something in it that is neither a multipoint nor a point, you fruitcake.'
-            found.append(site[1] if site[1] is not None else 0)
-            zero.append(site[2] if site[2] is not None else 0)
-            others_found.append(site[3] if site[3] is not None else 0)
-            totals.append(site[4])
-
-        breaks = np.array(breaks)
-        x = np.concatenate(x)
-        found = np.array(found)
-        zero = np.array(zero)
-        others_found = np.array(others_found)
+        
+        breaks, x, found, zero, others_found, multipoints = sites_as_ndarray(session, species)
         
         wherefound = np.where(found > 0)
         x_wherefound = x[wherefound]
@@ -243,7 +213,8 @@ def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
     scalar_stochastics = filter(lambda s: np.prod(np.shape(s.value))<=1, M.stochastics)
     if spatial_submodel.__name__ == 'lr_spatial':    
         M.use_step_method(MVNLRParentMetropolis, scalar_stochastics, M.f_fr, M.U, M.piv, M.rl)
-    M.use_step_method(GivensStepper, M.vec)
+    bases = filter(lambda s: isinstance(s,OrthogonalBasis), M.stochastics)
+    [M.use_step_method(GivensStepper, b) for b in bases]
     return M
 
 def mean_response_samples(M, axis, n, burn=0, thin=1):
@@ -315,8 +286,8 @@ if __name__ == '__main__':
     
     # cf = {'location':loc_check, 'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
     # cf = {'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
-    cf = {'location'  :loc_check}
-    # cf = {}
+    # cf = {'location'  :loc_check}
+    cf = {}
     
     spatial_submodel = nogp_spatial_env
     n_in = n_out = 1000
@@ -335,8 +306,9 @@ if __name__ == '__main__':
     M.assign_step_methods()
     # sf=M.step_method_dict[M.f_fr][0]    
     # ss=M.step_method_dict[M.p_find][0]
+    s = M.step_method_dict[M.ctr][0]
         
-    M.isample(10000,0,10,verbose=1)
+    M.isample(10000,0,10,verbose=0)
     # 
     # # mask, x, img_extent = make_covering_raster(2)
     # # b = basemap.Basemap(*img_extent)

@@ -21,9 +21,9 @@ from map_utils import multipoly_sample
 import tables as tb
 import sys, os
 import shapely
+import cPickle
 
-__all__ = ['site_to_rec', 'sitelist_to_recarray', 'list_species', 'species_query', 'map_extents', 'multipoint_to_ndarray', 'sample_eo', 'map_extents', 'point_to_ndarray']
-
+__all__ = ['site_to_rec', 'sitelist_to_recarray', 'list_species', 'species_query', 'map_extents', 'multipoint_to_ndarray', 'sample_eo', 'map_extents', 'point_to_ndarray', 'sites_as_ndarray']
 
 def multipoint_to_ndarray(mp):
     "Converts a multipont to a coordinate array IN RADIANS."
@@ -64,39 +64,99 @@ def map_extents(pos_recs, eo):
             min(pos_recs.y.min(), eo.bounds[1]),
             max(pos_recs.x.max(), eo.bounds[2]),
             max(pos_recs.y.max(), eo.bounds[3])]
+
+def sites_as_ndarray(session, species):
     
+    fname = '%s_sites.hdf5'%(species[1])
+    
+    if fname in os.listdir('anopheles-caches'):
+        hf = tb.openFile(os.path.join('anopheles-caches', fname))
+        breaks = hf.root.breaks[:]
+        x = hf.root.x[:]
+        found = hf.root.found[:]
+        zero = hf.root.zero[:]
+        others_found = hf.root.others_found[:]
+        multipoints = hf.root.multipoints[0]
+        hf.close()
+    
+    else:
+        sites, eo = species_query(session, species[0])
+    
+        # Forget about non-records
+        sites = filter(lambda s:s[0] is not None, sites)
+    
+        x = []
+        breaks = [0]
+        found = []
+        zero = []
+        others_found = []
+        totals = []
+
+        multipoints = False
+        for site in sites:
+            if isinstance(site[0], shapely.geometry.multipoint.MultiPoint):
+                x.append(multipoint_to_ndarray(site[0]))
+                breaks.append(breaks[-1] + len(site[0].geoms))
+                multipoints = True
+            if isinstance(site[0], shapely.geometry.point.Point):
+                x.append(np.atleast_2d(point_to_ndarray(site[0])))
+                breaks.append(breaks[-1] + 1)
+            else:
+                raise ValueError, 'Your list of sites has something in it that is neither a multipoint nor a point, you fruitcake.'
+            found.append(site[1] if site[1] is not None else 0)
+            zero.append(site[2] if site[2] is not None else 0)
+            others_found.append(site[3] if site[3] is not None else 0)
+            totals.append(site[4])
+
+        breaks = np.array(breaks)
+        x = np.concatenate(x)
+        found = np.array(found)
+        zero = np.array(zero)
+        others_found = np.array(others_found)
+        
+        hf = tb.openFile(os.path.join('anopheles-caches', fname),'w')
+        hf.createArray('/','breaks',breaks)
+        hf.createArray('/','x',x)
+        hf.createArray('/','found',found)
+        hf.createArray('/','zero',zero)
+        hf.createArray('/','others_found',others_found)
+        hf.createArray('/','multipoints',[multipoints])
+        hf.close()
+    
+    return breaks, x, found, zero, others_found, multipoints
             
 def sample_eo(session, species, n_in, n_out):
-    sites, eo = species_query(session, species[0])
     
     fname = '%s_eo_pts_%i_%i.hdf5'%(species[1],n_in,n_out)
-
+    
     if 'anopheles-caches' in os.listdir('.'):
         if fname in os.listdir('anopheles-caches'):
             hf = tb.openFile(os.path.join('anopheles-caches', fname))
             pts_in = hf.root.pts_in[:]
             pts_out = hf.root.pts_out[:]
-        
-            return pts_in, pts_out
+            hf.close()
 
-    print 'Cached expert-opinion points not found, recomputing.'
-    print 'Querying world'
-    world = session.query(World)[0].geom
-    print 'Differencing with expert opinion'
-    not_eo = world.difference(eo)
+    else:
+        sites, eo = species_query(session, species[0])
+
+        print 'Cached expert-opinion points not found, recomputing.'
+        print 'Querying world'
+        world = session.query(World)[0].geom
+        print 'Differencing with expert opinion'
+        not_eo = world.difference(eo)
     
-    print 'Sampling outside'
-    lon_out, lat_out = multipoly_sample(n_out, not_eo)
-    print 'Sampling inside'
-    lon_in, lat_in = multipoly_sample(n_in, eo)
+        print 'Sampling outside'
+        lon_out, lat_out = multipoly_sample(n_out, not_eo)
+        print 'Sampling inside'
+        lon_in, lat_in = multipoly_sample(n_in, eo)
     
-    print 'Writing out'
-    pts_in = np.vstack((lon_in, lat_in)).T*np.pi/180. 
-    pts_out = np.vstack((lon_out, lat_out)).T*np.pi/180.
+        print 'Writing out'
+        pts_in = np.vstack((lon_in, lat_in)).T*np.pi/180. 
+        pts_out = np.vstack((lon_out, lat_out)).T*np.pi/180.
     
-    hf = tb.openFile(os.path.join('anopheles-caches',fname),'w')
-    hf.createArray('/','pts_in',pts_in)
-    hf.createArray('/','pts_out',pts_out)
+        hf = tb.openFile(os.path.join('anopheles-caches',fname),'w')
+        hf.createArray('/','pts_in',pts_in)
+        hf.createArray('/','pts_out',pts_out)
     
     return pts_in, pts_out
 

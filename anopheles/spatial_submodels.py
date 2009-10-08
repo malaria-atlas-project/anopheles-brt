@@ -341,8 +341,8 @@ class RotatedLinearWithHill(object):
     """A closure used by nongp_spatial_env"""
     def __init__(self,const,coefs,val,vec,ctr,norm_means,norm_stds,hillpower):
 
-        self.f2p = threshold
-        # self.f2p = invlogit
+        # self.f2p = threshold
+        self.f2p = invlogit
 
         self.coefs = coefs
         self.const = const
@@ -355,12 +355,15 @@ class RotatedLinearWithHill(object):
 
     def __call__(self, x):
         x_ = normalize_env(x,self.norm_means,self.norm_stds)
-        x__ = np.dot(x_.reshape(-1,x.shape[-1])-self.ctr,self.vec)
+        x__ = np.dot((x_.reshape(-1,x.shape[-1])-self.ctr),self.vec)/np.sqrt(self.val)
         
         linpart = np.dot(x__, self.coefs)
-        quadpart = -np.sum((x__**2/self.val)**self.hillpower,axis=1)
+        quadpart = -np.sum((x__**2)**self.hillpower,axis=1)
         
-        return self.f2p((linpart + quadpart + self.const).reshape(x.shape[:-1]))
+        out = self.f2p((linpart*0 + quadpart + self.const).reshape(x.shape[:-1]))
+        if np.any(np.isnan(out)):
+            raise ValueError  
+        return out
     
 def nogp_spatial_env(**stuff):
     """A low-rank spatial-only model."""
@@ -383,10 +386,11 @@ def nogp_spatial_env(**stuff):
             return -np.inf
         return np.cos(value[1]) + pm.normal_like(value[2:],0,1)
 
-    val = pm.Exponential('bump_val', .001, size=(n_env+2),value=np.ones(n_env+2)*20.)
-    vec = cov_prior.OrthogonalBasis('bump_vec',(n_env+2))
+    val = pm.Exponential('bump_val', .001, size=(n_env+2),value=np.ones(n_env+2))
+    vec = cov_prior.OrthogonalBasis('bump_vec',(n_env+2),observed=True)
     
-    hillpower = pm.Exponential('hillpower',.001,value=1)
+    # hillpower = pm.Exponential('hillpower',.001,value=1)
+    hillpower = 1.
         
     p = pm.Lambda('p', lambda coefs=coefs, const=const, bv = val, be=vec, ctr=ctr, hillpower=hillpower: RotatedLinearWithHill(const,coefs,bv,be,ctr,stuff['env_means'],stuff['env_stds'],hillpower))
 
