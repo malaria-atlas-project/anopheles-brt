@@ -211,6 +211,7 @@ def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
     else:
         M=LatchingMCMC(make_model(session, species, spatial_submodel, **kwds), db=db)
     scalar_stochastics = filter(lambda s: np.prod(np.shape(s.value))<=1, M.stochastics)
+    M.use_step_method(pm.AdaptiveMetropolis, scalar_stochastics)
     if spatial_submodel.__name__ == 'lr_spatial':    
         M.use_step_method(MVNLRParentMetropolis, scalar_stochastics, M.f_fr, M.U, M.piv, M.rl)
     bases = filter(lambda s: isinstance(s,OrthogonalBasis), M.stochastics)
@@ -286,8 +287,8 @@ if __name__ == '__main__':
     
     # cf = {'location':loc_check, 'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
     # cf = {'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
-    # cf = {'location'  :loc_check}
-    cf = {}
+    cf = {'location'  :loc_check}
+    # cf = {}
     
     spatial_submodel = nogp_spatial_env
     n_in = n_out = 1000
