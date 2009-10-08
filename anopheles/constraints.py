@@ -115,7 +115,7 @@ class LatchingMCMC(pymc.MCMC):
                     if len(open_constraints)==0:
                         all_closed = self._current_iter
                         i=0
-                        print 'All constraints closed!'
+                        print 'All constraints closed at iteration %i'%self._current_iter
                     if self.verbose > 1:
                         self.print_constraints()
             
