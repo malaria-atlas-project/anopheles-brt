@@ -341,8 +341,8 @@ class RotatedLinearWithHill(object):
     """A closure used by nongp_spatial_env"""
     def __init__(self,const,coefs,val,vec,ctr,norm_means,norm_stds,hillpower):
 
-        # self.f2p = threshold
-        self.f2p = invlogit
+        self.f2p = threshold
+        # self.f2p = invlogit
 
         self.coefs = coefs
         self.const = const
@@ -360,7 +360,7 @@ class RotatedLinearWithHill(object):
         linpart = np.dot(x__, self.coefs)
         quadpart = -np.sum((x__**2)**self.hillpower,axis=1)
         
-        out = self.f2p((linpart*0 + quadpart + self.const).reshape(x.shape[:-1]))
+        out = self.f2p((linpart + quadpart + self.const).reshape(x.shape[:-1]))
         if np.any(np.isnan(out)):
             raise ValueError  
         return out
@@ -376,7 +376,7 @@ def nogp_spatial_env(**stuff):
 
     n_env = stuff['env_in'].shape[1]
 
-    const = pm.Uninformative('const',value=1)
+    const = pm.Uninformative('const',value=40)
     coefs = pm.Normal('coefs',0,1,value=np.zeros(n_env+2))
     
     @pm.stochastic
@@ -389,8 +389,8 @@ def nogp_spatial_env(**stuff):
     val = pm.Exponential('val', .001, size=(n_env+2),value=np.ones(n_env+2))
     vec = cov_prior.OrthogonalBasis('vec',(n_env+2))
     
-    # hillpower = pm.Exponential('hillpower',.001,value=1)
-    hillpower = 1.
+    hillpower = pm.Exponential('hillpower',.001,value=1)
+    # hillpower = 1.
         
     p = pm.Lambda('p', lambda coefs=coefs, const=const, bv = val, be=vec, ctr=ctr, hillpower=hillpower: RotatedLinearWithHill(const,coefs,bv,be,ctr,stuff['env_means'],stuff['env_stds'],hillpower))
 
