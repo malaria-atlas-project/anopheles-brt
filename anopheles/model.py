@@ -20,7 +20,6 @@ from mpl_toolkits import basemap
 b = basemap.Basemap(0,0,1,1)
 import pymc as pm
 import numpy as np
-from anopheles_query import Session
 from query_to_rec import *
 from env_data import *
 from mahalanobis_covariance import mahalanobis_covariance
@@ -254,95 +253,3 @@ def initialize_by_eo(M):
 # TODO: Evaluation metrics: kappa etc.
 # TODO: Figure out how to assess convergence even though there's degeneracy: can exchange axis labels in covariance prior and no problem.
 # TODO: Actually if there's convergence without reduction, you're fine.
-if __name__ == '__main__':
-    s = Session()
-    species = list_species(s)
-    
-    # m=make_model(s, species[1], spatial_hill, with_data=False)
-    # m=make_model(s, species[1], lr_spatial)
-    # M = pm.MCMC(m)
-    
-    from mpl_toolkits import basemap
-    import pylab as pl
-    species_num = 20
-    # species_num = 0
-    
-    pl.close('all')
-    
-    def elev_check(x,p):
-        return np.sum(p[np.where(x>2000)])
-    
-    def loc_check(x,p):
-        outside_lat = np.abs(x[:,1]*180./np.pi)>40
-        outside_lon = x[:,0]*180./np.pi > -20
-        return np.sum(p[np.where(outside_lat + outside_lon)])
-    
-    env = ['MODIS-hdf5/daytime-land-temp.mean.geographic.world.2001-to-2006',
-            'MODIS-hdf5/daytime-land-temp.annual-amplitude.geographic.world.2001-to-2006',
-            'MODIS-hdf5/daytime-land-temp.annual-phase.geographic.world.2001-to-2006',
-            'MODIS-hdf5/daytime-land-temp.biannual-amplitude.geographic.world.2001-to-2006',
-            'MODIS-hdf5/daytime-land-temp.biannual-phase.geographic.world.2001-to-2006',
-            'MODIS-hdf5/evi.mean.geographic.world.2001-to-2006',
-            'MODIS-hdf5/evi.annual-amplitude.geographic.world.2001-to-2006',
-            'MODIS-hdf5/evi.annual-phase.geographic.world.2001-to-2006',
-            'MODIS-hdf5/evi.biannual-amplitude.geographic.world.2001-to-2006',
-            'MODIS-hdf5/evi.biannual-phase.geographic.world.2001-to-2006',
-            'MODIS-hdf5/raw-data.elevation.geographic.world.version-5']
-    mask, x, img_extent = make_covering_raster(100, env)
-    
-    # env = ['MAPdata/MARA','MAPdata/SCI']
-    # mask, x, img_extent = make_covering_raster(5, env)
-    
-    # cf = {'location':loc_check, 'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
-    # cf = {'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
-    # cf = {'location'  :loc_check}
-    cf = {}
-    
-    spatial_submodel = nogp_spatial_env
-    n_in = n_out = 1000
-    
-    # spatial_submodel = lr_spatial_env
-    # n_in = n_out = 1000
-    
-    # spatial_submodel = spatial_env
-    # n_out = 400
-    # n_in = 100
-    
-    # TODO: Try an additive version to make it easier to satisfy spatial constraints.
-    
-    M = species_MCMC(s, species[species_num], spatial_submodel, with_eo = True, with_data = True, env_variables = env, constraint_fns=cf,n_in=n_in,n_out=n_out)
-    
-    M.assign_step_methods()
-    # sf=M.step_method_dict[M.f_fr][0]    
-    # ss=M.step_method_dict[M.p_find][0]
-    sa = M.step_method_dict[M.ctr][0]
-        
-    M.isample(10000,0,10,verbose=0)
-    # 
-    # # mask, x, img_extent = make_covering_raster(2)
-    # # b = basemap.Basemap(*img_extent)
-    # # out = M.p.value(x)
-    # # arr = np.ma.masked_array(out, mask=True-mask)
-    # # b.imshow(arr.T, interpolation='nearest')
-    # # pl.colorbar()
-    # pl.figure()
-    # current_state_map(M, s, species[species_num], mask, x, img_extent, thin=100)
-    # pl.title('Final')
-    # pl.savefig('final.pdf')
-    # pl.figure()
-    # pl.plot(M.trace('out_prob')[:],'b-',label='out')
-    # pl.plot(M.trace('in_prob')[:],'r-',label='in')    
-    # pl.legend(loc=0)
-    # 
-    # pl.figure()
-    out, arr = presence_map(M, s, species[species_num], thin=5, burn=500, trace_thin=1)
-    # pl.figure()
-    # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
-    # for s in samps:
-    #     pl.plot(x_disp, s)
-    pl.savefig('prob.pdf')
-    # 
-    # pl.figure()
-    # p_atfound = probability_traces(M)
-    # p_atnotfound = probability_traces(M,False)
-    # pl.savefig('presence.pdf')

@@ -1,6 +1,7 @@
 import os,sys
 import anopheles
 import anopheles_query
+import species
 
 
 for mod in ['query_to_rec','model','spatial_submodels','utils','env_data','mahalanobis_covariance','mapping']:
