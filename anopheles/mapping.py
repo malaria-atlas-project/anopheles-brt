@@ -66,12 +66,23 @@ def presence_map(M, session, species, burn=0, thin=1, trace_thin=1, **kwds):
     
     from mpl_toolkits import basemap
     import pylab as pl
+    import time
     
     mask, x, img_extent = make_covering_raster(thin, M.env_variables, **kwds)
 
     out = np.zeros(mask.shape)
 
+    time_count = -np.inf
+    time_start = time.time()
+
+    print '0% complete'
     for i in xrange(burn, M._cur_trace_index, trace_thin):
+        
+        if time.time() - time_count > 10:
+            print ((i*100)/M._cur_trace_index), '% complete',
+            time_count = time.time()      
+            print 'expect results '+time.ctime((time_count-time_start)*M._cur_trace_index/float(i)+time_start)
+        
         p = M.trace('p')[:][i]
         pe = p(x)
         out += pe/float(M._cur_trace_index-burn)

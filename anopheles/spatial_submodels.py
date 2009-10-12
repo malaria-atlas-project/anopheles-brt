@@ -381,7 +381,7 @@ def nogp_spatial_env(**stuff):
 
     n_env = stuff['env_in'].shape[1]
 
-    const = pm.Uninformative('const',value=20)
+    const = pm.Uninformative('const',value=40)
     coefs = pm.Normal('coefs',0,1,value=np.zeros(n_env))
     
     @pm.stochastic
@@ -392,11 +392,19 @@ def nogp_spatial_env(**stuff):
         return np.cos(value[1]) + pm.normal_like(value[2:],0,1)
 
     ctr = pm.Uninformative('ctr',value=np.zeros(n_env))
-    val = pm.Exponential('val', .001, value=np.ones(n_env))
+    
+    # Encourage simplicity
+    baseval = pm.Exponential('baseval', .001, value=1)
+    valpow = pm.Uniform('valpow',0,1,value=.99)
+    valbeta = pm.Lambda('valbeta',lambda baseval=baseval,valpow=valpow:baseval*np.arange(1,n_env+1)**valpow)
+    val = pm.Exponential('val',valbeta,value=np.ones(n_env))
+        
+    # Don't encourage simplicity
+    # val = pm.Exponential('val', .001, value=np.ones(n_env))
+
     vec = cov_prior.OrthogonalBasis('vec',(n_env))
     
-    spval = pm.Exponential('spval',.001,value=np.ones(2))
-    
+    spval = pm.Exponential('spval',.001,value=np.ones(2))    
     hillpower = pm.Exponential('hillpower',.001,value=1)
     sphp = pm.Exponential('sphp',.001,value=1)
     # hillpower = 1.

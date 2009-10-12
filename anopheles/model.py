@@ -265,6 +265,7 @@ if __name__ == '__main__':
     from mpl_toolkits import basemap
     import pylab as pl
     species_num = 20
+    # species_num = 0
     
     pl.close('all')
     
@@ -277,8 +278,15 @@ if __name__ == '__main__':
         return np.sum(p[np.where(outside_lat + outside_lon)])
     
     env = ['MODIS-hdf5/daytime-land-temp.mean.geographic.world.2001-to-2006',
+            'MODIS-hdf5/daytime-land-temp.annual-amplitude.geographic.world.2001-to-2006',
+            'MODIS-hdf5/daytime-land-temp.annual-phase.geographic.world.2001-to-2006',
+            'MODIS-hdf5/daytime-land-temp.biannual-amplitude.geographic.world.2001-to-2006',
+            'MODIS-hdf5/daytime-land-temp.biannual-phase.geographic.world.2001-to-2006',
             'MODIS-hdf5/evi.mean.geographic.world.2001-to-2006',
-            'MODIS-hdf5/nighttime-land-temp.mean.geographic.world.2001-to-2006',
+            'MODIS-hdf5/evi.annual-amplitude.geographic.world.2001-to-2006',
+            'MODIS-hdf5/evi.annual-phase.geographic.world.2001-to-2006',
+            'MODIS-hdf5/evi.biannual-amplitude.geographic.world.2001-to-2006',
+            'MODIS-hdf5/evi.biannual-phase.geographic.world.2001-to-2006',
             'MODIS-hdf5/raw-data.elevation.geographic.world.version-5']
     mask, x, img_extent = make_covering_raster(100, env)
     
@@ -287,8 +295,8 @@ if __name__ == '__main__':
     
     # cf = {'location':loc_check, 'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
     # cf = {'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
-    cf = {'location'  :loc_check}
-    # cf = {}
+    # cf = {'location'  :loc_check}
+    cf = {}
     
     spatial_submodel = nogp_spatial_env
     n_in = n_out = 1000
@@ -307,7 +315,7 @@ if __name__ == '__main__':
     M.assign_step_methods()
     # sf=M.step_method_dict[M.f_fr][0]    
     # ss=M.step_method_dict[M.p_find][0]
-    s = M.step_method_dict[M.ctr][0]
+    sa = M.step_method_dict[M.ctr][0]
         
     M.isample(10000,0,10,verbose=0)
     # 
@@ -327,14 +335,14 @@ if __name__ == '__main__':
     # pl.legend(loc=0)
     # 
     # pl.figure()
-    # out, arr = presence_map(M, s, species[species_num], thin=100, burn=500, trace_thin=1)
-    # # pl.figure()
-    # # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
-    # # for s in samps:
-    # #     pl.plot(x_disp, s)
-    # pl.savefig('prob.pdf')
+    out, arr = presence_map(M, s, species[species_num], thin=5, burn=500, trace_thin=1)
+    # pl.figure()
+    # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
+    # for s in samps:
+    #     pl.plot(x_disp, s)
+    pl.savefig('prob.pdf')
     # 
-    # # pl.figure()
-    # # p_atfound = probability_traces(M)
-    # # p_atnotfound = probability_traces(M,False)
-    # # pl.savefig('presence.pdf')
+    # pl.figure()
+    # p_atfound = probability_traces(M)
+    # p_atnotfound = probability_traces(M,False)
+    # pl.savefig('presence.pdf')

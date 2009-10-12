@@ -95,9 +95,14 @@ class LatchingMCMC(pymc.MCMC):
         # Record start time
         start = time.time()
         
-        open_constraints = filter(lambda x:x.penalty_value != 0, self.constraints)
-        all_closed = None
-        i=-1
+        open_constraints = filter(lambda x:x.isopen, self.constraints)
+        if len(open_constraints)==0:
+            all_closed = self._current_iter
+            i=self._current_iter
+        else:
+            i=-1
+            all_closed=None
+
 
         try:
             while i < self._iter and not self.status == 'halt':

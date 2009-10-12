@@ -129,12 +129,11 @@ def sample_eo(session, species, n_in, n_out):
     
     fname = '%s_eo_pts_%i_%i.hdf5'%(species[1],n_in,n_out)
     
-    if 'anopheles-caches' in os.listdir('.'):
-        if fname in os.listdir('anopheles-caches'):
-            hf = tb.openFile(os.path.join('anopheles-caches', fname))
-            pts_in = hf.root.pts_in[:]
-            pts_out = hf.root.pts_out[:]
-            hf.close()
+    if fname in os.listdir('anopheles-caches'):
+        hf = tb.openFile(os.path.join('anopheles-caches', fname))
+        pts_in = hf.root.pts_in[:]
+        pts_out = hf.root.pts_out[:]
+        hf.close()
 
     else:
         sites, eo = species_query(session, species[0])
