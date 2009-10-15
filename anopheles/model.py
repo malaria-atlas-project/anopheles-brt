@@ -33,15 +33,29 @@ import datetime
 import warnings
 import shapely
 
-__all__ = ['make_model', 'species_MCMC', 'probability_traces','potential_traces']
+__all__ = ['make_model', 'species_MCMC', 'probability_traces','potential_traces','threshold','invlogit']
 
 def bin_ubl_like(x, p_eval, p_find, breaks):
     "The ubl likelihood function, document this."
     return bin_ubls(x[0], x[0]+x[1]+x[2], p_find, breaks, p_eval)
 
+def threshold(f):
+    return f > 0
+    
+def invlogit(f):
+    return pm.flib.invlogit(f.ravel()).reshape(f.shape)
+
+class F2pClosure(object):
+    def __init__(self, f, f2p):
+        self.f2p = f2p
+        self.f = f
+    def __call__(self, x):
+        return self.f2p(self.f(x))
+        
+
 BinUBL = pm.stochastic_from_dist('BinUBL', bin_ubl_like, mv=True)
     
-def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}, n_in=1000, n_out=1000):
+def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}, n_in=1000, n_out=1000, f2p=threshold):
     """
     Generates a PyMC probability model with a plug-in spatial submodel.
     The likelihood and expert-opinion layers are common.
@@ -88,7 +102,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     p_find = pm.Uniform('p_find',0,1)
     # p_find = pm.Uniform('p_find',.9,1)
     spatial_variables = spatial_submodel(**locals())
-    p = spatial_variables['p']
+    f = spatial_variables['f']
+    p = pm.Lambda('p', lambda f=f, f2p=f2p: F2pClosure(f,f2p))
     
     # ==============
     # = Likelihood =
@@ -139,8 +154,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         @pm.potential
         def in_factor(a=alpha_in, b=beta_in, p=in_prob):
             return pm.beta_like(p,a,b)
-    
-
+        
         # ========================
         # = Hard expert opinions =
         # ========================
@@ -176,7 +190,6 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
             # Make sure the constraint doesn't get violated in the range of the species.
             constraint_dict[k] = Constraint(penalty_value = -1e100, logp=constraint_fns[k], doc="", name='%s_constraint'%k, parents={'x': x_constraint_eo, 'p': p_eval_eo})
 
-        
     out = locals()
     out.update(spatial_variables)
     return out
@@ -205,16 +218,19 @@ def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
     print 'Environment variables: ',kwds['env_variables']
     print 'Constraints: ',kwds['constraint_fns']
     print 'Spatial submodel: ',spatial_submodel.__name__
+    print 'Species: ',species[1]
     if db is None:
         M=LatchingMCMC(make_model(session, species, spatial_submodel, **kwds), db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
     else:
         M=LatchingMCMC(make_model(session, species, spatial_submodel, **kwds), db=db)
-    scalar_stochastics = filter(lambda s: np.prod(np.shape(s.value))<=1, M.stochastics)
-    M.use_step_method(pm.AdaptiveMetropolis, scalar_stochastics)
+    bases = filter(lambda x: isinstance(x, OrthogonalBasis), M.stochastics)
+    nonbases = filter(lambda x: True-isinstance(x, OrthogonalBasis), M.stochastics)
+    am_scales = dict(zip(nonbases, [np.ones(nb.value.shape)*.001 for nb in nonbases]))
+    M.use_step_method(pm.AdaptiveMetropolis, nonbases, delay=500000, scales=am_scales)
+    for b in bases:
+        M.use_step_method(GivensStepper, b)    
     if spatial_submodel.__name__ == 'lr_spatial':    
         M.use_step_method(MVNLRParentMetropolis, scalar_stochastics, M.f_fr, M.U, M.piv, M.rl)
-    bases = filter(lambda s: isinstance(s,OrthogonalBasis), M.stochastics)
-    [M.use_step_method(GivensStepper, b) for b in bases]
     return M
 
 def mean_response_samples(M, axis, n, burn=0, thin=1):

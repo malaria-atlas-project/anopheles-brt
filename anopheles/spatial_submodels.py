@@ -5,11 +5,6 @@ import pymc as pm
 
 __all__ = ['spatial_hill','hill_fn','hinge','step','lr_spatial','lr_spatial_env','MVNLRParentMetropolis','minimal_jumps','bookend','spatial_env','nogp_spatial_env']
 
-def threshold(f):
-    return f > 0
-def invlogit(f):
-    return pm.flib.invlogit(f.ravel()).reshape(f.shape)
-
 def hinge(x, cp):
     "A MaxEnt hinge feature"
     y = x-cp
@@ -339,12 +334,8 @@ def spatial_env(**stuff):
 
 class RotatedLinearWithHill(object):
     """A closure used by nongp_spatial_env"""
-    def __init__(self,const,coefs,val,vec,ctr,norm_means,norm_stds,hillpower,spval,spctr,sphp):
+    def __init__(self,const,val,vec,ctr,norm_means,norm_stds,hillpower,spval,spctr,sphp):
 
-        self.f2p = threshold
-        # self.f2p = invlogit
-
-        self.coefs = coefs
         self.const = const
         self.val = val
         self.vec = vec
@@ -358,14 +349,14 @@ class RotatedLinearWithHill(object):
 
     def __call__(self, x):
         x_ = normalize_env(x,self.norm_means,self.norm_stds)
-        x__ = np.dot((x_[:,2:].reshape(-1,x.shape[-1]-2)-self.ctr),self.vec)/np.sqrt(self.val)
+        x__ = np.dot((x_[:,2:].reshape(-1,x.shape[-1]-2)-self.ctr),self.vec)*np.sqrt(self.val)
         
-        linpart = np.dot(x__, self.coefs)
         quadpart = -np.sum((x__**2),axis=1)**self.hillpower
         
-        spatial_quadpart = -np.sum((x_[:,:2]-self.spctr)**2/self.spval,axis=1)**self.sphp
+        # spatial_quadpart = -np.sum((x_[:,:2]-self.spctr)**2/self.spval,axis=1)**self.sphp
+        spatial_quadpart = 0
         
-        out = self.f2p((linpart + quadpart + self.const + spatial_quadpart).reshape(x.shape[:-1]))
+        out = (quadpart + self.const + spatial_quadpart).reshape(x.shape[:-1])
         if np.any(np.isnan(out)):
             raise ValueError  
         return out
@@ -381,36 +372,40 @@ def nogp_spatial_env(**stuff):
 
     n_env = stuff['env_in'].shape[1]
 
-    const = pm.Uninformative('const',value=40)
-    coefs = pm.Normal('coefs',0,1,value=np.zeros(n_env))
+    const = pm.Uninformative('const',value=1,observed=False)
     
-    @pm.stochastic
-    def spctr(value=np.zeros(2)):
-        "This makes the center uniformly distributed over the surface of the earth."
-        if value[0] < -np.pi or value[0] > np.pi or value[1] < -np.pi/2. or value[1] > np.pi/2.:
-            return -np.inf
-        return np.cos(value[1]) + pm.normal_like(value[2:],0,1)
+    # @pm.stochastic
+    # def spctr(value=np.zeros(2)):
+    #     "This makes the center uniformly distributed over the surface of the earth."
+    #     if value[0] < -np.pi or value[0] > np.pi or value[1] < -np.pi/2. or value[1] > np.pi/2.:
+    #         return -np.inf
+    #     return np.cos(value[1]) + pm.normal_like(value[2:],0,1)
+    # 
+    # spval = pm.Exponential('spval',.001,value=np.ones(2))    
+    # sphp = pm.Exponential('sphp',.001,value=1)
+    spctr = None
+    spval = None
+    sphp = None
 
-    ctr = pm.Uninformative('ctr',value=np.zeros(n_env))
+
+    ctr = pm.Normal('ctr',np.zeros(n_env), np.ones(n_env), value=np.zeros(n_env),observed=False)
     
     # Encourage simplicity
-    baseval = pm.Exponential('baseval', .001, value=1)
-    valpow = pm.Uniform('valpow',0,1,value=.99)
-    valbeta = pm.Lambda('valbeta',lambda baseval=baseval,valpow=valpow:baseval*np.arange(1,n_env+1)**valpow)
-    val = pm.Exponential('val',valbeta,value=np.ones(n_env))
+    # baseval = pm.Exponential('baseval', .001, value=1)
+    # valpow = pm.Uniform('valpow',0,1,value=.99)
+    # valbeta = pm.Lambda('valbeta',lambda baseval=baseval,valpow=valpow:baseval*np.arange(1,n_env+1)**valpow)
+    # val = pm.Exponential('val',valbeta,value=np.ones(n_env))
+    # val = np.ones(n_env)
         
     # Don't encourage simplicity
-    # val = pm.Exponential('val', .001, value=np.ones(n_env))
+    val = pm.Exponential('val', .001, value=np.ones(n_env)*.01,observed=False)
 
-    vec = cov_prior.OrthogonalBasis('vec',(n_env))
-    
-    spval = pm.Exponential('spval',.001,value=np.ones(2))    
-    hillpower = pm.Exponential('hillpower',.001,value=1)
-    sphp = pm.Exponential('sphp',.001,value=1)
-    # hillpower = 1.
+    vec = cov_prior.OrthogonalBasis('vec',(n_env),observed=False)
+    # hillpower = pm.Exponential('hillpower',.001,value=1,observed=True)
+    hillpower = 1.
     # sphp = 1
         
-    p = pm.Lambda('p', lambda coefs=coefs, const=const, bv = val, be=vec, ctr=ctr, hillpower=hillpower, spval=spval, spctr=spctr, sphp = sphp: \
-                            RotatedLinearWithHill(const,coefs,bv,be,ctr,stuff['env_means'],stuff['env_stds'],hillpower,spval,spctr,sphp))
+    f = pm.Lambda('f', lambda const=const, bv = val, be=vec, ctr=ctr, hillpower=hillpower, spval=spval, spctr=spctr, sphp = sphp: \
+                            RotatedLinearWithHill(const,bv,be,ctr,stuff['env_means'],stuff['env_stds'],hillpower,spval,spctr,sphp))
 
     return locals()

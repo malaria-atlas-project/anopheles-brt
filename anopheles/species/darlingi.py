@@ -1,4 +1,5 @@
-species_num = 20
+import numpy as np
+species_name = 'Anopheles darlingi'
 
 def elev_check(x,p):
     return np.sum(p[np.where(x>2000)])
@@ -26,5 +27,5 @@ env = ['MODIS-hdf5/daytime-land-temp.mean.geographic.world.2001-to-2006',
 
 # cf = {'location':loc_check, 'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
 # cf = {'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
-# cf = {'location'  :loc_check}
-cf = {}
+cf = {'location'  :loc_check}
+# cf = {}
