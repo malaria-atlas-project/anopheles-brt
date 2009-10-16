@@ -38,7 +38,7 @@ class hill_fn(object):
             ax=0
         else:
             ax=-1
-        return f2p(np.sum(tdev**2/self.val,axis=ax)*self.amp)
+        return np.sum(tdev**2/self.val,axis=ax)*self.amp
 
 
 def spatial_hill(**kerap):
@@ -150,9 +150,8 @@ class LRP(object):
         self.x_fr = x_fr
         self.C = C
         self.krige_wt = krige_wt
-        self.f2p = threshold
     def __call__(self, x):
-        return self.f2p(np.dot(np.asarray(self.C(x,self.x_fr)), self.krige_wt).reshape(x.shape[:-1]))
+        return np.dot(np.asarray(self.C(x,self.x_fr)), self.krige_wt).reshape(x.shape[:-1])
         
 def lr_spatial(rl=50,**stuff):
     """A low-rank spatial-only model."""

@@ -46,11 +46,12 @@ def invlogit(f):
     return pm.flib.invlogit(f.ravel()).reshape(f.shape)
 
 class F2pClosure(object):
-    def __init__(self, f, f2p):
+    def __init__(self, f, f2p, V):
         self.f2p = f2p
         self.f = f
+        self.V = V
     def __call__(self, x):
-        return self.f2p(self.f(x))
+        return self.f2p(self.f(x) + np.random.normal(x.shape[:-1])*np.sqrt(self.V))
         
 
 BinUBL = pm.stochastic_from_dist('BinUBL', bin_ubl_like, mv=True)
@@ -103,13 +104,17 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     # p_find = pm.Uniform('p_find',.9,1)
     spatial_variables = spatial_submodel(**locals())
     f = spatial_variables['f']
-    p = pm.Lambda('p', lambda f=f, f2p=f2p: F2pClosure(f,f2p))
     
-    # ==============
-    # = Likelihood =
-    # ==============
+    V = pm.Exponential('V',.001,value=.1)
+    tau = 1./V
+    
+    p = pm.Lambda('p', lambda f=f, f2p=f2p, V=V: F2pClosure(f,f2p,V))
 
     if with_data:
+        
+        # ==============
+        # = Likelihood =
+        # ==============
         
         breaks, x, found, zero, others_found, multipoints = sites_as_ndarray(session, species)
         
@@ -121,7 +126,11 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         else:
             env_x = np.empty((len(x),0))
 
-        p_eval = p(np.hstack((x, env_x)))
+        f_eval = pm.Lambda('f_eval', lambda f=f: f(np.hstack((x, env_x))), trace=False)
+        init_val = -1*np.ones(len(x))
+        init_val[wherefound] = 1
+        f_eval_nug = pm.Normal('f_eval_nug', f_eval, tau, value=init_val, trace=False)
+        p_eval = pm.Lambda('p_eval', lambda f=f_eval_nug: f2p(f), trace=False)
         
         if multipoints:
             # FIXME: This will probably error out due to the new shape-checking in PyMC.
@@ -134,11 +143,16 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         
         # ==============================
         # = Expert-opinion likelihoods =
-        # ==============================        
+        # ==============================
 
-        p_eval_in = pm.Lambda('p_eval_in', lambda p=p, x=pts_in, e=env_in: p(np.hstack((x, e))))
-        p_eval_out = pm.Lambda('p_eval_out', lambda p=p, x=pts_out, e=env_out: p(np.hstack((x, e))))
-        p_eval_eo = pm.Lambda('p_eval_eo', lambda p_eval_in=p_eval_in, p_eval_out=p_eval_out: np.concatenate((p_eval_in,p_eval_out)))
+        f_eval_in = pm.Lambda('f_eval_in', lambda f=f, x=pts_in, e=env_in: f(np.hstack((x, e))), trace=False)
+        f_eval_out = pm.Lambda('f_eval_out', lambda f=f, x=pts_out, e=env_out: f(np.hstack((x, e))), trace=False)
+        f_eval_in_nug = pm.Normal('f_eval_in_nug', f_eval_in, tau, value=np.ones(len(pts_in)), trace=False)
+        f_eval_out_nug = pm.Normal('f_eval_out_nug', f_eval_out, tau, value=-1*np.ones(len(pts_out)), trace=False)        
+        p_eval_in = pm.Lambda('p_eval_in', lambda f=f_eval_in_nug: f2p(f), trace=False)
+        p_eval_out = pm.Lambda('p_eval_out', lambda f=f_eval_out_nug: f2p(f), trace=False)        
+        
+        p_eval_eo = pm.Lambda('p_eval_eo', lambda p_eval_in=p_eval_in, p_eval_out=p_eval_out: np.concatenate((p_eval_in,p_eval_out)), trace=False)
         in_prob = pm.Lambda('in_prob', lambda p_eval = p_eval_in: np.mean(p_eval)*.9999+.00005)
         out_prob = pm.Lambda('out_prob', lambda p_eval = p_eval_out: np.mean(p_eval)*.9999+.00005)    
         
@@ -225,8 +239,15 @@ def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
         M=LatchingMCMC(make_model(session, species, spatial_submodel, **kwds), db=db)
     bases = filter(lambda x: isinstance(x, OrthogonalBasis), M.stochastics)
     nonbases = filter(lambda x: True-isinstance(x, OrthogonalBasis), M.stochastics)
+
+    nugget_vars = [M.f_eval_in_nug, M.f_eval_out_nug, M.f_eval_nug]
+    for nugget_var in nugget_vars:
+        nonbases.remove(nugget_var)
+        M.use_step_method(pm.Metropolis, nugget_var)
+
     am_scales = dict(zip(nonbases, [np.ones(nb.value.shape)*.001 for nb in nonbases]))
     M.use_step_method(pm.AdaptiveMetropolis, nonbases, delay=500000, scales=am_scales)
+
     for b in bases:
         M.use_step_method(GivensStepper, b)    
     if spatial_submodel.__name__ == 'lr_spatial':    
