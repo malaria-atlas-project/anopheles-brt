@@ -79,7 +79,7 @@ def presence_map(M, session, species, burn=0, thin=1, trace_thin=1, **kwds):
     for i in xrange(burn, M._cur_trace_index, trace_thin):
         
         if time.time() - time_count > 10:
-            print ((i*100)/M._cur_trace_index), '% complete',
+            print (((i-burn)*100)/(M._cur_trace_index-burn)), '% complete',
             if i>burn:
                 time_count = time.time()      
                 print 'expect results '+time.ctime((time_count-time_start)*(M._cur_trace_index-burn)/float(i-burn)+time_start)

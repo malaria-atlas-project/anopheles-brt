@@ -51,7 +51,7 @@ class F2pClosure(object):
         self.f = f
         self.V = V
     def __call__(self, x):
-        return self.f2p(self.f(x) + np.random.normal(x.shape[:-1])*np.sqrt(self.V))
+        return self.f2p(self.f(x) + np.random.normal(size=x.shape[:-1])*np.sqrt(np.asscalar(self.V)))
         
 
 BinUBL = pm.stochastic_from_dist('BinUBL', bin_ubl_like, mv=True)
