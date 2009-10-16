@@ -45,13 +45,33 @@ def threshold(f):
 def invlogit(f):
     return pm.flib.invlogit(f.ravel()).reshape(f.shape)
 
-class F2pClosure(object):
-    def __init__(self, f, f2p, V):
-        self.f2p = f2p
+class LRP(object):
+    """A closure that can evaluate a low-rank field."""
+    def __init__(self, f, x_fr, C, krige_wt):
         self.f = f
-        self.V = V
+        self.x_fr = x_fr
+        self.C = C
+        self.krige_wt = krige_wt
     def __call__(self, x):
-        return self.f2p(self.f(x) + np.random.normal(size=x.shape[:-1])*np.sqrt(np.asscalar(self.V)))
+        x_ = x.reshape(-1,x.shape[-1])
+        x__ = x_[:,:2].reshape(x.shape[:-1]+(2,))
+        out = np.dot(np.asarray(self.C(x__,self.x_fr)), self.krige_wt).reshape(x.shape[:-1]) + self.f(x)
+        return threshold(out)
+
+class LRP_norm(LRP):
+    """
+    A closure that can evaluate a low-rank field.
+
+    Normalizes the third argument onward.
+    """
+    def __init__(self, f, x_fr, C, krige_wt, means, stds):
+        LRP.__init__(self, f, x_fr, C, krige_wt)
+        self.means = means
+        self.stds = stds
+
+    def __call__(self, x):
+        x_norm = normalize_env(x, self.means, self.stds)
+        return LRP.__call__(self, x_norm.reshape(x.shape))
         
 
 BinUBL = pm.stochastic_from_dist('BinUBL', bin_ubl_like, mv=True)
@@ -104,11 +124,60 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     # p_find = pm.Uniform('p_find',.9,1)
     spatial_variables = spatial_submodel(**locals())
     f = spatial_variables['f']
+        
+    # =======================
+    # = Correlated 'nugget' =
+    # =======================
+    scale = pm.Uniform('scale',0,.5,value=.25)
     
-    V = pm.Exponential('V',.001,value=.1)
-    tau = 1./V
+    @pm.deterministic
+    def C(scale=scale):
+        return pm.gp.FullRankCovariance(pm.gp.exponential.geo_rad, amp=1, scale=scale)
     
-    p = pm.Lambda('p', lambda f=f, f2p=f2p, V=V: F2pClosure(f,f2p,V))
+    # diff_degree = pm.Uniform('diff_degree',0,3,value=2)
+    # @pm.deterministic
+    # def C(scale=scale, diff_degree=diff_degree):
+    #     return pm.gp.FullRankCovariance(pm.gp.matern.geo_rad, amp=1, scale=scale, diff_degree=diff_degree)
+
+    full_x_in = np.hstack((pts_in, env_in))
+    full_x_out = np.hstack((pts_out, env_out))
+    full_x_eo = np.vstack((full_x_in, full_x_out))
+    x_eo = np.vstack((pts_in, pts_out))
+    
+    x_fr = x_eo[::5]
+    full_x_fr = full_x_eo[::5]
+    
+    f_eval = f(normalize_env(full_x_fr, env_means, env_stds))
+    @pm.deterministic(trace=False)
+    def U_fr(C=C, x=x_fr):
+        try:
+            return C.cholesky(x)
+        except np.linalg.LinAlgError:
+            return None
+
+    @pm.potential
+    def rank_check(U=U_fr):
+        if U is None:
+            return -np.inf
+        else:
+            return 0.
+
+    L_fr = pm.Lambda('L',lambda U=U_fr: U.T, trace=False)
+
+    # Evaluation of field at expert-opinion points
+    init_val = np.ones(len(x_fr))
+    # init_val[:len(pts_in)] = 3
+    f_fr = pm.MvNormalChol('f_fr', f_eval, L_fr, value=init_val)
+    f_fr_ = f_fr - f_eval
+
+    @pm.deterministic(trace=False)
+    def krige_wt(f_fr=f_fr_, U_fr=U_fr, f=f_eval):
+        if U_fr.shape == f_fr.shape*2:
+            return pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
+        else:
+            return None
+
+    p = pm.Lambda('p', lambda f=f, x_fr=x_fr, C=C, krige_wt=krige_wt, means=env_means, stds=env_stds: LRP_norm(f, x_fr, C, krige_wt, means, stds))
 
     if with_data:
         
@@ -126,12 +195,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         else:
             env_x = np.empty((len(x),0))
 
-        f_eval = pm.Lambda('f_eval', lambda f=f: f(np.hstack((x, env_x))), trace=False)
-        init_val = -1*np.ones(len(x))
-        init_val[wherefound] = 1
-        f_eval_nug = pm.Normal('f_eval_nug', f_eval, tau, value=init_val, trace=False)
-        p_eval = pm.Lambda('p_eval', lambda f=f_eval_nug: f2p(f), trace=False)
-        
+        p_eval = pm.Lambda('p_eval', lambda p=p: p(np.hstack((x, env_x))), trace=False)
+
         if multipoints:
             # FIXME: This will probably error out due to the new shape-checking in PyMC.
             data = pm.robust_init(BinUBL, 100, 'data', p_eval=p_eval, p_find=p_find, breaks=breaks, value=[found, others_found, zero], observed=True, trace=False)
@@ -144,14 +209,9 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         # ==============================
         # = Expert-opinion likelihoods =
         # ==============================
-
-        f_eval_in = pm.Lambda('f_eval_in', lambda f=f, x=pts_in, e=env_in: f(np.hstack((x, e))), trace=False)
-        f_eval_out = pm.Lambda('f_eval_out', lambda f=f, x=pts_out, e=env_out: f(np.hstack((x, e))), trace=False)
-        f_eval_in_nug = pm.Normal('f_eval_in_nug', f_eval_in, tau, value=np.ones(len(pts_in)), trace=False)
-        f_eval_out_nug = pm.Normal('f_eval_out_nug', f_eval_out, tau, value=-1*np.ones(len(pts_out)), trace=False)        
-        p_eval_in = pm.Lambda('p_eval_in', lambda f=f_eval_in_nug: f2p(f), trace=False)
-        p_eval_out = pm.Lambda('p_eval_out', lambda f=f_eval_out_nug: f2p(f), trace=False)        
         
+        p_eval_in = pm.Lambda('p_eval_in', lambda p=p, x=pts_in, e=env_in: p(full_x_in), trace=False)
+        p_eval_out = pm.Lambda('p_eval_out', lambda p=p, x=pts_out, e=env_out: p(full_x_out), trace=False)        
         p_eval_eo = pm.Lambda('p_eval_eo', lambda p_eval_in=p_eval_in, p_eval_out=p_eval_out: np.concatenate((p_eval_in,p_eval_out)), trace=False)
         in_prob = pm.Lambda('in_prob', lambda p_eval = p_eval_in: np.mean(p_eval)*.9999+.00005)
         out_prob = pm.Lambda('out_prob', lambda p_eval = p_eval_out: np.mean(p_eval)*.9999+.00005)    
@@ -238,13 +298,14 @@ def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
     else:
         M=LatchingMCMC(make_model(session, species, spatial_submodel, **kwds), db=db)
     bases = filter(lambda x: isinstance(x, OrthogonalBasis), M.stochastics)
-    nonbases = filter(lambda x: True-isinstance(x, OrthogonalBasis), M.stochastics)
+    nonbases = set(filter(lambda x: True-isinstance(x, OrthogonalBasis), M.stochastics))
 
-    nugget_vars = [M.f_eval_in_nug, M.f_eval_out_nug, M.f_eval_nug]
+    nugget_vars = [M.f_fr]
     for nugget_var in nugget_vars:
-        nonbases.remove(nugget_var)
+        nonbases.discard(nugget_var)
         M.use_step_method(pm.Metropolis, nugget_var)
 
+    nonbases = list(nonbases)
     am_scales = dict(zip(nonbases, [np.ones(nb.value.shape)*.001 for nb in nonbases]))
     M.use_step_method(pm.AdaptiveMetropolis, nonbases, delay=500000, scales=am_scales)
 

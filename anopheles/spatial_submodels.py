@@ -3,7 +3,7 @@ import cov_prior
 from mahalanobis_covariance import *
 import pymc as pm
 
-__all__ = ['spatial_hill','hill_fn','hinge','step','lr_spatial','lr_spatial_env','MVNLRParentMetropolis','minimal_jumps','bookend','spatial_env','nogp_spatial_env']
+__all__ = ['spatial_hill','hill_fn','hinge','step','lr_spatial','lr_spatial_env','MVNLRParentMetropolis','minimal_jumps','bookend','spatial_env','nogp_spatial_env','normalize_env']
 
 def hinge(x, cp):
     "A MaxEnt hinge feature"
@@ -347,7 +347,7 @@ class RotatedLinearWithHill(object):
         self.sphp=sphp
 
     def __call__(self, x):
-        x_ = normalize_env(x,self.norm_means,self.norm_stds)
+        x_ = x
         x__ = np.dot((x_[:,2:].reshape(-1,x.shape[-1]-2)-self.ctr),self.vec)*np.sqrt(self.val)
         
         quadpart = -np.sum((x__**2),axis=1)**self.hillpower
@@ -356,18 +356,13 @@ class RotatedLinearWithHill(object):
         spatial_quadpart = 0
         
         out = (quadpart + self.const + spatial_quadpart).reshape(x.shape[:-1])
+
         if np.any(np.isnan(out)):
             raise ValueError  
         return out
     
 def nogp_spatial_env(**stuff):
     """A low-rank spatial-only model."""
-
-    pts_in = np.hstack((stuff['pts_in'],stuff['env_in']))
-    pts_out = np.hstack((stuff['pts_out'],stuff['env_out']))
-    x_eo = normalize_env(np.vstack((pts_in, pts_out)), stuff['env_means'], stuff['env_stds'])
-    x_fr = x_eo
-    rl = x_eo.shape[0]
 
     n_env = stuff['env_in'].shape[1]
 
