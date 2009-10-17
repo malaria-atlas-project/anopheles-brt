@@ -1,14 +1,15 @@
 import numpy as np
 species_name = 'Anopheles darlingi'
 
-def elev_check(x,p):
-    return np.sum(p[np.where(x>2000)])
+def elev_check(x,f):
+    f_high = f[np.where(x>2000)]
+    return np.sum(f_high*(f_high>0))
 
-def loc_check(x,p):
-    outside_lat = np.abs(x[:,1]*180./np.pi)>40
-    outside_lon = x[:,0]*180./np.pi > -20
-    return np.sum(p[np.where(outside_lat + outside_lon)])
-
+def loc_check(x,f):
+    outside_lat = np.abs(x[:,1]*180./np.pi)>50
+    outside_lon = 0
+    f_outside = f[np.where(outside_lat + outside_lon)]
+    return np.sum(f_outside*(f_outside>0))
     
 # env = ['MAPdata/MARA','MAPdata/SCI']
 # mask, x, img_extent = make_covering_raster(5, env)

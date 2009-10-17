@@ -1,13 +1,15 @@
 import numpy as np
 species_name = 'Anopheles stephensi'
 
-def elev_check(x,p):
-    return np.sum(p[np.where(x>2000)])
+def elev_check(x,f):
+    f_high = f[np.where(x>2000)]
+    return np.sum(f_high*(f_high>0))
 
-def loc_check(x,p):
+def loc_check(x,f):
     outside_lat = np.abs(x[:,1]*180./np.pi)>50
-    outside_lon = 0    
-    return np.sum(p[np.where(outside_lat + outside_lon)])
+    outside_lon = 0
+    f_outside = f[np.where(outside_lat + outside_lon)]
+    return np.sum(f_outside*(f_outside>0))
 
 env = ['MODIS-hdf5/daytime-land-temp.mean.geographic.world.2001-to-2006',
         'MODIS-hdf5/daytime-land-temp.annual-amplitude.geographic.world.2001-to-2006',

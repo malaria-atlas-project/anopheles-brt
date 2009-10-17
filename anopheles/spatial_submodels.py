@@ -348,7 +348,7 @@ class RotatedLinearWithHill(object):
 
     def __call__(self, x):
         x_ = x
-        x__ = np.dot((x_[:,2:].reshape(-1,x.shape[-1]-2)-self.ctr),self.vec)*np.sqrt(self.val)
+        x__ = np.dot((x_.reshape(-1,x.shape[-1])[:,2:]-self.ctr),self.vec)*np.sqrt(self.val)
         
         quadpart = -np.sum((x__**2),axis=1)**self.hillpower
         
@@ -366,7 +366,7 @@ def nogp_spatial_env(**stuff):
 
     n_env = stuff['env_in'].shape[1]
 
-    const = pm.Uninformative('const',value=1,observed=False)
+    const = pm.Uninformative('const',value=0,observed=False)
     
     # @pm.stochastic
     # def spctr(value=np.zeros(2)):
