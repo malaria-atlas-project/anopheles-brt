@@ -155,7 +155,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     # =======================
     # = Correlated 'nugget' =
     # =======================
-    scale = pm.Uniform('scale',0,.5,value=.05,observed=True)
+    scale = pm.Uniform('scale',0,.5,value=.05,observed=False)
     
     @pm.deterministic
     def C(scale=scale):
