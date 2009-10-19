@@ -381,7 +381,7 @@ def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
     for s in M.stochastics:
         M.step_method_dict[s] = []
     
-    species_stepmethods(M, interval=None)
+    species_stepmethods(M, interval=5)
     return M
 
 def mean_response_samples(M, axis, n, burn=0, thin=1):

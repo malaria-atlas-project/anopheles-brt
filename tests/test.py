@@ -6,8 +6,8 @@ from cov_prior import OrthogonalBasis, GivensStepper
 from pymc import AdaptiveMetropolis
 import pymc as pm
 
-from anopheles.species.darlingi import *
-# from anopheles.species.gambiae import *
+# from anopheles.species.darlingi import *
+from anopheles.species.gambiae import *
 # from anopheles.species.arabiensis import *
 # from anopheles.species.stephensi import *
 
