@@ -20,12 +20,12 @@ from __future__ import division
 import numpy as np
 from env_data import extract_environment
 
-__all__ = ['compose','simple_assessments','roc','plot_roc','plot_roc_','validate']
+__all__ = ['compose','simple_assessments','roc','plot_roc','plot_roc_','validate','plot_validation']
 
 def compose(*fns):
-    def composite_function(*x):
-        result = x
-        for f in fns[::-1]:
+    def composite_function(*a, **k):
+        result = fns[-1](*a, **k)
+        for f in fns[-2::-1]:
             result = f(*result)
         return result
     return composite_function
@@ -130,7 +130,26 @@ def validate(M, session, x, a, burn=0, trace_thin=1):
     results = dict([(n, np.asarray(results[n])) for n in names])
     results['roc'] = roc(np.asarray(ps), a)
     
-    return results
+    return results, 
+
+def plot_validation_(results):
+    import pylab as pl
+    pl.close('all')
+    for k in results.iterkeys():
+        pl.figure()
+        if k=='roc':
+            plot_roc_(*results['roc'])
+        elif k in ['producer_accuracy','consumer_accuracy']:
+            pl.hist(results[k][:,0])
+            pl.title('%s, false')
+            pl.figure()
+            pl.hist(results[k][:,1])
+            pl.title('%s, true'%k)
+        else:
+            pl.hist(results[k])
+            pl.title(k)
+            
+plot_validation = compose(plot_validation_, validate)
     
     
 if __name__ == '__main__':
