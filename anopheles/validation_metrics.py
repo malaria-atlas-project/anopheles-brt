@@ -18,6 +18,9 @@ from __future__ import division
 # Throughout, p is predicted and a is actual
 
 import numpy as np
+from env_data import extract_environment
+
+__all__ = ['compose','simple_assessments','roc','plot_roc','plot_roc_','validate']
 
 def compose(*fns):
     def composite_function(*x):
@@ -58,7 +61,7 @@ simple_assessments = [proportion_correct, false_positives, false_negatives, sens
     
 def roc(ps, a):
     """
-    Input is a stack of classification vectors and a single binary classification vector.
+    ps is a stack of classification vectors.
     """
     
     t = np.linspace(0,1,500)
@@ -99,6 +102,36 @@ def plot_roc_(fp, tp, AUC):
     pl.axis([0,1,0,1])
 
 plot_roc = compose(plot_roc_, roc)    
+
+def validate(M, session, x, a, burn=0, trace_thin=1):
+    """
+    Computes posterior predictive distributions for all validation metrics
+    at holdout locations x. The true classification is a.
+    """
+    
+    chain_len = len(M.db._h5file.root.chain0.PyMCsamples)
+    
+    species = M.species
+    names = [s.__name__ for s in simple_assessments]
+    results = dict([(n, []) for n in names])
+    
+    env_x = np.array([extract_environment(n, x * 180./np.pi) for n in M.env_variables]).T
+    full_x = np.hstack((x,env_x))
+
+    ptrace = M.trace('p')[:]
+    ps = []
+    for i in xrange(burn, chain_len, trace_thin):        
+        pf = ptrace[i]
+        p = pf(full_x)
+        ps.append(p)
+        for s in simple_assessments:
+            results[s.__name__].append(s(p,a))
+        
+    results = dict([(n, np.asarray(results[n])) for n in names])
+    results['roc'] = roc(np.asarray(ps), a)
+    
+    return results
+    
     
 if __name__ == '__main__':
     import pymc as pm

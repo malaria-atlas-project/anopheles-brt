@@ -16,7 +16,6 @@ try:
     from map_utils import reconcile_multiple_rasters
     def make_covering_raster(thin=1, env_variables=(), **kwds):
         
-
         a='MODIS-hdf5/raw-data.land-water.geographic.world.version-4'
         
         names = [a]+env_variables
@@ -68,27 +67,29 @@ def presence_map(M, session, species, burn=0, thin=1, trace_thin=1, **kwds):
     import pylab as pl
     import time
     
+    chain_len = len(M.db._h5file.root.chain0.PyMCsamples)
+    
     mask, x, img_extent = make_covering_raster(thin, M.env_variables, **kwds)
 
     out = np.zeros(mask.shape)
 
     time_count = -np.inf
     time_start = time.time()
-
-    print '0% complete'
+    
+    ptrace = M.trace('p')[:]
     for i in xrange(burn, M._cur_trace_index, trace_thin):
         
         if time.time() - time_count > 10:
-            print (((i-burn)*100)/(M._cur_trace_index-burn)), '% complete',
+            print (((i-burn)*100)/(chain_len)), '% complete',
             if i>burn:
                 time_count = time.time()      
-                print 'expect results '+time.ctime((time_count-time_start)*(M._cur_trace_index-burn)/float(i-burn)+time_start)
+                print 'expect results '+time.ctime((time_count-time_start)*(chain_len-burn)/float(i-burn)+time_start)
             else:
                 print
         
-        p = M.trace('p')[:][i]
+        p = ptrace[i]
         pe = p(x)
-        out += pe/float(M._cur_trace_index-burn)
+        out += pe/float(chain_len-burn)
     
     b = basemap.Basemap(*img_extent)
     arr = np.ma.masked_array(out, mask=True-mask)

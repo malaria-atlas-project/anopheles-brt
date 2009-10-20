@@ -32,8 +32,9 @@ from utils import bin_ubls
 import datetime
 import warnings
 import shapely
+import tables as tb
 
-__all__ = ['make_model', 'species_MCMC', 'probability_traces','potential_traces','threshold','invlogit']
+__all__ = ['make_model', 'species_MCMC', 'probability_traces','potential_traces','threshold','invlogit', 'restore_species_MCMC']
 
 def bin_ubl_like(x, p_eval, p_find, breaks):
     "The ubl likelihood function, document this."
@@ -354,22 +355,40 @@ def species_stepmethods(M, interval=None):
     for b in bases:
         M.use_step_method(GivensStepper, b)    
 
-def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
+def restore_species_MCMC(session, dbpath):
+    db = pm.database.hdf5.load(dbpath)
+    metadata = db._h5file.root.metadata[0]
+    model = make_model(session, **metadata)        
+    M=LatchingMCMC(model, db=db)
+    species_stepmethods(M, interval=5)
+    M.restore_sampler_state
+    M.restore_sm_state
+    M.__dict__.update(metadata)
+    return M
+
+def species_MCMC(session, species, spatial_submodel, **kwds):
     print 'Environment variables: ',kwds['env_variables']
     print 'Constraints: ',kwds['constraint_fns']
     print 'Spatial submodel: ',spatial_submodel.__name__
     print 'Species: ',species[1]
 
-    model = make_model(session, species, spatial_submodel, **kwds)
-    if db is None:
-        M=LatchingMCMC(model, db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
-    else:
-        M=LatchingMCMC(model, db=db)
-    species_stepmethods(M, interval=5)
+    model = make_model(session, species, spatial_submodel, **kwds)        
+    M=LatchingMCMC(model, db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
+    
+    hf = M.db._h5file
+    hf.createVLArray('/','metadata', atom=tb.ObjectAtom())
+    metadata = {}
+    metadata.update(kwds)
+    metadata['species']=species
+    metadata['spatial_submodel']=spatial_submodel
+    
+    hf.root.metadata.append(metadata)
+    
+    species_stepmethods(M, interval=5)        
 
     print 'Attempting to satisfy constraints'
     M.isample(1)
-    
+
     print 'Done, creating data object and returning'
     found = model['found']
     others_found = model['others_found']
@@ -377,19 +396,15 @@ def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
     p_eval = model['p_eval']
     p_find = model['p_find']
     M.data = pm.Binomial('data', n=found+others_found+zero, p=p_eval*p_find, value=found, observed=True, trace=False)            
-    
+
     del M.step_methods
     M._sm_assigned = False
     M.step_method_dict = {}
     for s in M.stochastics:
         M.step_method_dict[s] = []
-    
+
     species_stepmethods(M, interval=5)
-    # bases = filter(lambda x: isinstance(x, OrthogonalBasis), M.stochastics)
-    # for b in bases:
-    #     M.use_step_method(GivensStepper, b)    
-    # 
-    # M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape)})
+    
     return M
 
 def mean_response_samples(M, axis, n, burn=0, thin=1):
