@@ -62,8 +62,8 @@ class LRP(object):
         if offdiag is None:
             x_ = x.reshape(-1,x.shape[-1])
             x__ = x_[:,:2].reshape(x.shape[:-1]+(2,))
-            offdiag = np.asarray(self.C(x__,self.x_fr))
-        out = np.dot(offdiag, self.krige_wt).reshape(x.shape[:-1]) + self.f(x)
+            offdiag = self.C(x__,self.x_fr)
+        out = np.dot(np.asarray(offdiag), self.krige_wt).reshape(x.shape[:-1]) + self.f(x)
         return f2p(out)
 
 class LRP_norm(LRP):
@@ -196,6 +196,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     init_val = np.ones(len(x_fr))*.1
     init_val[:len(pts_in)] = 1
     init_val = None
+    
     f_fr = pm.MvNormalChol('f_fr', f_eval, L_fr, value=init_val)
     f_fr_ = f_fr - f_eval
     
@@ -248,8 +249,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         # = Expert-opinion likelihoods =
         # ==============================
         
-        f_eval_in = pm.Lambda('f_eval_in', lambda p=p, x=pts_in, e=env_in: p(full_x_in, f2p=identity), trace=False)
-        f_eval_out = pm.Lambda('f_eval_out', lambda p=p, x=pts_out, e=env_out: p(full_x_out, f2p=identity), trace=False)   
+        f_eval_in = pm.Lambda('f_eval_in', lambda p=p, od=C(pts_in, x_fr): p(full_x_in, f2p=identity, offdiag=od), trace=False)
+        f_eval_out = pm.Lambda('f_eval_out', lambda p=p, od=C(pts_out, x_fr): p(full_x_out, f2p=identity, offdiag=od), trace=False)   
         f_eval_eo = pm.Lambda('f_eval_eo', lambda f_eval_in=f_eval_in, f_eval_out=f_eval_out: np.concatenate((f_eval_in,f_eval_out)), trace=False)
     
         p_eval_in = pm.Lambda('p_eval_in', lambda f=f_eval_in, f2p=f2p: f2p(f), trace=False)
@@ -346,7 +347,7 @@ def species_stepmethods(M, interval=None):
 
     nonbases = list(nonbases)
     am_scales = dict(zip(nonbases, [np.ones(nb.value.shape)*.001 for nb in nonbases]))
-    M.use_step_method(pm.AdaptiveMetropolis, nonbases, delay=500000, scales=am_scales)
+    # M.use_step_method(pm.AdaptiveMetropolis, nonbases, delay=500000, scales=am_scales)
 
     for b in bases:
         M.use_step_method(GivensStepper, b)    
@@ -382,6 +383,11 @@ def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
         M.step_method_dict[s] = []
     
     species_stepmethods(M, interval=5)
+    # bases = filter(lambda x: isinstance(x, OrthogonalBasis), M.stochastics)
+    # for b in bases:
+    #     M.use_step_method(GivensStepper, b)    
+    # 
+    # M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape)})
     return M
 
 def mean_response_samples(M, axis, n, burn=0, thin=1):

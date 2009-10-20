@@ -40,7 +40,7 @@ M = anopheles.species_MCMC(s, species_tup, spatial_submodel, with_eo = True, wit
 # sa = M.step_method_dict[M.ctr][0]
 
 # M.assign_step_methods()
-M.isample(50000,0,10,verbose=0)
+# M.isample(50000,0,10,verbose=0)
 # pm.Matplot.plot(M)
 # for name in ['ctr','val','coefs','const']:
 #     pl.figure()
@@ -63,7 +63,7 @@ M.isample(50000,0,10,verbose=0)
 # pl.legend(loc=0)
 # 
 # pl.figure()
-out, arr = anopheles.presence_map(M, s, species_tup, thin=100, burn=500, trace_thin=1)
+# out, arr = anopheles.presence_map(M, s, species_tup, thin=100, burn=500, trace_thin=50)
 # pl.figure()
 # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
 # for s in samps:
