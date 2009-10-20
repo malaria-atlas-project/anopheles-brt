@@ -338,16 +338,18 @@ def species_stepmethods(M, interval=None):
     bases = filter(lambda x: isinstance(x, OrthogonalBasis), M.stochastics)
     nonbases = set(filter(lambda x: True-isinstance(x, OrthogonalBasis), M.stochastics))
 
-    nonbases.discard(M.f_fr)
+    for alone in [M.f_fr, M.alpha_in, M.alpha_out, M.beta_in, M.beta_out, M.p_find, M.scale]:
+        nonbases.discard(alone)
+    
     if interval is not None:
         for i in xrange(0,len(M.f_fr.value),interval):
             M.use_step_method(SubsetMetropolis, M.f_fr, i, interval)
     else:
         M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape)})
-
+    
     nonbases = list(nonbases)
     am_scales = dict(zip(nonbases, [np.ones(nb.value.shape)*.001 for nb in nonbases]))
-    # M.use_step_method(pm.AdaptiveMetropolis, nonbases, delay=500000, scales=am_scales)
+    M.use_step_method(pm.AdaptiveMetropolis, nonbases, delay=500000, scales=am_scales)
 
     for b in bases:
         M.use_step_method(GivensStepper, b)    
