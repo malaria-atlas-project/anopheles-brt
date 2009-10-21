@@ -33,10 +33,10 @@ n_in = n_out = 1000
 # n_in = 100
 
 # M = anopheles.species_MCMC(s, species_tup, spatial_submodel, with_eo = True, with_data = True, env_variables = env, constraint_fns=cf,n_in=n_in,n_out=n_out)
-M = anopheles.restore_species_MCMC(s, 'Anopheles gambiae s.s.2009-10-20 17:49:11.904296.hdf5')
-xtest = np.array([[.1,.1],[.05,.05],[0,0]])
-atest = np.array([1,0,1])
-v= anopheles.plot_validation(M,s,xtest,atest)
+# M = anopheles.restore_species_MCMC(s, 'Anopheles gambiae s.s.2009-10-20 17:49:11.904296.hdf5')
+# xtest = np.array([[.1,.1],[.05,.05],[0,0]])
+# atest = np.array([1,0,1])
+# v= anopheles.plot_validation(M,s,xtest,atest)
 
 # M.assign_step_methods()
 # sf=M.step_method_dict[M.f_fr][0]    

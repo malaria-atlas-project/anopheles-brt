@@ -350,7 +350,7 @@ def species_stepmethods(M, interval=None):
     
     nonbases = list(nonbases)
     am_scales = dict(zip(nonbases, [np.ones(nb.value.shape)*.001 for nb in nonbases]))
-    M.use_step_method(pm.AdaptiveMetropolis, nonbases, delay=500000, scales=am_scales)
+    M.use_step_method(pm.AdaptiveMetropolis, nonbases, scales=am_scales)
 
     for b in bases:
         M.use_step_method(GivensStepper, b)    
