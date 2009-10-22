@@ -384,7 +384,7 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     
     hf.root.metadata.append(metadata)
     
-    species_stepmethods(M, interval=5)        
+    species_stepmethods(M, interval=50)        
 
     print 'Attempting to satisfy constraints'
     M.isample(1)
@@ -403,7 +403,7 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     for s in M.stochastics:
         M.step_method_dict[s] = []
 
-    species_stepmethods(M, interval=5)
+    species_stepmethods(M, interval=50)
     
     return M
 

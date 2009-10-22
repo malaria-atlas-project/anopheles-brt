@@ -1,6 +1,7 @@
 import os,sys
 import anopheles
 import anopheles_query
+from anopheles_query import *
 import species
 
 
