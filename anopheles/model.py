@@ -63,8 +63,8 @@ class LRP(object):
         if offdiag is None:
             x_ = x.reshape(-1,x.shape[-1])
             x__ = x_[:,:2].reshape(x.shape[:-1]+(2,))
-            offdiag = self.C(x__,self.x_fr)
-        out = np.dot(np.asarray(offdiag), self.krige_wt).reshape(x.shape[:-1]) + self.f(x)
+            offdiag = np.dot(np.asarray(self.C(x__,self.x_fr)), self.krige_wt).reshape(x.shape[:-1])
+        out = offdiag + self.f(x)
         return f2p(out)
 
 class LRP_norm(LRP):
@@ -87,16 +87,16 @@ BinUBL = pm.stochastic_from_dist('BinUBL', bin_ubl_like, mv=True)
 
 class SubsetMetropolis(pm.Metropolis):
 
-    def __init__(self, stochastic, index, interval, sleep, *args, **kwargs):
+    def __init__(self, stochastic, index, interval, sleep_interval=1, *args, **kwargs):
         self.index = index
         self.interval = interval
-        self.sleep = sleep
+        self.sleep_interval = sleep_interval
         self._index = -1
         pm.Metropolis.__init__(self, stochastic, *args, **kwargs)
 
     def step(self):
         self._index += 1
-        if self._index % self.sleep == 0:
+        if self._index % self.sleep_interval == 0:
             pm.Metropolis.step(self)
 
     def propose(self):
@@ -238,9 +238,12 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
             env_x = np.empty((len(x),0))
         env_x_wherefound = env_x[wherefound]            
     
-        p_eval = pm.Lambda('p_eval', lambda p=p, od=C(x,x_fr): p(np.hstack((x, env_x)), offdiag=np.asarray(od)), trace=False)        
-        f_eval_wherefound = pm.Lambda('f_eval_wherefound', lambda p=p, od=C(x_wherefound,x_fr): p(np.hstack((x_wherefound, env_x_wherefound)), offdiag=np.asarray(od), f2p=identity), trace=False)
-    
+        offdiag_eval = pm.Lambda('offdiag_eval', lambda C=C, krige_wt=krige_wt: np.dot(np.asarray(C(x,x_fr)), krige_wt).ravel(), trace=False)
+        p_eval = pm.Lambda('p_eval', lambda p=p, od=offdiag_eval: p(np.hstack((x, env_x)), offdiag=od), trace=False)        
+        
+        offdiag_wherefound = pm.Lambda('offdiag_wherefound', lambda C=C, krige_wt=krige_wt: np.dot(np.asarray(C(x_wherefound,x_fr)), krige_wt).ravel(), trace=False)
+        f_eval_wherefound = pm.Lambda('f_eval_wherefound', lambda p=p, od=offdiag_wherefound: p(np.hstack((x_wherefound, env_x_wherefound)), offdiag=od, f2p=identity), trace=False)
+        
         constraint_dict = {'data': Constraint(penalty_value = -1e100, logp=lambda f: -np.sum(f*(f<0)), doc="", name='data_constraint', parents={'f':f_eval_wherefound})}
     
         if multipoints:
@@ -261,8 +264,10 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         # = Expert-opinion likelihoods =
         # ==============================
         
-        f_eval_in = pm.Lambda('f_eval_in', lambda p=p, od=C(pts_in, x_fr): p(full_x_in, f2p=identity, offdiag=od), trace=False)
-        f_eval_out = pm.Lambda('f_eval_out', lambda p=p, od=C(pts_out, x_fr): p(full_x_out, f2p=identity, offdiag=od), trace=False)   
+        offdiag_in = pm.Lambda('offdiag_in', lambda C=C, krige_wt=krige_wt: np.dot(np.asarray(C(pts_in,x_fr)), krige_wt).ravel(), trace=False)
+        offdiag_out = pm.Lambda('offdiag_out', lambda C=C, krige_wt=krige_wt: np.dot(np.asarray(C(pts_out,x_fr)), krige_wt).ravel(), trace=False)
+        f_eval_in = pm.Lambda('f_eval_in', lambda p=p, od=offdiag_in: p(full_x_in, f2p=identity, offdiag=od), trace=False)
+        f_eval_out = pm.Lambda('f_eval_out', lambda p=p, od=offdiag_out: p(full_x_out, f2p=identity, offdiag=od), trace=False)   
         f_eval_eo = pm.Lambda('f_eval_eo', lambda f_eval_in=f_eval_in, f_eval_out=f_eval_out: np.concatenate((f_eval_in,f_eval_out)), trace=False)
     
         p_eval_in = pm.Lambda('p_eval_in', lambda f=f_eval_in, f2p=f2p: f2p(f), trace=False)
@@ -343,7 +348,7 @@ def potential_traces(M, in_or_out = 'in'):
     import pylab as pl
     pl.plot(a/(a+b))
 
-def species_stepmethods(M, interval=None, sleep=0):
+def species_stepmethods(M, interval=None, sleep_interval=1):
     """
     Adds appropriate step methods to M.
     """
@@ -355,7 +360,7 @@ def species_stepmethods(M, interval=None, sleep=0):
     
     if interval is not None:
         for i in xrange(0,len(M.f_fr.value),interval):
-            M.use_step_method(SubsetMetropolis, M.f_fr, i, interval, sleep)
+            M.use_step_method(SubsetMetropolis, M.f_fr, i, interval, sleep_interval)
     else:
         M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: .00001*np.ones(M.f_fr.value.shape)})
     
@@ -414,7 +419,7 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     for s in M.stochastics:
         M.step_method_dict[s] = []
 
-    species_stepmethods(M, interval=50, sleep=20)
+    species_stepmethods(M, interval=50, sleep_interval=20)
     
     return M
 
