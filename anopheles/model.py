@@ -185,8 +185,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     
     x_fr = x_eo[::5]
     full_x_fr = full_x_eo[::5]
-    
-    f_eval = f(normalize_env(full_x_fr, env_means, env_stds))
+
 
     @pm.deterministic(trace=False)
     def U_fr(C=C, x=x_fr):
@@ -209,11 +208,10 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     init_val[:len(pts_in)] = 1
     init_val = None
     
-    f_fr = pm.MvNormalChol('f_fr', f_eval, L_fr, value=init_val)
-    f_fr_ = f_fr - f_eval
+    f_fr = pm.MvNormalChol('f_fr', np.zeros(len(x_fr)), L_fr, value=init_val)
     
     @pm.deterministic(trace=False)
-    def krige_wt(f_fr=f_fr_, U_fr=U_fr, f=f_eval):
+    def krige_wt(f_fr=f_fr, U_fr=U_fr):
         if U_fr.shape == f_fr.shape*2:
             return pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
         else:
