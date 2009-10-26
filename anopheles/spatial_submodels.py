@@ -333,9 +333,8 @@ def spatial_env(**stuff):
 
 class RotatedLinearWithHill(object):
     """A closure used by nongp_spatial_env"""
-    def __init__(self,const,val,vec,ctr,norm_means,norm_stds,hillpower):
+    def __init__(self,val,vec,ctr,norm_means,norm_stds,hillpower):
 
-        self.const = const
         self.val = val
         self.vec = vec
         self.ctr = ctr
@@ -349,7 +348,7 @@ class RotatedLinearWithHill(object):
         
         quadpart = -np.sum((x__**2),axis=1)**self.hillpower
         
-        out = quadpart.reshape(x.shape[:-1]) + self.const
+        out = quadpart.reshape(x.shape[:-1])
 
         if np.any(np.isnan(out)):
             raise ValueError  
@@ -360,21 +359,20 @@ def nogp_spatial_env(**stuff):
 
     n_env = stuff['env_in'].shape[1]
 
-    const = pm.Uninformative('const',value=0,observed=False)
-
-
     ctr = pm.Normal('ctr',np.zeros(n_env), np.ones(n_env), value=np.zeros(n_env),observed=False)
     
     # Encourage simplicity
     baseval = pm.Exponential('baseval', .001, value=1)
     valpow = pm.Uniform('valpow',0,1,value=.99)
-    valbeta = pm.Lambda('valbeta',lambda baseval=baseval,valpow=valpow:baseval*np.arange(1,n_env+1)**valpow)
-    val = pm.Exponential('val',valbeta,value=np.ones(n_env))
+    # valbeta = pm.Lambda('valbeta',lambda baseval=baseval,valpow=valpow:baseval*np.arange(1,n_env+1)**valpow)
+    valV = pm.Lambda('valbeta',lambda baseval=baseval,valpow=valpow:baseval*np.arange(1,n_env+1)**valpow)
+    val = pm.Normal('val',np.zeros(n_env),1./valV,value=np.ones(n_env))
+    # val = pm.Exponential('val',valbeta,value=np.ones(n_env))
 
     vec = cov_prior.OrthogonalBasis('vec',(n_env),observed=False)
     hillpower = pm.Exponential('hillpower',.001,value=1,observed=True)
         
-    f = pm.Lambda('f', lambda const=const, bv = val, be=vec, ctr=ctr, hillpower=hillpower: \
-                            RotatedLinearWithHill(const,bv,be,ctr,stuff['env_means'],stuff['env_stds'],hillpower))
+    f = pm.Lambda('f', lambda bv = val, be=vec, ctr=ctr, hillpower=hillpower: \
+                            RotatedLinearWithHill(bv,be,ctr,stuff['env_means'],stuff['env_stds'],hillpower))
 
     return locals()

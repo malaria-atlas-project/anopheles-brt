@@ -87,10 +87,17 @@ BinUBL = pm.stochastic_from_dist('BinUBL', bin_ubl_like, mv=True)
 
 class SubsetMetropolis(pm.Metropolis):
 
-    def __init__(self, stochastic, index, interval, *args, **kwargs):
+    def __init__(self, stochastic, index, interval, sleep, *args, **kwargs):
         self.index = index
         self.interval = interval
+        self.sleep = sleep
+        self._index = -1
         pm.Metropolis.__init__(self, stochastic, *args, **kwargs)
+
+    def step(self):
+        self._index += 1
+        if self._index % self.sleep == 0:
+            pm.Metropolis.step(self)
 
     def propose(self):
         """
@@ -103,6 +110,10 @@ class SubsetMetropolis(pm.Metropolis):
         newval = self.stochastic.value.copy()
         newval[self.index:self.index+self.interval] += np.random.normal(size=self.interval) * self.proposal_sd[self.index:self.index+self.interval]*self.adaptive_scale_factor
         self.stochastic.value = newval
+
+def mod_expo(x,y,amp,scale,symm=False):
+    """Matern with the mean integrated out."""
+    return pm.gp.exponential.geo_rad(x,y,amp=amp,scale=scale,symm=symm)+10000
     
 def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}, n_in=1000, n_out=1000, f2p=threshold):
     """
@@ -160,7 +171,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     
     @pm.deterministic
     def C(scale=scale):
-        return pm.gp.FullRankCovariance(pm.gp.exponential.geo_rad, amp=1, scale=scale)
+        return pm.gp.FullRankCovariance(mod_expo, amp=1, scale=scale)
     
     # diff_degree = pm.Uniform('diff_degree',0,3,value=2)
     # @pm.deterministic
@@ -332,7 +343,7 @@ def potential_traces(M, in_or_out = 'in'):
     import pylab as pl
     pl.plot(a/(a+b))
 
-def species_stepmethods(M, interval=None):
+def species_stepmethods(M, interval=None, sleep=0):
     """
     Adds appropriate step methods to M.
     """
@@ -344,9 +355,9 @@ def species_stepmethods(M, interval=None):
     
     if interval is not None:
         for i in xrange(0,len(M.f_fr.value),interval):
-            M.use_step_method(SubsetMetropolis, M.f_fr, i, interval)
+            M.use_step_method(SubsetMetropolis, M.f_fr, i, interval, sleep)
     else:
-        M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape)})
+        M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: .00001*np.ones(M.f_fr.value.shape)})
     
     nonbases = list(nonbases)
     am_scales = dict(zip(nonbases, [np.ones(nb.value.shape)*.001 for nb in nonbases]))
@@ -403,7 +414,7 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     for s in M.stochastics:
         M.step_method_dict[s] = []
 
-    species_stepmethods(M, interval=50)
+    species_stepmethods(M, interval=50, sleep=20)
     
     return M
 
