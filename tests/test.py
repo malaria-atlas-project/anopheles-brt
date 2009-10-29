@@ -1,5 +1,5 @@
-import matplotlib
-matplotlib.use('pdf')
+# import matplotlib
+# matplotlib.use('pdf')
 import anopheles
 from anopheles_query import Session
 from cov_prior import OrthogonalBasis, GivensStepper
@@ -21,6 +21,10 @@ import pylab as pl
 pl.close('all')
 
 mask, x, img_extent = anopheles.make_covering_raster(100, env)
+mask, x, img_extent = anopheles.make_covering_raster(20, env)
+# outside_lat = (x[:,1]*180./np.pi>38)+(x[:,1]*180./np.pi<-36)
+# outside_lon = (x[:,0]*180./np.pi>56)+(x[:,0]*180./np.pi<-18)
+mask, x, img_extent = anopheles.subset_x(mask,x,img_extent,(-18,-36,56,38))
 
 spatial_submodel = anopheles.nogp_spatial_env
 n_in = n_out = 1000
@@ -33,10 +37,10 @@ n_in = n_out = 1000
 # n_in = 100
 
 M = anopheles.species_MCMC(s, species_tup, spatial_submodel, with_eo = True, with_data = True, env_variables = env, constraint_fns=cf,n_in=n_in,n_out=n_out)
-# M = anopheles.restore_species_MCMC(s, 'Anopheles gambiae s.s.2009-10-20 17:49:11.904296.hdf5')
-from time import time
+# M = anopheles.restore_species_MCMC(s, 'Anopheles gambiae s.s.2009-10-26 11:57:46.766486.hdf5')
+# from time import time
 # t1 = time()
-M.isample(500000,0,100)
+# M.isample(500000,0,100)
 # print time()-t1
 # xtest = np.array([[.1,.1],[.05,.05],[0,0]])
 # atest = np.array([1,0,1])
@@ -71,7 +75,7 @@ M.isample(500000,0,100)
 # pl.legend(loc=0)
 # 
 # pl.figure()
-# out, arr = anopheles.presence_map(M, s, species_tup, thin=100, burn=500, trace_thin=50)
+# out, arr = anopheles.presence_map(M, s, species_tup, thin=100, burn=250, trace_thin=10)
 # pl.figure()
 # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
 # for s in samps:

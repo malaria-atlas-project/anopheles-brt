@@ -10,7 +10,7 @@ import os
 import pymc as pm
 from mpl_toolkits import basemap
 
-__all__ = ['presence_map','current_state_map','current_state_slice']
+__all__ = ['presence_map','current_state_map','current_state_slice','subset_x']
 
 try:
     from map_utils import reconcile_multiple_rasters
@@ -60,6 +60,21 @@ try:
 except:
     pass
 
+def subset_x(mask, x, img_extent, new_extent):
+    lonmin = img_extent[0]
+    latmin = img_extent[1]
+    dlon = (img_extent[2]-lonmin)/float(x.shape[0])
+    dlat = (img_extent[3]-latmin)/float(x.shape[1])
+    
+    lonind = (int((new_extent[0]-lonmin)/dlon), int((new_extent[2]-lonmin)/dlon))
+    latind = (int((new_extent[1]-latmin)/dlat), int((new_extent[3]-latmin)/dlat))
+    
+    subset_mask = mask[lonind[0]:lonind[1],latind[0]:latind[1]]
+    subset_x = x[lonind[0]:lonind[1],latind[0]:latind[1],:]
+    subset_extent = np.array([subset_x[:,:,0].min(), subset_x[:,:,1].min(), subset_x[:,:,0].max(), subset_x[:,:,1].max()])*180./np.pi
+    
+    return subset_mask, subset_x, subset_extent
+
 def presence_map(M, session, species, burn=0, thin=1, trace_thin=1, **kwds):
     "Converts the trace to a map of presence probability."
     
@@ -77,7 +92,7 @@ def presence_map(M, session, species, burn=0, thin=1, trace_thin=1, **kwds):
     time_start = time.time()
     
     ptrace = M.trace('p')[:]
-    for i in xrange(burn, M._cur_trace_index, trace_thin):
+    for i in xrange(burn, len(M.trace('p_find')[:]), trace_thin):
         
         if time.time() - time_count > 10:
             print (((i-burn)*100)/(chain_len)), '% complete',

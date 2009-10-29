@@ -6,8 +6,8 @@ def elev_check(x,f):
     return np.sum(f_high*(f_high>0))
 
 def loc_check(x,f):
-    outside_lat = np.abs(x[:,1]*180./np.pi)>50
-    outside_lon = 0
+    outside_lat = (x[:,1]*180./np.pi>38)+(x[:,1]*180./np.pi<-36)
+    outside_lon = (x[:,0]*180./np.pi>56)+(x[:,0]*180./np.pi<-18)
     f_outside = f[np.where(outside_lat + outside_lon)]
     return np.sum(f_outside*(f_outside>0))
 

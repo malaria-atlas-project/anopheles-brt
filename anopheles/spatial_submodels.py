@@ -344,9 +344,9 @@ class RotatedLinearWithHill(object):
 
     def __call__(self, x):
         x_ = x
-        x__ = np.dot((x_.reshape(-1,x.shape[-1])[:,2:]-self.ctr),self.vec)*np.sqrt(self.val)
+        x__ = np.dot((x_.reshape(-1,x.shape[-1])[:,2:]-self.ctr),self.vec)
         
-        quadpart = -np.sum((x__**2),axis=1)**self.hillpower
+        quadpart = -np.sum((x__**2)*self.val,axis=1)**self.hillpower
         
         out = quadpart.reshape(x.shape[:-1])
 
@@ -359,14 +359,18 @@ def nogp_spatial_env(**stuff):
 
     n_env = stuff['env_in'].shape[1]
 
-    ctr = pm.Normal('ctr',np.zeros(n_env), np.ones(n_env), value=np.zeros(n_env),observed=False)
+    # ctr = pm.Normal('ctr',np.zeros(n_env), np.ones(n_env), value=np.zeros(n_env),observed=False)
+    ctrs = [pm.Normal('ctr_%i'%i,0,1,value=0) for i in xrange(n_env)]
+    ctr = pm.Lambda('ctr',lambda c=ctrs: np.array(c))
     
     # Encourage simplicity
     baseval = pm.Exponential('baseval', .001, value=1)
-    valpow = pm.Uniform('valpow',0,1,value=.99)
+    valpow = pm.Uniform('valpow',-10,0,value=-.01)
     # valbeta = pm.Lambda('valbeta',lambda baseval=baseval,valpow=valpow:baseval*np.arange(1,n_env+1)**valpow)
     valV = pm.Lambda('valbeta',lambda baseval=baseval,valpow=valpow:baseval*np.arange(1,n_env+1)**valpow)
-    val = pm.Normal('val',np.zeros(n_env),1./valV,value=np.ones(n_env))
+    # val = pm.Normal('val',np.zeros(n_env),1./valV,value=np.ones(n_env))
+    vals = [pm.Normal('val_%i'%i,0,1./valV[i],value=0) for i in xrange(n_env)]
+    val = pm.Lambda('val',lambda v=vals: np.array(v))
     # val = pm.Exponential('val',valbeta,value=np.ones(n_env))
 
     vec = cov_prior.OrthogonalBasis('vec',(n_env),observed=False)

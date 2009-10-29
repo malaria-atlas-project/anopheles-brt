@@ -85,19 +85,24 @@ class LRP_norm(LRP):
 
 BinUBL = pm.stochastic_from_dist('BinUBL', bin_ubl_like, mv=True)
 
-class SubsetMetropolis(pm.Metropolis):
+class DelayedMetropolis(pm.Metropolis):
 
-    def __init__(self, stochastic, index, interval, sleep_interval=1, *args, **kwargs):
-        self.index = index
-        self.interval = interval
+    def __init__(self, stochastic, sleep_interval=1, *args, **kwargs):
+        self._index = -1        
         self.sleep_interval = sleep_interval
-        self._index = -1
         pm.Metropolis.__init__(self, stochastic, *args, **kwargs)
 
     def step(self):
         self._index += 1
         if self._index % self.sleep_interval == 0:
-            pm.Metropolis.step(self)
+            pm.Metropolis.step(self)    
+
+class SubsetMetropolis(DelayedMetropolis):
+
+    def __init__(self, stochastic, index, interval, sleep_interval=1, *args, **kwargs):
+        self.index = index
+        self.interval = interval
+        DelayedMetropolis.__init__(self, stochastic, sleep_interval, *args, **kwargs)
 
     def propose(self):
         """
@@ -113,7 +118,7 @@ class SubsetMetropolis(pm.Metropolis):
 
 def mod_expo(x,y,amp,scale,symm=False):
     """Matern with the mean integrated out."""
-    return pm.gp.exponential.geo_rad(x,y,amp=amp,scale=scale,symm=symm)+10000
+    return pm.gp.exponential.geo_rad(x,y,amp=amp,scale=scale,symm=symm)+1
     
 def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}, n_in=1000, n_out=1000, f2p=threshold):
     """
@@ -167,7 +172,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     # =======================
     # = Correlated 'nugget' =
     # =======================
-    scale = pm.Uniform('scale',0,.5,value=.05,observed=False)
+    scale = pm.Uniform('scale',.01,100,value=1,observed=False)
     
     @pm.deterministic
     def C(scale=scale):
@@ -206,7 +211,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     # Evaluation of field at expert-opinion points
     init_val = np.ones(len(x_fr))*.1
     init_val[:len(pts_in)] = 1
-    init_val = None
+    # init_val = None
     
     f_fr = pm.MvNormalChol('f_fr', np.zeros(len(x_fr)), L_fr, value=init_val)
     
@@ -356,15 +361,17 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
     for alone in [M.f_fr, M.alpha_in, M.alpha_out, M.beta_in, M.beta_out, M.p_find, M.scale]:
         nonbases.discard(alone)
     
+    M.use_step_method(DelayedMetropolis, M.scale, sleep_interval)
+    
     if interval is not None:
         for i in xrange(0,len(M.f_fr.value),interval):
             M.use_step_method(SubsetMetropolis, M.f_fr, i, interval, sleep_interval)
     else:
         M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: .00001*np.ones(M.f_fr.value.shape)})
     
-    nonbases = list(nonbases)
-    am_scales = dict(zip(nonbases, [np.ones(nb.value.shape)*.001 for nb in nonbases]))
-    M.use_step_method(pm.AdaptiveMetropolis, nonbases, scales=am_scales)
+    # nonbases = list(nonbases)
+    # am_scales = dict(zip(nonbases, [np.ones(nb.value.shape)*.001 for nb in nonbases]))
+    # M.use_step_method(pm.AdaptiveMetropolis, nonbases, scales=am_scales, delay=5000,shrink_if_necessary=True)
 
     for b in bases:
         M.use_step_method(GivensStepper, b)    
@@ -398,7 +405,7 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     
     hf.root.metadata.append(metadata)
     
-    species_stepmethods(M, interval=50)        
+    species_stepmethods(M, interval=None)        
 
     print 'Attempting to satisfy constraints'
     M.isample(1)
@@ -417,7 +424,8 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     for s in M.stochastics:
         M.step_method_dict[s] = []
 
-    species_stepmethods(M, interval=50, sleep_interval=20)
+    # species_stepmethods(M, interval=50, sleep_interval=200)
+    species_stepmethods(M, interval=None)
     
     return M
 
