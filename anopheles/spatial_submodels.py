@@ -360,21 +360,24 @@ def nogp_spatial_env(**stuff):
     n_env = stuff['env_in'].shape[1]
 
     # ctr = pm.Normal('ctr',np.zeros(n_env), np.ones(n_env), value=np.zeros(n_env),observed=False)
+    # ctr = np.zeros(n_env)
     ctrs = [pm.Normal('ctr_%i'%i,0,1,value=0) for i in xrange(n_env)]
     ctr = pm.Lambda('ctr',lambda c=ctrs: np.array(c))
     
     # Encourage simplicity
-    baseval = pm.Exponential('baseval', .001, value=1)
-    valpow = pm.Uniform('valpow',-10,0,value=-.01)
+    baseval = pm.Exponential('baseval', .001, value=1, observed=False)
+    valpow = pm.Uniform('valpow',-10,0,value=-.01, observed=False)
     # valbeta = pm.Lambda('valbeta',lambda baseval=baseval,valpow=valpow:baseval*np.arange(1,n_env+1)**valpow)
     valV = pm.Lambda('valbeta',lambda baseval=baseval,valpow=valpow:baseval*np.arange(1,n_env+1)**valpow)
-    # val = pm.Normal('val',np.zeros(n_env),1./valV,value=np.ones(n_env))
-    vals = [pm.Normal('val_%i'%i,0,1./valV[i],value=0) for i in xrange(n_env)]
-    val = pm.Lambda('val',lambda v=vals: np.array(v))
+    val = pm.Normal('val',np.zeros(n_env),1./valV,value=np.ones(n_env))
+    # vals = [pm.Normal('val_%i'%i,0,1./valV[i],value=0) for i in xrange(n_env)]
+    # val = pm.Lambda('val',lambda v=vals: np.array(v).ravel())
     # val = pm.Exponential('val',valbeta,value=np.ones(n_env))
 
     vec = cov_prior.OrthogonalBasis('vec',(n_env),observed=False)
-    hillpower = pm.Exponential('hillpower',.001,value=1,observed=True)
+    # vec = np.eye(n_env)
+    # hillpower = pm.Exponential('hillpower',.001,value=1,observed=True)
+    hillpower = 1
         
     f = pm.Lambda('f', lambda bv = val, be=vec, ctr=ctr, hillpower=hillpower: \
                             RotatedLinearWithHill(bv,be,ctr,stuff['env_means'],stuff['env_stds'],hillpower))

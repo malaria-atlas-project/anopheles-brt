@@ -27,10 +27,10 @@ mask, x, img_extent = anopheles.make_covering_raster(20, env)
 mask, x, img_extent = anopheles.subset_x(mask,x,img_extent,(-18,-36,56,38))
 
 spatial_submodel = anopheles.nogp_spatial_env
-n_in = n_out = 1000
+# n_in = n_out = 2
 
 # spatial_submodel = lr_spatial_env
-# n_in = n_out = 1000
+n_in = n_out = 1000
 
 # spatial_submodel = spatial_env
 # n_out = 400

@@ -23,6 +23,10 @@ env = ['MODIS-hdf5/daytime-land-temp.mean.geographic.world.2001-to-2006',
         'MODIS-hdf5/evi.biannual-phase.geographic.world.2001-to-2006',
         'MODIS-hdf5/raw-data.elevation.geographic.world.version-5']
 
+# env = ['MODIS-hdf5/daytime-land-temp.mean.geographic.world.2001-to-2006',
+#         'MODIS-hdf5/evi.mean.geographic.world.2001-to-2006',
+#         'MODIS-hdf5/raw-data.elevation.geographic.world.version-5']
+
 # cf = {'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
 # cf = {'location'  :loc_check}
 cf = {}

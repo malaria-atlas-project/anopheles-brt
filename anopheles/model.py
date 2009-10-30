@@ -116,6 +116,70 @@ class SubsetMetropolis(DelayedMetropolis):
         newval[self.index:self.index+self.interval] += np.random.normal(size=self.interval) * self.proposal_sd[self.index:self.index+self.interval]*self.adaptive_scale_factor
         self.stochastic.value = newval
 
+def gramschmidt(v):
+    m = np.eye(len(v))[:,:-1]
+    for i in xrange(len(v)-1):
+        m[:,i] -= v*v[i]
+        for j in xrange(0,i):
+            m[:,i] -= m[:,j]*np.dot(m[:,i],m[:,j])
+        m[:,i] /= np.sqrt(np.sum(m[:,i]**2))
+    return m
+
+class RayMetropolis(pm.StepMethod):
+    """
+    Approximately Gibbs samples along a randomly-selected ray.
+    Always has the option to maintain current state.
+    """
+    def __init__(self, stochastic):
+        self.stochastic = stochastic
+        self.v = 1./self.stochastic.parents['tau']
+        self.m = self.stochastic.parents['mu']
+        self.n = len(self.stochastic.value)
+        pm.StepMethod.__init__(self, [stochastic])
+        
+    def step(self):
+        
+        self.logp_plus_loglike
+        v = pm.value(self.v)
+        m = pm.value(self.m)
+        val = self.stochastic.value
+        
+        # Choose a direction along which to step.
+        dirvec = np.random.normal(size=self.n)
+        dirvec /= np.sqrt(np.sum(dirvec**2))
+        
+        # Orthogonalize
+        orthoproj = gramschmidt(dirvec)
+        scaled_orthoproj = v*orthoproj.T
+        pck = np.dot(dirvec, scaled_orthoproj.T)
+        kck = np.linalg.inv(np.dot(scaled_orthoproj,orthoproj))
+        pckkck = np.dot(pck,kck)
+
+        # Figure out conditional variance
+        condvar = np.dot(dirvec, dirvec*v) - np.dot(pck, pckkck)
+        # condmean = np.dot(dirvec, m) + np.dot(pckkck, np.dot(orthoproj.T, (val-m)))
+        
+        # Compute slice of log-probability surface
+        tries = np.linspace(-4*np.sqrt(condvar), 4*np.sqrt(condvar), 501)
+        lps = 0*tries
+        
+        for i in xrange(len(tries)):
+            new_val = val + tries[i]*dirvec
+            self.stochastic.value = new_val
+            try:
+                lps[i] = self.logp_plus_loglike
+            except pm.ZeroProbability:
+                lps[i] = -np.inf              
+        if np.all(np.isinf(lps)):
+            raise ValueError, 'All -inf.'
+        lps -= pm.flib.logsum(lps[True-np.isinf(lps)])          
+        ps = np.exp(lps)
+        
+        index = pm.rcategorical(ps)
+        new_val = val + tries[index]*dirvec
+        
+        self.stochastic.value = new_val
+
 def mod_expo(x,y,amp,scale,symm=False):
     """Matern with the mean integrated out."""
     return pm.gp.exponential.geo_rad(x,y,amp=amp,scale=scale,symm=symm)+1
@@ -172,16 +236,16 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     # =======================
     # = Correlated 'nugget' =
     # =======================
-    scale = pm.Uniform('scale',.01,100,value=1,observed=False)
+    scale = pm.Uniform('scale',.01,100,value=.1,observed=False)
     
-    @pm.deterministic
-    def C(scale=scale):
-        return pm.gp.FullRankCovariance(mod_expo, amp=1, scale=scale)
+    # @pm.deterministic
+    # def C(scale=scale):
+    #     return pm.gp.FullRankCovariance(mod_expo, amp=1, scale=scale)
     
     # diff_degree = pm.Uniform('diff_degree',0,3,value=2)
-    # @pm.deterministic
-    # def C(scale=scale, diff_degree=diff_degree):
-    #     return pm.gp.FullRankCovariance(pm.gp.matern.geo_rad, amp=1, scale=scale, diff_degree=diff_degree)
+    @pm.deterministic
+    def C(scale=scale):
+        return pm.gp.FullRankCovariance(pm.gp.matern.geo_rad, amp=1, scale=scale, diff_degree=2)
 
     full_x_in = np.hstack((pts_in, env_in))
     full_x_out = np.hstack((pts_out, env_out))
@@ -190,6 +254,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     
     x_fr = x_eo[::5]
     full_x_fr = full_x_eo[::5]
+    # x_fr = x_eo
+    # full_x_fr = full_x_eo
 
 
     @pm.deterministic(trace=False)
@@ -367,11 +433,12 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
         for i in xrange(0,len(M.f_fr.value),interval):
             M.use_step_method(SubsetMetropolis, M.f_fr, i, interval, sleep_interval)
     else:
-        M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: .00001*np.ones(M.f_fr.value.shape)})
-    
+        M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape)}, delay=2000)
+
+    M.use_step_method(RayMetropolis, M.val)
     # nonbases = list(nonbases)
-    # am_scales = dict(zip(nonbases, [np.ones(nb.value.shape)*.001 for nb in nonbases]))
-    # M.use_step_method(pm.AdaptiveMetropolis, nonbases, scales=am_scales, delay=5000,shrink_if_necessary=True)
+    # am_scales = dict(zip(nonbases, [np.ones(nb.value.shape)*.0001 for nb in nonbases]))
+    # M.use_step_method(pm.AdaptiveMetropolis, nonbases, scales=am_scales, delay=10000)
 
     for b in bases:
         M.use_step_method(GivensStepper, b)    
@@ -424,8 +491,8 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     for s in M.stochastics:
         M.step_method_dict[s] = []
 
-    # species_stepmethods(M, interval=50, sleep_interval=200)
-    species_stepmethods(M, interval=None)
+    species_stepmethods(M, interval=50, sleep_interval=20)
+    # species_stepmethods(M, interval=None)
     
     return M
 
