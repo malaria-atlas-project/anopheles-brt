@@ -10,13 +10,12 @@ import os
 import pymc as pm
 from mpl_toolkits import basemap
 
-__all__ = ['presence_map','current_state_map','current_state_slice']
+__all__ = ['presence_map','current_state_map','current_state_slice','subset_x']
 
 try:
     from map_utils import reconcile_multiple_rasters
     def make_covering_raster(thin=1, env_variables=(), **kwds):
         
-
         a='MODIS-hdf5/raw-data.land-water.geographic.world.version-4'
         
         names = [a]+env_variables
@@ -61,20 +60,51 @@ try:
 except:
     pass
 
+def subset_x(mask, x, img_extent, new_extent):
+    lonmin = img_extent[0]
+    latmin = img_extent[1]
+    dlon = (img_extent[2]-lonmin)/float(x.shape[0])
+    dlat = (img_extent[3]-latmin)/float(x.shape[1])
+    
+    lonind = (int((new_extent[0]-lonmin)/dlon), int((new_extent[2]-lonmin)/dlon))
+    latind = (int((new_extent[1]-latmin)/dlat), int((new_extent[3]-latmin)/dlat))
+    
+    subset_mask = mask[lonind[0]:lonind[1],latind[0]:latind[1]]
+    subset_x = x[lonind[0]:lonind[1],latind[0]:latind[1],:]
+    subset_extent = np.array([subset_x[:,:,0].min(), subset_x[:,:,1].min(), subset_x[:,:,0].max(), subset_x[:,:,1].max()])*180./np.pi
+    
+    return subset_mask, subset_x, subset_extent
+
 def presence_map(M, session, species, burn=0, thin=1, trace_thin=1, **kwds):
     "Converts the trace to a map of presence probability."
     
     from mpl_toolkits import basemap
     import pylab as pl
+    import time
+    
+    chain_len = len(M.db._h5file.root.chain0.PyMCsamples)
     
     mask, x, img_extent = make_covering_raster(thin, M.env_variables, **kwds)
 
     out = np.zeros(mask.shape)
 
-    for i in xrange(burn, M._cur_trace_index, trace_thin):
-        p = M.trace('p')[:][i]
+    time_count = -np.inf
+    time_start = time.time()
+    
+    ptrace = M.trace('p')[:]
+    for i in xrange(burn, len(M.trace('p_find')[:]), trace_thin):
+        
+        if time.time() - time_count > 10:
+            print (((i-burn)*100)/(chain_len)), '% complete',
+            if i>burn:
+                time_count = time.time()      
+                print 'expect results '+time.ctime((time_count-time_start)*(chain_len-burn)/float(i-burn)+time_start)
+            else:
+                print
+        
+        p = ptrace[i]
         pe = p(x)
-        out += pe/float(M._cur_trace_index-burn)
+        out += pe/float(chain_len-burn)
     
     b = basemap.Basemap(*img_extent)
     arr = np.ma.masked_array(out, mask=True-mask)

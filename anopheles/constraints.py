@@ -16,8 +16,10 @@
 import pymc
 import numpy
 import time
-from pymc import InstantiationDecorators
+from time import sleep
+from pymc import InstantiationDecorators, utils
 np=numpy
+import sys
 
 __all__ = ['Constraint','constraint','LatchingMCMC']
 
@@ -77,16 +79,95 @@ class LatchingMCMC(pymc.MCMC):
         pymc.MCMC.__init__(self, *args, **kwds)
         self.constraints = set(filter(lambda x:isinstance(x,Constraint), self.potentials))
     
-    def print_constraints(self):
+    def print_constraints(self, out=sys.stdout):
         for c in self.constraints:
             if c.isopen:
-                print '%s: open, penalty value %f, violation %f'%(c.__name__, c.penalty_value, c.logp/c.penalty_value)
+                print >> out, '%s: open, penalty value %f, violation %f'%(c.__name__, c.penalty_value, c.logp/c.penalty_value)
             else:
                 try:
                     c.logp
-                    print '%s: closed, satisfied.'%c.__name__
+                    print >> out, '%s: closed, satisfied.'%c.__name__
                 except pymc.ZeroProbability:
-                    print '%s: closed, violated.'%c.__name__
+                    print >> out, '%s: closed, violated.'%c.__name__
+
+    def iprompt(self, out=sys.stdout):
+        """Start a prompt listening to user input."""
+
+        cmds = """
+        Commands:
+          i -- index: print current iteration index
+          p -- pause: interrupt sampling and return to the main console.
+                      Sampling can be resumed later with icontinue().
+          h -- halt:  stop sampling and truncate trace. Sampling cannot be
+                      resumed for this chain.
+          c -- print constraints: print status of constraints we are trying
+                      to satisfy.
+          b -- bg:    return to the main console. The sampling will still
+                      run in a background thread. There is a possibility of
+                      malfunction if you interfere with the Sampler's
+                      state or the database during sampling. Use this at your
+                      own risk.
+        """
+
+        print >> out, """==============
+    PyMC console
+    ==============
+
+        PyMC is now sampling. Use the following commands to query or pause the sampler.
+        """
+        print >> out, cmds
+
+        prompt = True
+        try:
+            while self.status in ['running', 'paused']:
+                    # sys.stdout.write('pymc> ')
+                    if prompt:
+                        out.write('pymc > ')
+                        out.flush()
+
+                    if self._exc_info is not None:
+                        a,b,c = self._exc_info
+                        raise a, b, c
+
+                    cmd = utils.getInput().strip()
+                    if cmd == 'i':
+                        print >> out,  'Current iteration: ', self._current_iter
+                        prompt = True
+                    elif cmd == 'c':
+                        self.print_constraints(out) 
+                        prompt = True
+                    elif cmd == 'p':
+                        self.status = 'paused'
+                        break
+                    elif cmd == 'h':
+                        self.status = 'halt'
+                        break
+                    elif cmd == 'b':
+                        return
+                    elif cmd == '\n':
+                        prompt = True
+                        pass
+                    elif cmd == '':
+                        prompt = False
+                    else:
+                        print >> out, 'Unknown command: ', cmd
+                        print >> out, cmds
+                        prompt = True
+
+        except KeyboardInterrupt:
+            if not self.status == 'ready':
+                self.status = 'halt'
+
+
+        if self.status == 'ready':
+            print >> out, "Sampling terminated successfully."
+        else:
+            print >> out, 'Waiting for current iteration to finish...'
+            while self._sampling_thread.isAlive():
+                sleep(.1)
+            print >> out, 'Exiting interactive prompt...'
+            if self.status == 'paused':
+                print >> out, 'Call icontinue method to continue, or call halt method to truncate traces and stop.'
                     
     def _loop(self):
         # Set status flag
@@ -95,9 +176,14 @@ class LatchingMCMC(pymc.MCMC):
         # Record start time
         start = time.time()
         
-        open_constraints = filter(lambda x:x.penalty_value != 0, self.constraints)
-        all_closed = None
-        i=-1
+        open_constraints = filter(lambda x:x.isopen, self.constraints)
+        if len(open_constraints)==0:
+            all_closed = self._current_iter
+            i=self._current_iter
+        else:
+            i=-1
+            all_closed=None
+
 
         try:
             while i < self._iter and not self.status == 'halt':
@@ -115,8 +201,7 @@ class LatchingMCMC(pymc.MCMC):
                     if len(open_constraints)==0:
                         all_closed = self._current_iter
                         i=0
-                        if self.verbose > 0:
-                            print 'All constraints closed!'
+                        print 'All constraints closed at iteration %i'%self._current_iter
                     if self.verbose > 1:
                         self.print_constraints()
             

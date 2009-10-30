@@ -20,7 +20,6 @@ from mpl_toolkits import basemap
 b = basemap.Basemap(0,0,1,1)
 import pymc as pm
 import numpy as np
-from anopheles_query import Session
 from query_to_rec import *
 from env_data import *
 from mahalanobis_covariance import mahalanobis_covariance
@@ -33,16 +32,159 @@ from utils import bin_ubls
 import datetime
 import warnings
 import shapely
+import tables as tb
 
-__all__ = ['make_model', 'species_MCMC', 'probability_traces','potential_traces']
+__all__ = ['make_model', 'species_MCMC', 'probability_traces','potential_traces','threshold','invlogit', 'restore_species_MCMC']
 
 def bin_ubl_like(x, p_eval, p_find, breaks):
     "The ubl likelihood function, document this."
     return bin_ubls(x[0], x[0]+x[1]+x[2], p_find, breaks, p_eval)
 
-BinUBL = pm.stochastic_from_dist('BinUBL', bin_ubl_like, mv=True)
+def identity(x):
+    return x
+
+def threshold(f):
+    return f > 0
     
-def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}, n_in=1000, n_out=1000):
+def invlogit(f):
+    return pm.flib.invlogit(f.ravel()).reshape(f.shape)
+
+class LRP(object):
+    """A closure that can evaluate a low-rank field."""
+    def __init__(self, f, x_fr, C, krige_wt, f2p):
+        self.f = f
+        self.x_fr = x_fr
+        self.C = C
+        self.krige_wt = krige_wt
+        self.f2p = f2p
+    def __call__(self, x, f2p=None, offdiag = None):
+        if f2p is None:
+            f2p = self.f2p
+        if offdiag is None:
+            x_ = x.reshape(-1,x.shape[-1])
+            x__ = x_[:,:2].reshape(x.shape[:-1]+(2,))
+            offdiag = np.dot(np.asarray(self.C(x__,self.x_fr)), self.krige_wt).reshape(x.shape[:-1])
+        out = offdiag + self.f(x)
+        return f2p(out)
+
+class LRP_norm(LRP):
+    """
+    A closure that can evaluate a low-rank field.
+
+    Normalizes the third argument onward.
+    """
+    def __init__(self, f, x_fr, C, krige_wt, means, stds, f2p):
+        LRP.__init__(self, f, x_fr, C, krige_wt, f2p)
+        self.means = means
+        self.stds = stds
+
+    def __call__(self, x, f2p=None, offdiag=None):
+        x_norm = normalize_env(x, self.means, self.stds)
+        return LRP.__call__(self, x_norm.reshape(x.shape),f2p,offdiag)
+        
+
+BinUBL = pm.stochastic_from_dist('BinUBL', bin_ubl_like, mv=True)
+
+class DelayedMetropolis(pm.Metropolis):
+
+    def __init__(self, stochastic, sleep_interval=1, *args, **kwargs):
+        self._index = -1        
+        self.sleep_interval = sleep_interval
+        pm.Metropolis.__init__(self, stochastic, *args, **kwargs)
+
+    def step(self):
+        self._index += 1
+        if self._index % self.sleep_interval == 0:
+            pm.Metropolis.step(self)    
+
+class SubsetMetropolis(DelayedMetropolis):
+
+    def __init__(self, stochastic, index, interval, sleep_interval=1, *args, **kwargs):
+        self.index = index
+        self.interval = interval
+        DelayedMetropolis.__init__(self, stochastic, sleep_interval, *args, **kwargs)
+
+    def propose(self):
+        """
+        This method proposes values for stochastics based on the empirical
+        covariance of the values sampled so far.
+
+        The proposal jumps are drawn from a multivariate normal distribution.
+        """
+
+        newval = self.stochastic.value.copy()
+        newval[self.index:self.index+self.interval] += np.random.normal(size=self.interval) * self.proposal_sd[self.index:self.index+self.interval]*self.adaptive_scale_factor
+        self.stochastic.value = newval
+
+def gramschmidt(v):
+    m = np.eye(len(v))[:,:-1]
+    for i in xrange(len(v)-1):
+        m[:,i] -= v*v[i]
+        for j in xrange(0,i):
+            m[:,i] -= m[:,j]*np.dot(m[:,i],m[:,j])
+        m[:,i] /= np.sqrt(np.sum(m[:,i]**2))
+    return m
+
+class RayMetropolis(pm.StepMethod):
+    """
+    Approximately Gibbs samples along a randomly-selected ray.
+    Always has the option to maintain current state.
+    """
+    def __init__(self, stochastic):
+        self.stochastic = stochastic
+        self.v = 1./self.stochastic.parents['tau']
+        self.m = self.stochastic.parents['mu']
+        self.n = len(self.stochastic.value)
+        pm.StepMethod.__init__(self, [stochastic])
+        
+    def step(self):
+        
+        self.logp_plus_loglike
+        v = pm.value(self.v)
+        m = pm.value(self.m)
+        val = self.stochastic.value
+        
+        # Choose a direction along which to step.
+        dirvec = np.random.normal(size=self.n)
+        dirvec /= np.sqrt(np.sum(dirvec**2))
+        
+        # Orthogonalize
+        orthoproj = gramschmidt(dirvec)
+        scaled_orthoproj = v*orthoproj.T
+        pck = np.dot(dirvec, scaled_orthoproj.T)
+        kck = np.linalg.inv(np.dot(scaled_orthoproj,orthoproj))
+        pckkck = np.dot(pck,kck)
+
+        # Figure out conditional variance
+        condvar = np.dot(dirvec, dirvec*v) - np.dot(pck, pckkck)
+        # condmean = np.dot(dirvec, m) + np.dot(pckkck, np.dot(orthoproj.T, (val-m)))
+        
+        # Compute slice of log-probability surface
+        tries = np.linspace(-4*np.sqrt(condvar), 4*np.sqrt(condvar), 501)
+        lps = 0*tries
+        
+        for i in xrange(len(tries)):
+            new_val = val + tries[i]*dirvec
+            self.stochastic.value = new_val
+            try:
+                lps[i] = self.logp_plus_loglike
+            except pm.ZeroProbability:
+                lps[i] = -np.inf              
+        if np.all(np.isinf(lps)):
+            raise ValueError, 'All -inf.'
+        lps -= pm.flib.logsum(lps[True-np.isinf(lps)])          
+        ps = np.exp(lps)
+        
+        index = pm.rcategorical(ps)
+        new_val = val + tries[index]*dirvec
+        
+        self.stochastic.value = new_val
+
+def mod_expo(x,y,amp,scale,symm=False):
+    """Matern with the mean integrated out."""
+    return pm.gp.exponential.geo_rad(x,y,amp=amp,scale=scale,symm=symm)+1
+    
+def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}, n_in=1000, n_out=1000, f2p=threshold):
     """
     Generates a PyMC probability model with a plug-in spatial submodel.
     The likelihood and expert-opinion layers are common.
@@ -89,13 +231,70 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     p_find = pm.Uniform('p_find',0,1)
     # p_find = pm.Uniform('p_find',.9,1)
     spatial_variables = spatial_submodel(**locals())
-    p = spatial_variables['p']
+    f = spatial_variables['f']
+        
+    # =======================
+    # = Correlated 'nugget' =
+    # =======================
+    scale = pm.Uniform('scale',.01,100,value=.1,observed=False)
     
-    # ==============
-    # = Likelihood =
-    # ==============
+    # @pm.deterministic
+    # def C(scale=scale):
+    #     return pm.gp.FullRankCovariance(mod_expo, amp=1, scale=scale)
+    
+    # diff_degree = pm.Uniform('diff_degree',0,3,value=2)
+    @pm.deterministic
+    def C(scale=scale):
+        return pm.gp.FullRankCovariance(pm.gp.matern.geo_rad, amp=1, scale=scale, diff_degree=2)
 
+    full_x_in = np.hstack((pts_in, env_in))
+    full_x_out = np.hstack((pts_out, env_out))
+    full_x_eo = np.vstack((full_x_in, full_x_out))
+    x_eo = np.vstack((pts_in, pts_out))
+    
+    x_fr = x_eo[::5]
+    full_x_fr = full_x_eo[::5]
+    # x_fr = x_eo
+    # full_x_fr = full_x_eo
+
+
+    @pm.deterministic(trace=False)
+    def U_fr(C=C, x=x_fr):
+        try:
+            return C.cholesky(x)
+        except np.linalg.LinAlgError:
+            return None
+    
+    @pm.potential
+    def rank_check(U=U_fr):
+        if U is None:
+            return -np.inf
+        else:
+            return 0.
+    
+    L_fr = pm.Lambda('L',lambda U=U_fr: U.T, trace=False)
+    
+    # Evaluation of field at expert-opinion points
+    init_val = np.ones(len(x_fr))*.1
+    init_val[:len(pts_in)] = 1
+    # init_val = None
+    
+    f_fr = pm.MvNormalChol('f_fr', np.zeros(len(x_fr)), L_fr, value=init_val)
+    
+    @pm.deterministic(trace=False)
+    def krige_wt(f_fr=f_fr, U_fr=U_fr):
+        if U_fr.shape == f_fr.shape*2:
+            return pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
+        else:
+            return None
+    
+    p = pm.Lambda('p', lambda f=f, x_fr=x_fr, C=C, krige_wt=krige_wt, means=env_means, stds=env_stds, f2p=f2p: LRP_norm(f, x_fr, C, krige_wt, means, stds, f2p))
+    
     if with_data:
+        
+        # ==============
+        # = Likelihood =
+        # ==============
         
         breaks, x, found, zero, others_found, multipoints = sites_as_ndarray(session, species)
         
@@ -106,25 +305,44 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
             env_x = np.array([extract_environment(n, x * 180./np.pi) for n in env_variables]).T
         else:
             env_x = np.empty((len(x),0))
-
-        p_eval = p(np.hstack((x, env_x)))
+        env_x_wherefound = env_x[wherefound]            
+    
+        offdiag_eval = pm.Lambda('offdiag_eval', lambda C=C, krige_wt=krige_wt: np.dot(np.asarray(C(x,x_fr)), krige_wt).ravel(), trace=False)
+        p_eval = pm.Lambda('p_eval', lambda p=p, od=offdiag_eval: p(np.hstack((x, env_x)), offdiag=od), trace=False)        
         
+        offdiag_wherefound = pm.Lambda('offdiag_wherefound', lambda C=C, krige_wt=krige_wt: np.dot(np.asarray(C(x_wherefound,x_fr)), krige_wt).ravel(), trace=False)
+        f_eval_wherefound = pm.Lambda('f_eval_wherefound', lambda p=p, od=offdiag_wherefound: p(np.hstack((x_wherefound, env_x_wherefound)), offdiag=od, f2p=identity), trace=False)
+        
+        constraint_dict = {'data': Constraint(penalty_value = -1e100, logp=lambda f: -np.sum(f*(f<0)), doc="", name='data_constraint', parents={'f':f_eval_wherefound})}
+    
         if multipoints:
             # FIXME: This will probably error out due to the new shape-checking in PyMC.
-            data = pm.robust_init(BinUBL, 100, 'data', p_eval=p_eval, p_find=p_find, breaks=breaks, value=[found, others_found, zero], observed=True, trace=False)
+            # data = pm.robust_init(BinUBL, 100, 'data', p_eval=p_eval, p_find=p_find, breaks=breaks, value=[found, others_found, zero], observed=True, trace=False)
+            raise NotImplementedError
         else:
-            data = pm.Binomial('data', n=found+others_found+zero, p=p_eval*p_find, value=found, observed=True, trace=False)
+            pass
+            # ===================================================================================
+            # = NB: Data is now created by species_MCMC after all constraints have been closed! =
+            # ===================================================================================
+            # data = pm.Binomial('data', n=found+others_found+zero, p=p_eval*p_find, value=found, observed=True, trace=False)
             # data = pm.robust_init(pm.Binomial, 100, 'data', n=found+others_found+zero, p=p_eval*p_find, value=found, observed=True, trace=False)
     
     if with_eo:
         
         # ==============================
         # = Expert-opinion likelihoods =
-        # ==============================        
-
-        p_eval_in = pm.Lambda('p_eval_in', lambda p=p, x=pts_in, e=env_in: p(np.hstack((x, e))))
-        p_eval_out = pm.Lambda('p_eval_out', lambda p=p, x=pts_out, e=env_out: p(np.hstack((x, e))))
-        p_eval_eo = pm.Lambda('p_eval_eo', lambda p_eval_in=p_eval_in, p_eval_out=p_eval_out: np.concatenate((p_eval_in,p_eval_out)))
+        # ==============================
+        
+        offdiag_in = pm.Lambda('offdiag_in', lambda C=C, krige_wt=krige_wt: np.dot(np.asarray(C(pts_in,x_fr)), krige_wt).ravel(), trace=False)
+        offdiag_out = pm.Lambda('offdiag_out', lambda C=C, krige_wt=krige_wt: np.dot(np.asarray(C(pts_out,x_fr)), krige_wt).ravel(), trace=False)
+        f_eval_in = pm.Lambda('f_eval_in', lambda p=p, od=offdiag_in: p(full_x_in, f2p=identity, offdiag=od), trace=False)
+        f_eval_out = pm.Lambda('f_eval_out', lambda p=p, od=offdiag_out: p(full_x_out, f2p=identity, offdiag=od), trace=False)   
+        f_eval_eo = pm.Lambda('f_eval_eo', lambda f_eval_in=f_eval_in, f_eval_out=f_eval_out: np.concatenate((f_eval_in,f_eval_out)), trace=False)
+    
+        p_eval_in = pm.Lambda('p_eval_in', lambda f=f_eval_in, f2p=f2p: f2p(f), trace=False)
+        p_eval_out = pm.Lambda('p_eval_out', lambda f=f_eval_out, f2p=f2p: f2p(f), trace=False)        
+        p_eval_eo = pm.Lambda('p_eval_eo', lambda p_eval_in=p_eval_in, p_eval_out=p_eval_out: np.concatenate((p_eval_in,p_eval_out)), trace=False)
+    
         in_prob = pm.Lambda('in_prob', lambda p_eval = p_eval_in: np.mean(p_eval)*.9999+.00005)
         out_prob = pm.Lambda('out_prob', lambda p_eval = p_eval_out: np.mean(p_eval)*.9999+.00005)    
         
@@ -140,8 +358,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         @pm.potential
         def in_factor(a=alpha_in, b=beta_in, p=in_prob):
             return pm.beta_like(p,a,b)
-    
-
+        
         # ========================
         # = Hard expert opinions =
         # ========================
@@ -151,9 +368,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         env_dict = dict(zip(env_variables,env_x.T))
         env_dict_eo = dict(zip(env_variables,env_eo.T))
         
-        constraint_dict = {}
-        p_wherefound = np.ones(len(wherefound[0]))
-        p_in_eo = np.ones(n_in)
+        f_wherefound = np.ones(len(wherefound[0]))
+        f_in_eo = np.ones(n_in)
         for k in constraint_fns.iterkeys():
             if k=='location':
                 x_constraint = x
@@ -163,21 +379,20 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
                 x_constraint_eo = env_dict_eo[k]
             
             # Make mighty sure that the constraint is satisfied at all datapoints.
-            constraint_wherefound = constraint_fns[k](x=x_constraint[wherefound], p=p_wherefound)
+            constraint_wherefound = constraint_fns[k](x=x_constraint[wherefound], f=f_wherefound)
             if constraint_wherefound>0:
                 raise ValueError, 'Constraint function %s with input variable %s is violated the following locations where %s was found: \n%s' %\
                                     (constraint_fns[k].__name__, k, species[1], x_wherefound[np.where(constraint_wherefound>0)]*180./np.pi)
                                     
             # Make kind of sure that the constraint is satisfied in most of the expert opinion region.
-            constraint_in_eo = constraint_fns[k](x=x_constraint_eo[:n_in], p=p_in_eo)
+            constraint_in_eo = constraint_fns[k](x=x_constraint_eo[:n_in], f=f_in_eo)
             if constraint_in_eo>0:
                 warnings.warn('Constraint function %s with input variable %s is violated on %f of the expert opinion region for %s.' %\
                                     (constraint_fns[k].__name__, k, constraint_in_eo/float(n_in), species[1]))
             
             # Make sure the constraint doesn't get violated in the range of the species.
-            constraint_dict[k] = Constraint(penalty_value = -1e100, logp=constraint_fns[k], doc="", name='%s_constraint'%k, parents={'x': x_constraint_eo, 'p': p_eval_eo})
+            constraint_dict[k] = Constraint(penalty_value = -1e100, logp=constraint_fns[k], doc="", name='%s_constraint'%k, parents={'x': x_constraint_eo, 'f': f_eval_eo})
 
-        
     out = locals()
     out.update(spatial_variables)
     return out
@@ -202,19 +417,83 @@ def potential_traces(M, in_or_out = 'in'):
     import pylab as pl
     pl.plot(a/(a+b))
 
-def species_MCMC(session, species, spatial_submodel, db=None, **kwds):
+def species_stepmethods(M, interval=None, sleep_interval=1):
+    """
+    Adds appropriate step methods to M.
+    """
+    bases = filter(lambda x: isinstance(x, OrthogonalBasis), M.stochastics)
+    nonbases = set(filter(lambda x: True-isinstance(x, OrthogonalBasis), M.stochastics))
+
+    for alone in [M.f_fr, M.alpha_in, M.alpha_out, M.beta_in, M.beta_out, M.p_find, M.scale]:
+        nonbases.discard(alone)
+    
+    M.use_step_method(DelayedMetropolis, M.scale, sleep_interval)
+    
+    if interval is not None:
+        for i in xrange(0,len(M.f_fr.value),interval):
+            M.use_step_method(SubsetMetropolis, M.f_fr, i, interval, sleep_interval)
+    else:
+        M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape)}, delay=2000)
+
+    M.use_step_method(RayMetropolis, M.val)
+    # nonbases = list(nonbases)
+    # am_scales = dict(zip(nonbases, [np.ones(nb.value.shape)*.0001 for nb in nonbases]))
+    # M.use_step_method(pm.AdaptiveMetropolis, nonbases, scales=am_scales, delay=10000)
+
+    for b in bases:
+        M.use_step_method(GivensStepper, b)    
+
+def restore_species_MCMC(session, dbpath):
+    db = pm.database.hdf5.load(dbpath)
+    metadata = db._h5file.root.metadata[0]
+    model = make_model(session, **metadata)        
+    M=LatchingMCMC(model, db=db)
+    species_stepmethods(M, interval=5)
+    M.restore_sampler_state
+    M.restore_sm_state
+    M.__dict__.update(metadata)
+    return M
+
+def species_MCMC(session, species, spatial_submodel, **kwds):
     print 'Environment variables: ',kwds['env_variables']
     print 'Constraints: ',kwds['constraint_fns']
     print 'Spatial submodel: ',spatial_submodel.__name__
-    if db is None:
-        M=LatchingMCMC(make_model(session, species, spatial_submodel, **kwds), db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
-    else:
-        M=LatchingMCMC(make_model(session, species, spatial_submodel, **kwds), db=db)
-    scalar_stochastics = filter(lambda s: np.prod(np.shape(s.value))<=1, M.stochastics)
-    if spatial_submodel.__name__ == 'lr_spatial':    
-        M.use_step_method(MVNLRParentMetropolis, scalar_stochastics, M.f_fr, M.U, M.piv, M.rl)
-    bases = filter(lambda s: isinstance(s,OrthogonalBasis), M.stochastics)
-    [M.use_step_method(GivensStepper, b) for b in bases]
+    print 'Species: ',species[1]
+
+    model = make_model(session, species, spatial_submodel, **kwds)        
+    M=LatchingMCMC(model, db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
+    
+    hf = M.db._h5file
+    hf.createVLArray('/','metadata', atom=tb.ObjectAtom())
+    metadata = {}
+    metadata.update(kwds)
+    metadata['species']=species
+    metadata['spatial_submodel']=spatial_submodel
+    
+    hf.root.metadata.append(metadata)
+    
+    species_stepmethods(M, interval=None)        
+
+    print 'Attempting to satisfy constraints'
+    M.isample(1)
+
+    print 'Done, creating data object and returning'
+    found = model['found']
+    others_found = model['others_found']
+    zero = model['zero']
+    p_eval = model['p_eval']
+    p_find = model['p_find']
+    M.data = pm.Binomial('data', n=found+others_found+zero, p=p_eval*p_find, value=found, observed=True, trace=False)            
+
+    del M.step_methods
+    M._sm_assigned = False
+    M.step_method_dict = {}
+    for s in M.stochastics:
+        M.step_method_dict[s] = []
+
+    species_stepmethods(M, interval=50, sleep_interval=20)
+    # species_stepmethods(M, interval=None)
+    
     return M
 
 def mean_response_samples(M, axis, n, burn=0, thin=1):
@@ -253,87 +532,3 @@ def initialize_by_eo(M):
 # TODO: Evaluation metrics: kappa etc.
 # TODO: Figure out how to assess convergence even though there's degeneracy: can exchange axis labels in covariance prior and no problem.
 # TODO: Actually if there's convergence without reduction, you're fine.
-if __name__ == '__main__':
-    s = Session()
-    species = list_species(s)
-    
-    # m=make_model(s, species[1], spatial_hill, with_data=False)
-    # m=make_model(s, species[1], lr_spatial)
-    # M = pm.MCMC(m)
-    
-    from mpl_toolkits import basemap
-    import pylab as pl
-    species_num = 20
-    
-    pl.close('all')
-    
-    def elev_check(x,p):
-        return np.sum(p[np.where(x>2000)])
-    
-    def loc_check(x,p):
-        outside_lat = np.abs(x[:,1]*180./np.pi)>40
-        outside_lon = x[:,0]*180./np.pi > -20
-        return np.sum(p[np.where(outside_lat + outside_lon)])
-    
-    env = ['MODIS-hdf5/daytime-land-temp.mean.geographic.world.2001-to-2006',
-            'MODIS-hdf5/evi.mean.geographic.world.2001-to-2006',
-            'MODIS-hdf5/nighttime-land-temp.mean.geographic.world.2001-to-2006',
-            'MODIS-hdf5/raw-data.elevation.geographic.world.version-5']
-    mask, x, img_extent = make_covering_raster(100, env)
-    
-    # env = ['MAPdata/MARA','MAPdata/SCI']
-    # mask, x, img_extent = make_covering_raster(5, env)
-    
-    # cf = {'location':loc_check, 'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
-    # cf = {'MODIS-hdf5/raw-data.elevation.geographic.world.version-5':elev_check}
-    # cf = {'location'  :loc_check}
-    cf = {}
-    
-    spatial_submodel = nogp_spatial_env
-    n_in = n_out = 1000
-    
-    # spatial_submodel = lr_spatial_env
-    # n_in = n_out = 1000
-    
-    # spatial_submodel = spatial_env
-    # n_out = 400
-    # n_in = 100
-    
-    # TODO: Try an additive version to make it easier to satisfy spatial constraints.
-    
-    M = species_MCMC(s, species[species_num], spatial_submodel, with_eo = True, with_data = True, env_variables = env, constraint_fns=cf,n_in=n_in,n_out=n_out)
-    
-    M.assign_step_methods()
-    # sf=M.step_method_dict[M.f_fr][0]    
-    # ss=M.step_method_dict[M.p_find][0]
-    s = M.step_method_dict[M.ctr][0]
-        
-    M.isample(10000,0,10,verbose=0)
-    # 
-    # # mask, x, img_extent = make_covering_raster(2)
-    # # b = basemap.Basemap(*img_extent)
-    # # out = M.p.value(x)
-    # # arr = np.ma.masked_array(out, mask=True-mask)
-    # # b.imshow(arr.T, interpolation='nearest')
-    # # pl.colorbar()
-    # pl.figure()
-    # current_state_map(M, s, species[species_num], mask, x, img_extent, thin=100)
-    # pl.title('Final')
-    # pl.savefig('final.pdf')
-    # pl.figure()
-    # pl.plot(M.trace('out_prob')[:],'b-',label='out')
-    # pl.plot(M.trace('in_prob')[:],'r-',label='in')    
-    # pl.legend(loc=0)
-    # 
-    # pl.figure()
-    # out, arr = presence_map(M, s, species[species_num], thin=100, burn=500, trace_thin=1)
-    # # pl.figure()
-    # # x_disp, samps = mean_response_samples(M, -1, 10, burn=100, thin=1)
-    # # for s in samps:
-    # #     pl.plot(x_disp, s)
-    # pl.savefig('prob.pdf')
-    # 
-    # # pl.figure()
-    # # p_atfound = probability_traces(M)
-    # # p_atnotfound = probability_traces(M,False)
-    # # pl.savefig('presence.pdf')

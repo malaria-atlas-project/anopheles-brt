@@ -3,12 +3,7 @@ import cov_prior
 from mahalanobis_covariance import *
 import pymc as pm
 
-__all__ = ['spatial_hill','hill_fn','hinge','step','lr_spatial','lr_spatial_env','MVNLRParentMetropolis','minimal_jumps','bookend','spatial_env','nogp_spatial_env']
-
-def threshold(f):
-    return f > 0
-def invlogit(f):
-    return pm.flib.invlogit(f.ravel()).reshape(f.shape)
+__all__ = ['spatial_hill','hill_fn','hinge','step','lr_spatial','lr_spatial_env','MVNLRParentMetropolis','minimal_jumps','bookend','spatial_env','nogp_spatial_env','normalize_env']
 
 def hinge(x, cp):
     "A MaxEnt hinge feature"
@@ -43,7 +38,7 @@ class hill_fn(object):
             ax=0
         else:
             ax=-1
-        return f2p(np.sum(tdev**2/self.val,axis=ax)*self.amp)
+        return np.sum(tdev**2/self.val,axis=ax)*self.amp
 
 
 def spatial_hill(**kerap):
@@ -155,9 +150,8 @@ class LRP(object):
         self.x_fr = x_fr
         self.C = C
         self.krige_wt = krige_wt
-        self.f2p = threshold
     def __call__(self, x):
-        return self.f2p(np.dot(np.asarray(self.C(x,self.x_fr)), self.krige_wt).reshape(x.shape[:-1]))
+        return np.dot(np.asarray(self.C(x,self.x_fr)), self.krige_wt).reshape(x.shape[:-1])
         
 def lr_spatial(rl=50,**stuff):
     """A low-rank spatial-only model."""
@@ -339,13 +333,8 @@ def spatial_env(**stuff):
 
 class RotatedLinearWithHill(object):
     """A closure used by nongp_spatial_env"""
-    def __init__(self,const,coefs,val,vec,ctr,norm_means,norm_stds,hillpower):
+    def __init__(self,val,vec,ctr,norm_means,norm_stds,hillpower):
 
-        # self.f2p = threshold
-        self.f2p = invlogit
-
-        self.coefs = coefs
-        self.const = const
         self.val = val
         self.vec = vec
         self.ctr = ctr
@@ -354,13 +343,13 @@ class RotatedLinearWithHill(object):
         self.hillpower=hillpower
 
     def __call__(self, x):
-        x_ = normalize_env(x,self.norm_means,self.norm_stds)
-        x__ = np.dot((x_.reshape(-1,x.shape[-1])-self.ctr),self.vec)/np.sqrt(self.val)
+        x_ = x
+        x__ = np.dot((x_.reshape(-1,x.shape[-1])[:,2:]-self.ctr),self.vec)
         
-        linpart = np.dot(x__, self.coefs)
-        quadpart = -np.sum((x__**2)**self.hillpower,axis=1)
+        quadpart = -np.sum((x__**2)*self.val,axis=1)**self.hillpower
         
-        out = self.f2p((linpart + quadpart + self.const).reshape(x.shape[:-1]))
+        out = quadpart.reshape(x.shape[:-1])
+
         if np.any(np.isnan(out)):
             raise ValueError  
         return out
@@ -368,30 +357,29 @@ class RotatedLinearWithHill(object):
 def nogp_spatial_env(**stuff):
     """A low-rank spatial-only model."""
 
-    pts_in = np.hstack((stuff['pts_in'],stuff['env_in']))
-    pts_out = np.hstack((stuff['pts_out'],stuff['env_out']))
-    x_eo = normalize_env(np.vstack((pts_in, pts_out)), stuff['env_means'], stuff['env_stds'])
-    x_fr = x_eo
-    rl = x_eo.shape[0]
-
     n_env = stuff['env_in'].shape[1]
 
-    const = pm.Uninformative('const',value=1)
-    coefs = pm.Normal('coefs',0,1,value=np.zeros(n_env+2))
+    # ctr = pm.Normal('ctr',np.zeros(n_env), np.ones(n_env), value=np.zeros(n_env),observed=False)
+    # ctr = np.zeros(n_env)
+    ctrs = [pm.Normal('ctr_%i'%i,0,1,value=0) for i in xrange(n_env)]
+    ctr = pm.Lambda('ctr',lambda c=ctrs: np.array(c))
     
-    @pm.stochastic
-    def ctr(value=np.zeros(n_env+2)):
-        "This makes the center uniformly distributed over the surface of the earth."
-        if value[0] < -np.pi or value[0] > np.pi or value[1] < -np.pi/2. or value[1] > np.pi/2.:
-            return -np.inf
-        return np.cos(value[1]) + pm.normal_like(value[2:],0,1)
+    # Encourage simplicity
+    baseval = pm.Exponential('baseval', .001, value=1, observed=False)
+    valpow = pm.Uniform('valpow',-10,0,value=-.01, observed=False)
+    # valbeta = pm.Lambda('valbeta',lambda baseval=baseval,valpow=valpow:baseval*np.arange(1,n_env+1)**valpow)
+    valV = pm.Lambda('valbeta',lambda baseval=baseval,valpow=valpow:baseval*np.arange(1,n_env+1)**valpow)
+    val = pm.Normal('val',np.zeros(n_env),1./valV,value=np.ones(n_env))
+    # vals = [pm.Normal('val_%i'%i,0,1./valV[i],value=0) for i in xrange(n_env)]
+    # val = pm.Lambda('val',lambda v=vals: np.array(v).ravel())
+    # val = pm.Exponential('val',valbeta,value=np.ones(n_env))
 
-    val = pm.Exponential('val', .001, size=(n_env+2),value=np.ones(n_env+2))
-    vec = cov_prior.OrthogonalBasis('vec',(n_env+2))
-    
-    hillpower = pm.Exponential('hillpower',.001,value=1)
-    # hillpower = 1.
+    vec = cov_prior.OrthogonalBasis('vec',(n_env),observed=False)
+    # vec = np.eye(n_env)
+    # hillpower = pm.Exponential('hillpower',.001,value=1,observed=True)
+    hillpower = 1
         
-    p = pm.Lambda('p', lambda coefs=coefs, const=const, bv = val, be=vec, ctr=ctr, hillpower=hillpower: RotatedLinearWithHill(const,coefs,bv,be,ctr,stuff['env_means'],stuff['env_stds'],hillpower))
+    f = pm.Lambda('f', lambda bv = val, be=vec, ctr=ctr, hillpower=hillpower: \
+                            RotatedLinearWithHill(bv,be,ctr,stuff['env_means'],stuff['env_stds'],hillpower))
 
     return locals()
