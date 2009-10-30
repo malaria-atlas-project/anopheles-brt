@@ -22,7 +22,7 @@ import pymc as pm
 import numpy as np
 from query_to_rec import *
 from env_data import *
-from mahalanobis_covariance import mahalanobis_covariance
+from mahalanobis_covariance import *
 from map_utils import multipoly_sample
 from mapping import *
 from spatial_submodels import *
@@ -47,41 +47,7 @@ def threshold(f):
     return f > 0
     
 def invlogit(f):
-    return pm.flib.invlogit(f.ravel()).reshape(f.shape)
-
-class LRP(object):
-    """A closure that can evaluate a low-rank field."""
-    def __init__(self, f, x_fr, C, krige_wt, f2p):
-        self.f = f
-        self.x_fr = x_fr
-        self.C = C
-        self.krige_wt = krige_wt
-        self.f2p = f2p
-    def __call__(self, x, f2p=None, offdiag = None):
-        if f2p is None:
-            f2p = self.f2p
-        if offdiag is None:
-            x_ = x.reshape(-1,x.shape[-1])
-            x__ = x_[:,:2].reshape(x.shape[:-1]+(2,))
-            offdiag = np.dot(np.asarray(self.C(x__,self.x_fr)), self.krige_wt).reshape(x.shape[:-1])
-        out = offdiag + self.f(x)
-        return f2p(out)
-
-class LRP_norm(LRP):
-    """
-    A closure that can evaluate a low-rank field.
-
-    Normalizes the third argument onward.
-    """
-    def __init__(self, f, x_fr, C, krige_wt, means, stds, f2p):
-        LRP.__init__(self, f, x_fr, C, krige_wt, f2p)
-        self.means = means
-        self.stds = stds
-
-    def __call__(self, x, f2p=None, offdiag=None):
-        x_norm = normalize_env(x, self.means, self.stds)
-        return LRP.__call__(self, x_norm.reshape(x.shape),f2p,offdiag)
-        
+    return pm.flib.invlogit(f.ravel()).reshape(f.shape)        
 
 BinUBL = pm.stochastic_from_dist('BinUBL', bin_ubl_like, mv=True)
 
@@ -179,10 +145,6 @@ class RayMetropolis(pm.StepMethod):
         new_val = val + tries[index]*dirvec
         
         self.stochastic.value = new_val
-
-def mod_expo(x,y,amp,scale,symm=False):
-    """Matern with the mean integrated out."""
-    return pm.gp.exponential.geo_rad(x,y,amp=amp,scale=scale,symm=symm)+1
     
 def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}, n_in=1000, n_out=1000, f2p=threshold):
     """
@@ -229,23 +191,6 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     # ==========
     
     p_find = pm.Uniform('p_find',0,1)
-    # p_find = pm.Uniform('p_find',.9,1)
-    spatial_variables = spatial_submodel(**locals())
-    f = spatial_variables['f']
-        
-    # =======================
-    # = Correlated 'nugget' =
-    # =======================
-    scale = pm.Uniform('scale',.01,100,value=.1,observed=False)
-    
-    # @pm.deterministic
-    # def C(scale=scale):
-    #     return pm.gp.FullRankCovariance(mod_expo, amp=1, scale=scale)
-    
-    # diff_degree = pm.Uniform('diff_degree',0,3,value=2)
-    @pm.deterministic
-    def C(scale=scale):
-        return pm.gp.FullRankCovariance(pm.gp.matern.geo_rad, amp=1, scale=scale, diff_degree=2)
 
     full_x_in = np.hstack((pts_in, env_in))
     full_x_out = np.hstack((pts_out, env_out))
@@ -254,41 +199,12 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     
     x_fr = x_eo[::5]
     full_x_fr = full_x_eo[::5]
-    # x_fr = x_eo
-    # full_x_fr = full_x_eo
 
-
-    @pm.deterministic(trace=False)
-    def U_fr(C=C, x=x_fr):
-        try:
-            return C.cholesky(x)
-        except np.linalg.LinAlgError:
-            return None
-    
-    @pm.potential
-    def rank_check(U=U_fr):
-        if U is None:
-            return -np.inf
-        else:
-            return 0.
-    
-    L_fr = pm.Lambda('L',lambda U=U_fr: U.T, trace=False)
-    
-    # Evaluation of field at expert-opinion points
-    init_val = np.ones(len(x_fr))*.1
-    init_val[:len(pts_in)] = 1
-    # init_val = None
-    
-    f_fr = pm.MvNormalChol('f_fr', np.zeros(len(x_fr)), L_fr, value=init_val)
-    
-    @pm.deterministic(trace=False)
-    def krige_wt(f_fr=f_fr, U_fr=U_fr):
-        if U_fr.shape == f_fr.shape*2:
-            return pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
-        else:
-            return None
-    
-    p = pm.Lambda('p', lambda f=f, x_fr=x_fr, C=C, krige_wt=krige_wt, means=env_means, stds=env_stds, f2p=f2p: LRP_norm(f, x_fr, C, krige_wt, means, stds, f2p))
+    spatial_variables = spatial_submodel(**locals())
+    p = spatial_variables['p']
+    f_fr = spatial_variables['f_fr']
+    val = spatial_variables['val']
+    vec = spatial_variables['vec']
     
     if with_data:
         
@@ -307,11 +223,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
             env_x = np.empty((len(x),0))
         env_x_wherefound = env_x[wherefound]            
     
-        offdiag_eval = pm.Lambda('offdiag_eval', lambda C=C, krige_wt=krige_wt: np.dot(np.asarray(C(x,x_fr)), krige_wt).ravel(), trace=False)
-        p_eval = pm.Lambda('p_eval', lambda p=p, od=offdiag_eval: p(np.hstack((x, env_x)), offdiag=od), trace=False)        
-        
-        offdiag_wherefound = pm.Lambda('offdiag_wherefound', lambda C=C, krige_wt=krige_wt: np.dot(np.asarray(C(x_wherefound,x_fr)), krige_wt).ravel(), trace=False)
-        f_eval_wherefound = pm.Lambda('f_eval_wherefound', lambda p=p, od=offdiag_wherefound: p(np.hstack((x_wherefound, env_x_wherefound)), offdiag=od, f2p=identity), trace=False)
+        p_eval = pm.Lambda('p_eval', lambda p=p: p(np.hstack((x, env_x))), trace=False)
+        f_eval_wherefound = pm.Lambda('f_eval_wherefound', lambda p=p: p(np.hstack((x_wherefound, env_x_wherefound)), f2p=identity), trace=False)
         
         constraint_dict = {'data': Constraint(penalty_value = -1e100, logp=lambda f: -np.sum(f*(f<0)), doc="", name='data_constraint', parents={'f':f_eval_wherefound})}
     
@@ -333,10 +246,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         # = Expert-opinion likelihoods =
         # ==============================
         
-        offdiag_in = pm.Lambda('offdiag_in', lambda C=C, krige_wt=krige_wt: np.dot(np.asarray(C(pts_in,x_fr)), krige_wt).ravel(), trace=False)
-        offdiag_out = pm.Lambda('offdiag_out', lambda C=C, krige_wt=krige_wt: np.dot(np.asarray(C(pts_out,x_fr)), krige_wt).ravel(), trace=False)
-        f_eval_in = pm.Lambda('f_eval_in', lambda p=p, od=offdiag_in: p(full_x_in, f2p=identity, offdiag=od), trace=False)
-        f_eval_out = pm.Lambda('f_eval_out', lambda p=p, od=offdiag_out: p(full_x_out, f2p=identity, offdiag=od), trace=False)   
+        f_eval_in = pm.Lambda('f_eval_in', lambda p=p: p(full_x_in, f2p=identity), trace=False)
+        f_eval_out = pm.Lambda('f_eval_out', lambda p=p: p(full_x_out, f2p=identity), trace=False)   
         f_eval_eo = pm.Lambda('f_eval_eo', lambda f_eval_in=f_eval_in, f_eval_out=f_eval_out: np.concatenate((f_eval_in,f_eval_out)), trace=False)
     
         p_eval_in = pm.Lambda('p_eval_in', lambda f=f_eval_in, f2p=f2p: f2p(f), trace=False)
@@ -424,10 +335,8 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
     bases = filter(lambda x: isinstance(x, OrthogonalBasis), M.stochastics)
     nonbases = set(filter(lambda x: True-isinstance(x, OrthogonalBasis), M.stochastics))
 
-    for alone in [M.f_fr, M.alpha_in, M.alpha_out, M.beta_in, M.beta_out, M.p_find, M.scale]:
+    for alone in [M.f_fr, M.alpha_in, M.alpha_out, M.beta_in, M.beta_out, M.p_find]:
         nonbases.discard(alone)
-    
-    M.use_step_method(DelayedMetropolis, M.scale, sleep_interval)
     
     if interval is not None:
         for i in xrange(0,len(M.f_fr.value),interval):
@@ -435,7 +344,7 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
     else:
         M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape)}, delay=2000)
 
-    M.use_step_method(RayMetropolis, M.val)
+    # M.use_step_method(RayMetropolis, M.val)
     # nonbases = list(nonbases)
     # am_scales = dict(zip(nonbases, [np.ones(nb.value.shape)*.0001 for nb in nonbases]))
     # M.use_step_method(pm.AdaptiveMetropolis, nonbases, scales=am_scales, delay=10000)

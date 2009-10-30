@@ -146,12 +146,15 @@ class MVNLRParentMetropolis(pm.AdaptiveMetropolis):
         
 class LRP(object):
     """A closure that can evaluate a low-rank field."""
-    def __init__(self, x_fr, C, krige_wt):
+    def __init__(self, x_fr, C, krige_wt, f2p):
         self.x_fr = x_fr
         self.C = C
         self.krige_wt = krige_wt
-    def __call__(self, x):
-        return np.dot(np.asarray(self.C(x,self.x_fr)), self.krige_wt).reshape(x.shape[:-1])
+        self.f2p = f2p
+    def __call__(self, x, f2p=None):
+        if f2p is None:
+            f2p = self.f2p
+        return f2p(np.dot(np.asarray(self.C(x,self.x_fr)), self.krige_wt).reshape(x.shape[:-1]))
         
 def lr_spatial(rl=50,**stuff):
     """A low-rank spatial-only model."""
@@ -209,14 +212,14 @@ class LRP_norm(LRP):
     
     Normalizes the third argument onward.
     """
-    def __init__(self, x_fr, C, krige_wt, means, stds):
-        LRP.__init__(self, x_fr, C, krige_wt)
+    def __init__(self, x_fr, C, krige_wt, means, stds, f2p):
+        LRP.__init__(self, x_fr, C, krige_wt, f2p)
         self.means = means
         self.stds = stds
 
-    def __call__(self, x):
+    def __call__(self, x,f2p=None):
         x_norm = normalize_env(x, self.means, self.stds)
-        return LRP.__call__(self, x_norm.reshape(x.shape))
+        return LRP.__call__(self, x_norm.reshape(x.shape), f2p)
 
 def shapecheck_mv_normal_chol_like(x,mu,sig):
     """blah"""
@@ -229,54 +232,55 @@ ShapecheckMvNormalChol = pm.stochastic_from_dist('shapecheck_mv_normal_chol', sh
 
 def lr_spatial_env(rl=200,**stuff):
     """A low-rank spatial-only model."""
-    # amp = pm.Exponential('amp',.1,value=10)
-    const_frac = pm.Uniform('const_frac',0,1,value=.1)
 
-    pts_in = np.hstack((stuff['pts_in'],stuff['env_in']))
-    pts_out = np.hstack((stuff['pts_out'],stuff['env_out']))
-    x_eo = normalize_env(np.vstack((pts_in, pts_out)), stuff['env_means'], stuff['env_stds'])
-    
     n_env = stuff['env_in'].shape[1]
+    x_fr = stuff['full_x_fr']
+    pts_in = stuff['pts_in']
+    f2p = stuff['f2p']
     
     # val = pm.Gamma('val',4,4,value=np.ones(n_env+1))
-    val = pm.Exponential('val',.01,value=np.ones(n_env+1))
-    vec = cov_prior.OrthogonalBasis('vec',n_env+1,constrain=True)
+    baseval = pm.Exponential('baseval', .001, value=1, observed=False)
+    valpow = pm.Uniform('valpow',-10,0,value=-.01, observed=False)
+    valmean = pm.Lambda('valmean',lambda baseval=baseval,valpow=valpow:baseval+np.arange(1,n_env+2)*valpow)
+    valV = pm.Exponential('valV',.01,value=1)
 
+    val = pm.Normal('val',valmean,1./valV,value=-np.ones(n_env+1))
+
+    const_frac = pm.Uniform('const_frac',0,1,value=.1)
+    expval = pm.Lambda('expval',lambda val=val:np.exp(val))    
+    vec = cov_prior.OrthogonalBasis('vec',n_env+1,constrain=True)
     @pm.deterministic
-    def C(val=val,vec=vec,const_frac=const_frac):
-        return pm.gp.Covariance(mod_spatial_mahalanobis, val=val, vec=vec, const_frac=const_frac)
+    def C(val=expval,vec=vec,const_frac=const_frac):
+        return pm.gp.FullRankCovariance(mod_spatial_mahalanobis, val=val, vec=vec, const_frac=const_frac)
 
     @pm.deterministic(trace=False)
-    def ichol(C=C, rl=rl, x=x_eo):
-        return C.cholesky(x, rank_limit=rl, apply_pivot=False)
-                
+    def U_fr(C=C, x=x_fr):
+        try:
+            return C.cholesky(x)
+        except np.linalg.LinAlgError:
+            return None
+
     @pm.potential
-    def rank_check(d=ichol):
-        if d['U'].shape[0]<rl:
+    def rank_check(U=U_fr):
+        if U is None:
             return -np.inf
         else:
             return 0.
-    
-    piv = pm.Lambda('piv', lambda d=ichol: d['pivots'])
-    U = pm.Lambda('U', lambda d=ichol: d['U'].view(np.ndarray), trace=False)
-    
-    U_fr = pm.Lambda('U_fr', lambda U=U, rl=rl: U[:,:rl], trace=False)
-    L_fr = pm.Lambda('L_fr', lambda U=U_fr: U.T, trace=False)
 
-    # Trace the full-rank locations
-    x_fr = pm.Lambda('x_fr', lambda d=ichol, rl=rl, x=x_eo: x[d['pivots'][:rl]])
+    L_fr = pm.Lambda('L',lambda U=U_fr: U.T, trace=False)
 
     # Evaluation of field at expert-opinion points
-    f_fr = ShapecheckMvNormalChol('f_fr', np.zeros(rl), L_fr, value=np.ones(rl)*2)
+    init_val = np.ones(len(x_fr))*.1
+    init_val[:len(pts_in)] = 1
+    # init_val = None
+
+    f_fr = pm.MvNormalChol('f_fr', np.zeros(len(x_fr)), L_fr, value=init_val)
 
     @pm.deterministic(trace=False)
     def krige_wt(f_fr=f_fr, U_fr=U_fr):
-        if U_fr.shape == f_fr.shape*2:
-            return pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
-        else:
-            return None
+        return pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
 
-    p = pm.Lambda('p', lambda x_fr=x_fr, C=C, krige_wt=krige_wt, means=stuff['env_means'], stds=stuff['env_stds']: LRP_norm(x_fr, C, krige_wt, means, stds))
+    p = pm.Lambda('p', lambda x_fr=x_fr, C=C, krige_wt=krige_wt, means=stuff['env_means'], stds=stuff['env_stds'], f2p=f2p: LRP_norm(x_fr, C, krige_wt, means, stds, f2p))
 
     return locals()
     
