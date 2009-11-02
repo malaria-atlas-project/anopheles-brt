@@ -230,21 +230,46 @@ def shapecheck_mv_normal_chol_like(x,mu,sig):
         
 ShapecheckMvNormalChol = pm.stochastic_from_dist('shapecheck_mv_normal_chol', shapecheck_mv_normal_chol_like, pm.rmv_normal_chol, mv=True)
 
+class fullcond_fr_sampler(object):
+    def __init__(self, x_fr, x_eo, n_in, n_out, C, vals_in, vals_out, nugget):
+        self.x_fr = x_fr
+        self.x_eo = x_eo
+        self.n_in = n_in
+        self.n_out = n_out
+        self.C = C
+        self.nugget = nugget
+        
+        self.U_eo = self.C.cholesky(self.x_eo, nugget=self.nugget*np.ones(self.n_in+self.n_out))
+        offdiag = self.C(self.x_eo, self.x_fr)
+        self.o_U_eo = pm.gp.trisolve(self.U_eo,offdiag,uplo='U',transa='T')
+        C_cond = self.C(self.x_fr, self.x_fr)-np.dot(self.o_U_eo.T,self.o_U_eo)
+        self.L_cond = np.linalg.cholesky(C_cond)
+        self.obs_val = np.concatenate((vals_in * np.ones(self.n_in), vals_out*np.ones(self.n_out)))
+        self.M_cond = np.dot(self.o_U_eo.T, pm.gp.trisolve(self.U_eo, self.obs_val, transa='T', uplo='U'))
+        
+    def __call__(self):
+        return np.asarray(self.M_cond + np.dot(self.L_cond, np.random.normal(size=self.x_fr.shape[0]))).ravel()
+        
+
 def lr_spatial_env(rl=200,**stuff):
     """A low-rank spatial-only model."""
 
     n_env = stuff['env_in'].shape[1]
-    x_fr = stuff['full_x_fr']
+    x_fr = normalize_env(stuff['full_x_fr'], stuff['env_means'], stuff['env_stds'])
     pts_in = stuff['pts_in']
     f2p = stuff['f2p']
     
     # val = pm.Gamma('val',4,4,value=np.ones(n_env+1))
-    baseval = pm.Exponential('baseval', .001, value=1, observed=False)
-    valpow = pm.Uniform('valpow',-10,0,value=-.01, observed=False)
+    baseval = pm.Exponential('baseval', .001, value=1, observed=True)
+    valpow = pm.Uniform('valpow',-10,0,value=-.01, observed=True)
     valmean = pm.Lambda('valmean',lambda baseval=baseval,valpow=valpow:baseval+np.arange(1,n_env+2)*valpow)
-    valV = pm.Exponential('valV',.01,value=1)
+    valV = pm.Exponential('valV',1,value=.1)
 
-    val = pm.Normal('val',valmean,1./valV,value=-np.ones(n_env+1))
+    val = pm.Normal('val',valmean,1./valV,value=np.concatenate(([-2],-1*np.ones(n_env))))
+
+    # vals = [pm.Normal('val_%i'%i,valmean[i],1./valV,value=-1) for i in xrange(n_env+1)]
+    # val = pm.Lambda('val',lambda v=vals: np.array(v).ravel())
+    
 
     const_frac = pm.Uniform('const_frac',0,1,value=.1)
     expval = pm.Lambda('expval',lambda val=val:np.exp(val))    
@@ -252,6 +277,14 @@ def lr_spatial_env(rl=200,**stuff):
     @pm.deterministic
     def C(val=expval,vec=vec,const_frac=const_frac):
         return pm.gp.FullRankCovariance(mod_spatial_mahalanobis, val=val, vec=vec, const_frac=const_frac)
+        
+    @pm.deterministic
+    def fullcond_sampler(C=C, vals_in=.5, vals_out=-.5, nugget=.1):
+        try:
+            return fullcond_fr_sampler(x_fr, normalize_env(stuff['full_x_eo'], stuff['env_means'], stuff['env_stds']),stuff['n_in'],stuff['n_out'],C,vals_in,vals_out,nugget)
+        except np.linalg.LinAlgError:
+            return None
+    
 
     @pm.deterministic(trace=False)
     def U_fr(C=C, x=x_fr):
@@ -271,7 +304,7 @@ def lr_spatial_env(rl=200,**stuff):
 
     # Evaluation of field at expert-opinion points
     init_val = np.ones(len(x_fr))*.1
-    init_val[:len(pts_in)] = 1
+    # init_val[:len(pts_in)] = 1
     # init_val = None
 
     f_fr = pm.MvNormalChol('f_fr', np.zeros(len(x_fr)), L_fr, value=init_val)

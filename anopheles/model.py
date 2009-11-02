@@ -63,12 +63,48 @@ class DelayedMetropolis(pm.Metropolis):
         if self._index % self.sleep_interval == 0:
             pm.Metropolis.step(self)    
 
+class KindOfConditional(pm.Metropolis):
+
+    def __init__(self, stochastic, cond_jumper):
+        pm.Metropolis.__init__(self, stochastic)
+        self.stochastic = stochastic
+        self.cond_jumper = cond_jumper
+        
+    def propose(self):        
+        if self.cond_jumper.value is None:
+            pass
+        else:
+            self.stochastic.value = self.cond_jumper.value()
+        
+    def hastings_factor(self):
+        if self.cond_jumper.value is not None:
+            for_factor = pm.mv_normal_chol_like(self.stochastic.value, self.cond_jumper.value.M_cond, self.cond_jumper.value.L_cond)
+            back_factor = pm.mv_normal_chol_like(self.stochastic.last_value, self.cond_jumper.value.M_cond, self.cond_jumper.value.L_cond)
+            return back_factor - for_factor
+        else:
+            return 0.
+                
+
+class MVNPriorMetropolis(pm.Metropolis):
+
+    def __init__(self, stochastic, L):
+        self.stochastic = stochastic
+        self.L = L
+        pm.Metropolis.__init__(self, stochastic)
+        self.adaptive_scale_factor = .001
+
+    def propose(self):
+        dev = pm.rmv_normal_chol(np.zeros(self.stochastic.value.shape), self.L.value)
+        dev *= self.adaptive_scale_factor
+        self.stochastic.value = self.stochastic.value + dev
+
 class SubsetMetropolis(DelayedMetropolis):
 
     def __init__(self, stochastic, index, interval, sleep_interval=1, *args, **kwargs):
         self.index = index
         self.interval = interval
         DelayedMetropolis.__init__(self, stochastic, sleep_interval, *args, **kwargs)
+        self.adaptive_scale_factor = .01
 
     def propose(self):
         """
@@ -91,60 +127,85 @@ def gramschmidt(v):
         m[:,i] /= np.sqrt(np.sum(m[:,i]**2))
     return m
 
-class RayMetropolis(pm.StepMethod):
+class RayMetropolis(DelayedMetropolis):
     """
     Approximately Gibbs samples along a randomly-selected ray.
     Always has the option to maintain current state.
     """
-    def __init__(self, stochastic):
-        self.stochastic = stochastic
+    def __init__(self, stochastic, sleep_interval=1):
+        DelayedMetropolis.__init__(self, stochastic, sleep_interval)
         self.v = 1./self.stochastic.parents['tau']
         self.m = self.stochastic.parents['mu']
         self.n = len(self.stochastic.value)
-        pm.StepMethod.__init__(self, [stochastic])
+        self.f_fr = None
+        self.other_children = set([])
+        for c in self.stochastic.extended_children:
+            if c.__class__ is pm.MvNormalChol:
+                self.f_fr = c
+            else:
+                self.other_children.add(c)
+        if self.f_fr is None:
+            raise ValueError, 'No f_fr'
         
     def step(self):
+        self._index += 1
+        if self._index % self.sleep_interval == 0:
+            
+            v = pm.value(self.v)
+            m = pm.value(self.m)
+            val = self.stochastic.value
+            lp = pm.logp_of_set(self.other_children)
         
-        self.logp_plus_loglike
-        v = pm.value(self.v)
-        m = pm.value(self.m)
-        val = self.stochastic.value
+            # Choose a direction along which to step.
+            dirvec = np.random.normal(size=self.n)
+            dirvec /= np.sqrt(np.sum(dirvec**2))
         
-        # Choose a direction along which to step.
-        dirvec = np.random.normal(size=self.n)
-        dirvec /= np.sqrt(np.sum(dirvec**2))
-        
-        # Orthogonalize
-        orthoproj = gramschmidt(dirvec)
-        scaled_orthoproj = v*orthoproj.T
-        pck = np.dot(dirvec, scaled_orthoproj.T)
-        kck = np.linalg.inv(np.dot(scaled_orthoproj,orthoproj))
-        pckkck = np.dot(pck,kck)
+            # Orthogonalize
+            orthoproj = gramschmidt(dirvec)
+            scaled_orthoproj = v*orthoproj.T
+            pck = np.dot(dirvec, scaled_orthoproj.T)
+            kck = np.linalg.inv(np.dot(scaled_orthoproj,orthoproj))
+            pckkck = np.dot(pck,kck)
 
-        # Figure out conditional variance
-        condvar = np.dot(dirvec, dirvec*v) - np.dot(pck, pckkck)
-        # condmean = np.dot(dirvec, m) + np.dot(pckkck, np.dot(orthoproj.T, (val-m)))
+            # Figure out conditional variance
+            condvar = np.dot(dirvec, dirvec*v) - np.dot(pck, pckkck)
+            # condmean = np.dot(dirvec, m) + np.dot(pckkck, np.dot(orthoproj.T, (val-m)))
         
-        # Compute slice of log-probability surface
-        tries = np.linspace(-4*np.sqrt(condvar), 4*np.sqrt(condvar), 501)
-        lps = 0*tries
+            # Compute slice of log-probability surface
+            tries = np.linspace(-4*np.sqrt(condvar), 4*np.sqrt(condvar), 501)
+            lps = 0*tries
         
-        for i in xrange(len(tries)):
-            new_val = val + tries[i]*dirvec
+            for i in xrange(len(tries)):
+                new_val = val + tries[i]*dirvec
+                self.stochastic.value = new_val
+                try:
+                    lps[i] = self.f_fr.logp + self.stochastic.logp
+                except pm.ZeroProbability:
+                    lps[i] = -np.inf              
+            if np.all(np.isinf(lps)):
+                raise ValueError, 'All -inf.'
+            lps -= pm.flib.logsum(lps[True-np.isinf(lps)])          
+            ps = np.exp(lps)
+        
+            index = pm.rcategorical(ps)
+            new_val = val + tries[index]*dirvec
             self.stochastic.value = new_val
+            
             try:
-                lps[i] = self.logp_plus_loglike
+                lpp = pm.logp_of_set(self.other_children)
+                if np.log(np.random.random()) < lpp - lp:
+                    self.accepted += 1
+                else:
+                    self.stochastic.value = val
+                    self.rejected += 1
+                    
             except pm.ZeroProbability:
-                lps[i] = -np.inf              
-        if np.all(np.isinf(lps)):
-            raise ValueError, 'All -inf.'
-        lps -= pm.flib.logsum(lps[True-np.isinf(lps)])          
-        ps = np.exp(lps)
+                self.stochastic.value = val
+                self.rejected += 1
+        self.logp_plus_loglike
         
-        index = pm.rcategorical(ps)
-        new_val = val + tries[index]*dirvec
-        
-        self.stochastic.value = new_val
+
+
     
 def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}, n_in=1000, n_out=1000, f2p=threshold):
     """
@@ -197,8 +258,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     full_x_eo = np.vstack((full_x_in, full_x_out))
     x_eo = np.vstack((pts_in, pts_out))
     
-    x_fr = x_eo[::5]
-    full_x_fr = full_x_eo[::5]
+    x_fr = x_eo[::100]
+    full_x_fr = full_x_eo[::100]
 
     spatial_variables = spatial_submodel(**locals())
     p = spatial_variables['p']
@@ -341,17 +402,22 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
     if interval is not None:
         for i in xrange(0,len(M.f_fr.value),interval):
             M.use_step_method(SubsetMetropolis, M.f_fr, i, interval, sleep_interval)
-    else:
-        M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape)}, delay=2000)
-
-    # M.use_step_method(RayMetropolis, M.val)
+            
+    M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape)}, delay=2000)
+    M.use_step_method(MVNPriorMetropolis, M.f_fr, M.L_fr)
+    M.use_step_method(pm.AdaptiveMetropolis, M.val)
+    M.use_step_method(pm.Metropolis,M.val)
+    
+    # M.use_step_method(KindOfConditional, M.f_fr, M.fullcond_sampler)
+    M.use_step_method(RayMetropolis, M.val, sleep_interval)
+    
     # nonbases = list(nonbases)
     # am_scales = dict(zip(nonbases, [np.ones(nb.value.shape)*.0001 for nb in nonbases]))
-    # M.use_step_method(pm.AdaptiveMetropolis, nonbases, scales=am_scales, delay=10000)
+    # M.use_step_method(pm.AdaptiveMetropolis, nonbases, scales=am_scales, delay=2000)
 
     for b in bases:
         M.use_step_method(GivensStepper, b)    
-
+    
 def restore_species_MCMC(session, dbpath):
     db = pm.database.hdf5.load(dbpath)
     metadata = db._h5file.root.metadata[0]
@@ -381,8 +447,10 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     
     hf.root.metadata.append(metadata)
     
-    species_stepmethods(M, interval=None)        
+    # species_stepmethods(M, interval=None)        
+    species_stepmethods(M, interval=2, sleep_interval=50)
 
+    M.f_fr.value = M.fullcond_sampler.value()
     print 'Attempting to satisfy constraints'
     M.isample(1)
 
@@ -400,8 +468,16 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     for s in M.stochastics:
         M.step_method_dict[s] = []
 
-    species_stepmethods(M, interval=50, sleep_interval=20)
-    # species_stepmethods(M, interval=None)
+    species_stepmethods(M, interval=2, sleep_interval=50)
+
+    # Make sure data_constraint is evaluated before data likelihood, to avoid as meany heavy computations as possible.
+    M.assign_step_methods()
+    for sm in M.step_methods:
+        for i in xrange(len(sm.markov_blanket)):
+            if sm.markov_blanket[i] is M.data:
+                sm.markov_blanket.append(M.data)
+                sm.markov_blanket.pop(i)
+    
     
     return M
 
