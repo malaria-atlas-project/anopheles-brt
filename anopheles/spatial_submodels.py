@@ -151,10 +151,12 @@ class LRP(object):
         self.C = C
         self.krige_wt = krige_wt
         self.f2p = f2p
-    def __call__(self, x, f2p=None):
+    def __call__(self, x, f2p=None, offdiag=None):
         if f2p is None:
             f2p = self.f2p
-        return f2p(np.dot(np.asarray(self.C(x,self.x_fr)), self.krige_wt).reshape(x.shape[:-1]))
+        if offdiag is None:
+            offdiag = self.C(x,self.x_fr)
+        return f2p(np.dot(np.asarray(offdiag), self.krige_wt).reshape(x.shape[:-1]))
         
 def lr_spatial(rl=50,**stuff):
     """A low-rank spatial-only model."""
@@ -217,9 +219,9 @@ class LRP_norm(LRP):
         self.means = means
         self.stds = stds
 
-    def __call__(self, x,f2p=None):
+    def __call__(self, x,f2p=None,offdiag=None):
         x_norm = normalize_env(x, self.means, self.stds)
-        return LRP.__call__(self, x_norm.reshape(x.shape), f2p)
+        return LRP.__call__(self, x_norm.reshape(x.shape), f2p,offdiag)
 
 def shapecheck_mv_normal_chol_like(x,mu,sig):
     """blah"""

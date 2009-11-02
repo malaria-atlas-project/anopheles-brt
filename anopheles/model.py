@@ -266,6 +266,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     f_fr = spatial_variables['f_fr']
     val = spatial_variables['val']
     vec = spatial_variables['vec']
+    C = spatial_variables['C']
     
     if with_data:
         
@@ -283,9 +284,11 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         else:
             env_x = np.empty((len(x),0))
         env_x_wherefound = env_x[wherefound]            
-    
-        p_eval = pm.Lambda('p_eval', lambda p=p: p(np.hstack((x, env_x))), trace=False)
-        f_eval_wherefound = pm.Lambda('f_eval_wherefound', lambda p=p: p(np.hstack((x_wherefound, env_x_wherefound)), f2p=identity), trace=False)
+        
+        od_data = C(np.hstack((x, env_x)), full_x_fr)
+        od_wherefound = od_data[wherefound]
+        p_eval = pm.Lambda('p_eval', lambda p=p, od=od_data: p(np.hstack((x, env_x)), offdiag=od), trace=False)
+        f_eval_wherefound = pm.Lambda('f_eval_wherefound', lambda p=p, od=od_wherefound: p(np.hstack((x_wherefound, env_x_wherefound)), f2p=identity, offdiag=od), trace=False)
         
         constraint_dict = {'data': Constraint(penalty_value = -1e100, logp=lambda f: -np.sum(f*(f<0)), doc="", name='data_constraint', parents={'f':f_eval_wherefound})}
     
@@ -306,9 +309,10 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         # ==============================
         # = Expert-opinion likelihoods =
         # ==============================
-        
-        f_eval_in = pm.Lambda('f_eval_in', lambda p=p: p(full_x_in, f2p=identity), trace=False)
-        f_eval_out = pm.Lambda('f_eval_out', lambda p=p: p(full_x_out, f2p=identity), trace=False)   
+        od_in = C(full_x_in, full_x_fr)
+        od_out = C(full_x_out, full_x_fr)
+        f_eval_in = pm.Lambda('f_eval_in', lambda p=p, od=od_in: p(full_x_in, f2p=identity, offdiag=od), trace=False)
+        f_eval_out = pm.Lambda('f_eval_out', lambda p=p, od=od_out: p(full_x_out, f2p=identity, offdiag=od), trace=False)   
         f_eval_eo = pm.Lambda('f_eval_eo', lambda f_eval_in=f_eval_in, f_eval_out=f_eval_out: np.concatenate((f_eval_in,f_eval_out)), trace=False)
     
         p_eval_in = pm.Lambda('p_eval_in', lambda f=f_eval_in, f2p=f2p: f2p(f), trace=False)
@@ -448,7 +452,7 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     hf.root.metadata.append(metadata)
     
     # species_stepmethods(M, interval=None)        
-    species_stepmethods(M, interval=20, sleep_interval=50)
+    species_stepmethods(M, interval=20, sleep_interval=20)
 
     M.f_fr.value = M.fullcond_sampler.value()
     print 'Attempting to satisfy constraints'
@@ -468,7 +472,7 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     for s in M.stochastics:
         M.step_method_dict[s] = []
 
-    species_stepmethods(M, interval=20, sleep_interval=50)
+    species_stepmethods(M, interval=20, sleep_interval=20)
 
     # Make sure data_constraint is evaluated before data likelihood, to avoid as meany heavy computations as possible.
     M.assign_step_methods()
@@ -477,7 +481,6 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
             if sm.markov_blanket[i] is M.data:
                 sm.markov_blanket.append(M.data)
                 sm.markov_blanket.pop(i)
-    
     
     return M
 
@@ -512,8 +515,3 @@ def initialize_by_eo(M):
     new_val[M.piv.value[:M.rl]] = new_val_fr
     new_val[M.piv.value[M.rl:]] = new_val_d
     M.f_eo.value = new_val
-    
-    
-# TODO: Evaluation metrics: kappa etc.
-# TODO: Figure out how to assess convergence even though there's degeneracy: can exchange axis labels in covariance prior and no problem.
-# TODO: Actually if there's convergence without reduction, you're fine.
