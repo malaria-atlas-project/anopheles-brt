@@ -258,8 +258,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     full_x_eo = np.vstack((full_x_in, full_x_out))
     x_eo = np.vstack((pts_in, pts_out))
     
-    x_fr = x_eo[::100]
-    full_x_fr = full_x_eo[::100]
+    x_fr = x_eo[::20]
+    full_x_fr = full_x_eo[::20]
 
     spatial_variables = spatial_submodel(**locals())
     p = spatial_variables['p']
@@ -448,7 +448,7 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     hf.root.metadata.append(metadata)
     
     # species_stepmethods(M, interval=None)        
-    species_stepmethods(M, interval=2, sleep_interval=50)
+    species_stepmethods(M, interval=20, sleep_interval=50)
 
     M.f_fr.value = M.fullcond_sampler.value()
     print 'Attempting to satisfy constraints'
@@ -468,7 +468,7 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     for s in M.stochastics:
         M.step_method_dict[s] = []
 
-    species_stepmethods(M, interval=2, sleep_interval=50)
+    species_stepmethods(M, interval=20, sleep_interval=50)
 
     # Make sure data_constraint is evaluated before data likelihood, to avoid as meany heavy computations as possible.
     M.assign_step_methods()
