@@ -261,17 +261,12 @@ def lr_spatial_env(rl=200,**stuff):
     pts_in = stuff['pts_in']
     f2p = stuff['f2p']
     
-    # val = pm.Gamma('val',4,4,value=np.ones(n_env+1))
-    baseval = pm.Exponential('baseval', .001, value=1, observed=True)
-    valpow = pm.Uniform('valpow',-10,0,value=-.01, observed=True)
+    baseval = pm.Exponential('baseval', .001, value=1, observed=False)
+    valpow = pm.Uniform('valpow',-10,0,value=-.01, observed=False)
     valmean = pm.Lambda('valmean',lambda baseval=baseval,valpow=valpow:baseval+np.arange(1,n_env+2)*valpow)
     valV = pm.Exponential('valV',1,value=.1)
 
     val = pm.Normal('val',valmean,1./valV,value=np.concatenate(([-2],-1*np.ones(n_env))))
-
-    # vals = [pm.Normal('val_%i'%i,valmean[i],1./valV,value=-1) for i in xrange(n_env+1)]
-    # val = pm.Lambda('val',lambda v=vals: np.array(v).ravel())
-    
 
     const_frac = pm.Uniform('const_frac',0,1,value=.1)
     expval = pm.Lambda('expval',lambda val=val:np.exp(val))    
@@ -279,9 +274,11 @@ def lr_spatial_env(rl=200,**stuff):
     @pm.deterministic
     def C(val=expval,vec=vec,const_frac=const_frac):
         return pm.gp.FullRankCovariance(mod_spatial_mahalanobis, val=val, vec=vec, const_frac=const_frac)
-        
+    
+    # TODO tomorrow: Gibbs sample through to initialize to a good, constraint-satisfying state.   
+    # Forget that, just Gibbs sample with constraint satisfaction! 
     @pm.deterministic
-    def fullcond_sampler(C=C, vals_in=.5, vals_out=-.5, nugget=.1):
+    def fullcond_sampler(C=C, vals_in=1, vals_out=-.75, nugget=.01):
         try:
             return fullcond_fr_sampler(x_fr, normalize_env(stuff['full_x_eo'], stuff['env_means'], stuff['env_stds']),stuff['n_in'],stuff['n_out'],C,vals_in,vals_out,nugget)
         except np.linalg.LinAlgError:
@@ -306,8 +303,6 @@ def lr_spatial_env(rl=200,**stuff):
 
     # Evaluation of field at expert-opinion points
     init_val = np.ones(len(x_fr))*.1
-    # init_val[:len(pts_in)] = 1
-    # init_val = None
 
     f_fr = pm.MvNormalChol('f_fr', np.zeros(len(x_fr)), L_fr, value=init_val)
 
@@ -372,7 +367,7 @@ def spatial_env(**stuff):
 
 class RotatedLinearWithHill(object):
     """A closure used by nongp_spatial_env"""
-    def __init__(self,val,vec,ctr,norm_means,norm_stds,hillpower):
+    def __init__(self,val,vec,ctr,norm_means,norm_stds,hillpower,f2p):
 
         self.val = val
         self.vec = vec
@@ -380,9 +375,12 @@ class RotatedLinearWithHill(object):
         self.norm_means = norm_means
         self.norm_stds = norm_stds
         self.hillpower=hillpower
+        self.f2p = f2p
 
-    def __call__(self, x):
-        x_ = x
+    def __call__(self, x, f2p=None, offdiag=None):
+        if f2p is None:
+            f2p = self.f2p
+        x_ = normalize_env(x, self.norm_means, self.norm_stds)
         x__ = np.dot((x_.reshape(-1,x.shape[-1])[:,2:]-self.ctr),self.vec)
         
         quadpart = -np.sum((x__**2)*self.val,axis=1)**self.hillpower
@@ -391,7 +389,7 @@ class RotatedLinearWithHill(object):
 
         if np.any(np.isnan(out)):
             raise ValueError  
-        return out
+        return f2p(out)
     
 def nogp_spatial_env(**stuff):
     """A low-rank spatial-only model."""
@@ -402,6 +400,7 @@ def nogp_spatial_env(**stuff):
     # ctr = np.zeros(n_env)
     ctrs = [pm.Normal('ctr_%i'%i,0,1,value=0) for i in xrange(n_env)]
     ctr = pm.Lambda('ctr',lambda c=ctrs: np.array(c))
+    C = lambda x1, x2: np.ones(2e5)
     
     # Encourage simplicity
     baseval = pm.Exponential('baseval', .001, value=1, observed=False)
@@ -417,8 +416,11 @@ def nogp_spatial_env(**stuff):
     # vec = np.eye(n_env)
     # hillpower = pm.Exponential('hillpower',.001,value=1,observed=True)
     hillpower = 1
+    L_fr = np.eye(stuff['n_in']+stuff['n_out'])
+    f_fr = pm.Normal('f_fr', 0, 1, size=stuff['n_in']+stuff['n_out'])
+    
         
-    f = pm.Lambda('f', lambda bv = val, be=vec, ctr=ctr, hillpower=hillpower: \
-                            RotatedLinearWithHill(bv,be,ctr,stuff['env_means'],stuff['env_stds'],hillpower))
+    p = pm.Lambda('p', lambda bv = val, be=vec, ctr=ctr, hillpower=hillpower: \
+                            RotatedLinearWithHill(bv,be,ctr,stuff['env_means'],stuff['env_stds'],hillpower,stuff['f2p']))
 
     return locals()

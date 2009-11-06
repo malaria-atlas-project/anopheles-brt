@@ -180,7 +180,7 @@ class RayMetropolis(DelayedMetropolis):
                 self.stochastic.value = new_val
                 try:
                     lps[i] = self.f_fr.logp + self.stochastic.logp
-                except pm.ZeroProbability:
+                except:
                     lps[i] = -np.inf              
             if np.all(np.isinf(lps)):
                 raise ValueError, 'All -inf.'
@@ -258,8 +258,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     full_x_eo = np.vstack((full_x_in, full_x_out))
     x_eo = np.vstack((pts_in, pts_out))
     
-    x_fr = x_eo[::20]
-    full_x_fr = full_x_eo[::20]
+    x_fr = x_eo[::50]
+    full_x_fr = full_x_eo[::50]
 
     spatial_variables = spatial_submodel(**locals())
     p = spatial_variables['p']
@@ -276,6 +276,30 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         
         breaks, x, found, zero, others_found, multipoints = sites_as_ndarray(session, species)
         
+        # # =========================
+        # # = FIXME: TAKE THIS OUT! =
+        # # =========================
+        # x_ = []
+        # found_ = []
+        # zero_ = []
+        # others_found_ = []
+        # counter = 0
+        # for i in xrange(len(found)):
+        #     if found[i] or counter % 5 == 0:
+        #         found_.append(found[i])
+        #         zero_.append(zero[i])
+        #         others_found_.append(others_found[i])
+        #         x_.append(x[i])
+        #     counter+= 1
+        #         
+        # x = np.asarray(x_)
+        # found = np.asarray(found_)
+        # zero = np.asarray(zero_)
+        # others_found = np.asarray(others_found_)
+        # # =======
+        # # = END =
+        # # =======
+        
         wherefound = np.where(found > 0)
         x_wherefound = x[wherefound]
         
@@ -286,9 +310,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         env_x_wherefound = env_x[wherefound]            
         
         od_data = C(np.hstack((x, env_x)), full_x_fr)
-        od_wherefound = od_data[wherefound]
         p_eval = pm.Lambda('p_eval', lambda p=p, od=od_data: p(np.hstack((x, env_x)), offdiag=od), trace=False)
-        f_eval_wherefound = pm.Lambda('f_eval_wherefound', lambda p=p, od=od_wherefound: p(np.hstack((x_wherefound, env_x_wherefound)), f2p=identity, offdiag=od), trace=False)
+        f_eval_wherefound = pm.Lambda('f_eval_wherefound', lambda p=p, od=od_data[wherefound]: p(np.hstack((x_wherefound, env_x_wherefound)), f2p=identity, offdiag=od), trace=False)
         
         constraint_dict = {'data': Constraint(penalty_value = -1e100, logp=lambda f: -np.sum(f*(f<0)), doc="", name='data_constraint', parents={'f':f_eval_wherefound})}
     
@@ -402,23 +425,25 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
 
     for alone in [M.f_fr, M.alpha_in, M.alpha_out, M.beta_in, M.beta_out, M.p_find]:
         nonbases.discard(alone)
-    
-    if interval is not None:
-        for i in xrange(0,len(M.f_fr.value),interval):
-            M.use_step_method(SubsetMetropolis, M.f_fr, i, interval, sleep_interval)
             
-    M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape)}, delay=2000)
-    M.use_step_method(MVNPriorMetropolis, M.f_fr, M.L_fr)
+    # Standard step methods
+    M.use_step_method(pm.AdaptiveMetropolis, [M.val] + list(M.val.extended_parents), delay=2000)
+    for p in M.val.extended_parents:
+        M.use_step_method(pm.Metropolis, p)
     M.use_step_method(pm.AdaptiveMetropolis, M.val)
     M.use_step_method(pm.Metropolis,M.val)
-    
-    # M.use_step_method(KindOfConditional, M.f_fr, M.fullcond_sampler)
-    M.use_step_method(RayMetropolis, M.val, sleep_interval)
-    
-    # nonbases = list(nonbases)
-    # am_scales = dict(zip(nonbases, [np.ones(nb.value.shape)*.0001 for nb in nonbases]))
-    # M.use_step_method(pm.AdaptiveMetropolis, nonbases, scales=am_scales, delay=2000)
+    M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape)}, delay=2000)
+    M.use_step_method(pm.AdaptiveMetropolis, [M.f_fr, M.val], scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape), M.val: .0001*np.ones(M.val.value.shape)}, delay=2000)
 
+    # Weird step methods
+    if isinstance(M.f_fr, pm.MvNormalChol):
+        if interval is not None:
+            for i in xrange(0,len(M.f_fr.value),interval):
+                M.use_step_method(SubsetMetropolis, M.f_fr, i, interval, sleep_interval)
+        M.use_step_method(MVNPriorMetropolis, M.f_fr, M.L_fr)
+        M.use_step_method(RayMetropolis, M.val, sleep_interval)
+    
+    # Givens step method
     for b in bases:
         M.use_step_method(GivensStepper, b)    
     
@@ -452,9 +477,13 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     hf.root.metadata.append(metadata)
     
     # species_stepmethods(M, interval=None)        
-    species_stepmethods(M, interval=20, sleep_interval=20)
+    species_stepmethods(M, interval=5, sleep_interval=20)
 
-    M.f_fr.value = M.fullcond_sampler.value()
+    try:
+        M.f_fr.value = M.fullcond_sampler.value()
+    except:
+        pass
+        
     print 'Attempting to satisfy constraints'
     M.isample(1)
 
@@ -472,7 +501,7 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     for s in M.stochastics:
         M.step_method_dict[s] = []
 
-    species_stepmethods(M, interval=20, sleep_interval=20)
+    species_stepmethods(M, interval=5, sleep_interval=20)
 
     # Make sure data_constraint is evaluated before data likelihood, to avoid as meany heavy computations as possible.
     M.assign_step_methods()

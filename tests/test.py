@@ -27,6 +27,7 @@ mask, x, img_extent = anopheles.make_covering_raster(20, env)
 mask, x, img_extent = anopheles.subset_x(mask,x,img_extent,(-18,-36,56,38))
 
 spatial_submodel = anopheles.lr_spatial_env
+# spatial_submodel = anopheles.nogp_spatial_env
 # n_in = n_out = 2
 
 # spatial_submodel = lr_spatial_env
@@ -40,7 +41,7 @@ M = anopheles.species_MCMC(s, species_tup, spatial_submodel, with_eo = True, wit
 # M = anopheles.restore_species_MCMC(s, 'Anopheles gambiae s.s.2009-10-26 11:57:46.766486.hdf5')
 # from time import time
 # t1 = time()
-# M.isample(500000,0,100)
+M.isample(500000,0,100)
 # print time()-t1
 # xtest = np.array([[.1,.1],[.05,.05],[0,0]])
 # atest = np.array([1,0,1])
