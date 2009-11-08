@@ -288,9 +288,9 @@ cf2py threadsafe
 !       DGEMV(TRANS,M,N,ALPHA,A,LDA,X,INCX,BETA,Y,INCY)
       EXTERNAL DGEMV
       
-      diff_degree = 2.0D0
-      N = 2
-      GA = 1.0D0
+      diff_degree = 1.0D0
+      N = 1
+      GA = 0.0D0
             
       prefac = 0.5D0 ** (diff_degree-1.0D0) / GA
 

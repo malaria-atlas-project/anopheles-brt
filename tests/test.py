@@ -41,7 +41,7 @@ M = anopheles.species_MCMC(s, species_tup, spatial_submodel, with_eo = True, wit
 # M = anopheles.restore_species_MCMC(s, 'Anopheles gambiae s.s.2009-10-26 11:57:46.766486.hdf5')
 # from time import time
 # t1 = time()
-M.isample(500000,0,100)
+M.isample(50000,0,10)
 # print time()-t1
 # xtest = np.array([[.1,.1],[.05,.05],[0,0]])
 # atest = np.array([1,0,1])

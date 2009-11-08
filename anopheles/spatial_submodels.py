@@ -240,6 +240,8 @@ class fullcond_fr_sampler(object):
         self.n_out = n_out
         self.C = C
         self.nugget = nugget
+        from IPython.Debugger import Pdb
+        Pdb(color_scheme='Linux').set_trace()   
         
         self.U_eo = self.C.cholesky(self.x_eo, nugget=self.nugget*np.ones(self.n_in+self.n_out))
         offdiag = self.C(self.x_eo, self.x_fr)
@@ -261,16 +263,20 @@ def lr_spatial_env(rl=200,**stuff):
     pts_in = stuff['pts_in']
     f2p = stuff['f2p']
     
-    baseval = pm.Exponential('baseval', .001, value=1, observed=False)
     valpow = pm.Uniform('valpow',-10,0,value=-.01, observed=False)
-    valmean = pm.Lambda('valmean',lambda baseval=baseval,valpow=valpow:baseval+np.arange(1,n_env+2)*valpow)
+    valmean = pm.Lambda('valmean',lambda valpow=valpow : np.arange(1,n_env+2)*valpow)
     valV = pm.Exponential('valV',1,value=.1)
 
-    val = pm.Normal('val',valmean,1./valV,value=np.concatenate(([-2],-1*np.ones(n_env))))
+    # val = pm.Normal('val',valmean,1./valV,value=np.concatenate(([-2],-1*np.ones(n_env))))
+    vals = [pm.Normal('val_%i'%i,valmean[i],1./valV,value=-1) for i in xrange(n_env+1)]
+    val = pm.Lambda('val',lambda vals=vals: np.array(vals))
+    baseval = pm.Exponential('baseval', .001, value=1, observed=False)
+    expval = pm.Lambda('expval',lambda val=val,baseval=baseval:np.exp(val+baseval))    
+
+    vec = cov_prior.OrthogonalBasis('vec',n_env+1,constrain=True)
 
     const_frac = pm.Uniform('const_frac',0,1,value=.1)
-    expval = pm.Lambda('expval',lambda val=val:np.exp(val))    
-    vec = cov_prior.OrthogonalBasis('vec',n_env+1,constrain=True)
+    
     @pm.deterministic
     def C(val=expval,vec=vec,const_frac=const_frac):
         return pm.gp.FullRankCovariance(mod_spatial_mahalanobis, val=val, vec=vec, const_frac=const_frac)

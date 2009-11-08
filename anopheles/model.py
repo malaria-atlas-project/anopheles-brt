@@ -258,8 +258,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     full_x_eo = np.vstack((full_x_in, full_x_out))
     x_eo = np.vstack((pts_in, pts_out))
     
-    x_fr = x_eo[::50]
-    full_x_fr = full_x_eo[::50]
+    x_fr = x_eo[::5]
+    full_x_fr = full_x_eo[::5]
 
     spatial_variables = spatial_submodel(**locals())
     p = spatial_variables['p']
@@ -427,11 +427,11 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
         nonbases.discard(alone)
             
     # Standard step methods
-    M.use_step_method(pm.AdaptiveMetropolis, [M.val] + list(M.val.extended_parents), delay=2000)
+    # M.use_step_method(pm.AdaptiveMetropolis, M.vals + list(M.val.extended_parents), delay=2000)
     for p in M.val.extended_parents:
         M.use_step_method(pm.Metropolis, p)
-    M.use_step_method(pm.AdaptiveMetropolis, M.val)
-    M.use_step_method(pm.Metropolis,M.val)
+    # M.use_step_method(pm.AdaptiveMetropolis, M.vals)
+    [M.use_step_method(pm.Metropolis,v) for v in M.vals]
     M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape)}, delay=2000)
     # M.use_step_method(pm.AdaptiveMetropolis, [M.f_fr, M.val], scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape), M.val: .0001*np.ones(M.val.value.shape)}, delay=2000)
 
@@ -441,7 +441,7 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
             for i in xrange(0,len(M.f_fr.value),interval):
                 M.use_step_method(SubsetMetropolis, M.f_fr, i, interval, sleep_interval)
         M.use_step_method(MVNPriorMetropolis, M.f_fr, M.L_fr)
-    M.use_step_method(RayMetropolis, M.val, 1)
+    # M.use_step_method(RayMetropolis, M.vals, 1)
     
     # Givens step method
     for b in bases:
@@ -482,6 +482,8 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     try:
         M.f_fr.value = M.fullcond_sampler.value()
     except:
+        from IPython.Debugger import Pdb
+        Pdb(color_scheme='Linux').set_trace()   
         pass
         
     print 'Attempting to satisfy constraints'
@@ -504,8 +506,8 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     species_stepmethods(M, interval=5, sleep_interval=20)
 
     # Make sure data_constraint is evaluated before data likelihood, to avoid as meany heavy computations as possible.
-    M.step_method_dict[M.f_fr]=[]
-    M.use_step_method(pm.NoStepper, M.f_fr)
+    # M.step_method_dict[M.f_fr]=[]
+    # M.use_step_method(pm.NoStepper, M.f_fr)
     M.assign_step_methods()
     for sm in M.step_methods:
         for i in xrange(len(sm.markov_blanket)):
