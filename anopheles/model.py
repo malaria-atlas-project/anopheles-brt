@@ -433,7 +433,7 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
     M.use_step_method(pm.AdaptiveMetropolis, M.val)
     M.use_step_method(pm.Metropolis,M.val)
     M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape)}, delay=2000)
-    M.use_step_method(pm.AdaptiveMetropolis, [M.f_fr, M.val], scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape), M.val: .0001*np.ones(M.val.value.shape)}, delay=2000)
+    # M.use_step_method(pm.AdaptiveMetropolis, [M.f_fr, M.val], scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape), M.val: .0001*np.ones(M.val.value.shape)}, delay=2000)
 
     # Weird step methods
     if isinstance(M.f_fr, pm.MvNormalChol):
@@ -441,12 +441,12 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
             for i in xrange(0,len(M.f_fr.value),interval):
                 M.use_step_method(SubsetMetropolis, M.f_fr, i, interval, sleep_interval)
         M.use_step_method(MVNPriorMetropolis, M.f_fr, M.L_fr)
-        M.use_step_method(RayMetropolis, M.val, sleep_interval)
+    M.use_step_method(RayMetropolis, M.val, 1)
     
     # Givens step method
     for b in bases:
         M.use_step_method(GivensStepper, b)    
-    
+
 def restore_species_MCMC(session, dbpath):
     db = pm.database.hdf5.load(dbpath)
     metadata = db._h5file.root.metadata[0]
@@ -504,6 +504,8 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     species_stepmethods(M, interval=5, sleep_interval=20)
 
     # Make sure data_constraint is evaluated before data likelihood, to avoid as meany heavy computations as possible.
+    M.step_method_dict[M.f_fr]=[]
+    M.use_step_method(pm.NoStepper, M.f_fr)
     M.assign_step_methods()
     for sm in M.step_methods:
         for i in xrange(len(sm.markov_blanket)):

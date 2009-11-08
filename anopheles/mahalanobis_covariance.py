@@ -63,6 +63,8 @@ def spatial_mahalanobis_covariance(x,y,amp,val,vec,const_frac=0,symm=None):
         # from IPython.Debugger import Pdb
         # Pdb(color_scheme='Linux').set_trace()   
         pm.gp.geo_rad(D,x[:,:2],y[:,:2],cmin=cmin,cmax=cmax,symm=symm)
+        # if np.any(np.isnan(D)):
+        #     raise ValueError
         if x.shape[1]>2:
             mod_mahal(C,D,x[:,2:],y[:,2:],symm=symm,a=amp,l=val,s=vec,cf=const_frac,cmin=cmin,cmax=cmax)
         else:
@@ -80,6 +82,10 @@ def spatial_mahalanobis_covariance(x,y,amp,val,vec,const_frac=0,symm=None):
 
     if symm:
         pm.gp.symmetrize(C)
+
+    if np.any(np.isnan(C)):
+        print 'Nan'
+        raise ValueError
     
     return C
 
