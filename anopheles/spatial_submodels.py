@@ -240,9 +240,9 @@ class fullcond_fr_sampler(object):
         self.n_out = n_out
         self.C = C
         self.nugget = nugget
-        from IPython.Debugger import Pdb
-        Pdb(color_scheme='Linux').set_trace()   
         
+        # from IPython.Debugger import Pdb
+        # Pdb(color_scheme='Linux').set_trace()   
         self.U_eo = self.C.cholesky(self.x_eo, nugget=self.nugget*np.ones(self.n_in+self.n_out))
         offdiag = self.C(self.x_eo, self.x_fr)
         self.o_U_eo = pm.gp.trisolve(self.U_eo,offdiag,uplo='U',transa='T')
@@ -263,15 +263,16 @@ def lr_spatial_env(rl=200,**stuff):
     pts_in = stuff['pts_in']
     f2p = stuff['f2p']
     
-    valpow = pm.Uniform('valpow',-10,0,value=-.01, observed=False)
-    valmean = pm.Lambda('valmean',lambda valpow=valpow : np.arange(1,n_env+2)*valpow)
+    valpow = pm.Uniform('valpow',0,10,value=.01, observed=False)
+    valmean = pm.Lambda('valmean',lambda valpow=valpow : np.arange(n_env+1)*valpow)
     valV = pm.Exponential('valV',1,value=.1)
 
     # val = pm.Normal('val',valmean,1./valV,value=np.concatenate(([-2],-1*np.ones(n_env))))
-    vals = [pm.Normal('val_%i'%i,valmean[i],1./valV,value=-1) for i in xrange(n_env+1)]
+    vals = [pm.Normal('val_%i'%i,valmean[i],1./valV,value=0) for i in xrange(n_env+1)]
+    vals[0].value = -1
     val = pm.Lambda('val',lambda vals=vals: np.array(vals))
-    baseval = pm.Exponential('baseval', .001, value=1, observed=False)
-    expval = pm.Lambda('expval',lambda val=val,baseval=baseval:np.exp(val+baseval))    
+    baseval = pm.Exponential('baseval', .01, value=np.exp(-1), observed=False)
+    expval = pm.Lambda('expval',lambda val=val,baseval=baseval:np.exp(val)*baseval)    
 
     vec = cov_prior.OrthogonalBasis('vec',n_env+1,constrain=True)
 
@@ -284,7 +285,7 @@ def lr_spatial_env(rl=200,**stuff):
     # TODO tomorrow: Gibbs sample through to initialize to a good, constraint-satisfying state.   
     # Forget that, just Gibbs sample with constraint satisfaction! 
     @pm.deterministic
-    def fullcond_sampler(C=C, vals_in=1, vals_out=-.75, nugget=.01):
+    def fullcond_sampler(C=C, vals_in=.25, vals_out=-.25, nugget=.01):
         try:
             return fullcond_fr_sampler(x_fr, normalize_env(stuff['full_x_eo'], stuff['env_means'], stuff['env_stds']),stuff['n_in'],stuff['n_out'],C,vals_in,vals_out,nugget)
         except np.linalg.LinAlgError:
@@ -308,8 +309,8 @@ def lr_spatial_env(rl=200,**stuff):
     L_fr = pm.Lambda('L',lambda U=U_fr: U.T, trace=False)
 
     # Evaluation of field at expert-opinion points
-    init_val = np.ones(len(x_fr))*.1
-
+    init_val = np.ones(len(x_fr))*-.1
+    # init_val[len(init_val)/2]=-1
     f_fr = pm.MvNormalChol('f_fr', np.zeros(len(x_fr)), L_fr, value=init_val)
 
     @pm.deterministic(trace=False)

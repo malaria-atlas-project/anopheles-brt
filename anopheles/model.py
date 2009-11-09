@@ -482,9 +482,8 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     try:
         M.f_fr.value = M.fullcond_sampler.value()
     except:
-        from IPython.Debugger import Pdb
-        Pdb(color_scheme='Linux').set_trace()   
-        pass
+        warnings.warn('Failed to initialize by full-conditional sampler.')
+        raise ValueError
         
     print 'Attempting to satisfy constraints'
     M.isample(1)
@@ -495,7 +494,8 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     zero = model['zero']
     p_eval = model['p_eval']
     p_find = model['p_find']
-    M.data = pm.Binomial('data', n=found+others_found+zero, p=p_eval*p_find, value=found, observed=True, trace=False)            
+    where_notfound = np.where(True-found)
+    M.data = pm.Binomial('data', n=(found+others_found+zero)[where_notfound], p=p_eval[where_notfound]*p_find, value=np.zeros(len(where_notfound[0])), observed=True, trace=False)            
 
     del M.step_methods
     M._sm_assigned = False
@@ -503,7 +503,7 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     for s in M.stochastics:
         M.step_method_dict[s] = []
 
-    species_stepmethods(M, interval=5, sleep_interval=20)
+    species_stepmethods(M, interval=10, sleep_interval=20)
 
     # Make sure data_constraint is evaluated before data likelihood, to avoid as meany heavy computations as possible.
     # M.step_method_dict[M.f_fr]=[]

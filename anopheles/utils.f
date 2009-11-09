@@ -290,7 +290,7 @@ cf2py threadsafe
       
       diff_degree = 1.0D0
       N = 1
-      GA = 0.0D0
+      GA = 1.0D0
             
       prefac = 0.5D0 ** (diff_degree-1.0D0) / GA
 
@@ -325,10 +325,10 @@ cf2py threadsafe
                         this = this + tdev(k)*tdev(k)/l(k)
                     end do
                     
-                    this = dsqrt(this) * snu
-                    CALL RKBESL(this,rem,fl+1,1,BK,N)
-                    this = prefac*(this**diff_degree)*BK(fl+1)
-!                     this = dexp(-dsqrt(this))
+!                     this = dsqrt(this) * snu
+!                     CALL RKBESL(this,rem,fl+1,1,BK,N)
+!                     this = prefac*(this**diff_degree)*BK(fl+1)
+                    this = dexp(-dsqrt(this))
                     c(i,j) = (this*(1.0D0-cf)+cf)*a*a
 
 
@@ -356,10 +356,10 @@ cf2py threadsafe
                       this = this + tdev(k)*tdev(k)/l(k)
                   end do
               
-                  this = dsqrt(this) * snu
-                  CALL RKBESL(this,rem,fl+1,1,BK,N)
-                  this = prefac*(this**diff_degree)*BK(fl+1)
-!                   this = dexp(-dsqrt(this))
+!                   this = dsqrt(this) * snu
+!                   CALL RKBESL(this,rem,fl+1,1,BK,N)
+!                   this = prefac*(this**diff_degree)*BK(fl+1)
+                  this = dexp(-dsqrt(this))
                   c(i,j) = (this*(1.0D0-cf)+cf)*a*a
 
 
