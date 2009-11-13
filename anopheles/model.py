@@ -311,7 +311,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         
         od_data = C(np.hstack((x, env_x)), full_x_fr)
         p_eval = pm.Lambda('p_eval', lambda p=p, od=od_data: p(np.hstack((x, env_x)), offdiag=od), trace=False)
-        f_eval_wherefound = pm.Lambda('f_eval_wherefound', lambda p=p, od=od_data[wherefound]: p(np.hstack((x_wherefound, env_x_wherefound)), f2p=identity, offdiag=od), trace=False)
+        f_eval_wherefound = pm.Lambda('f_eval_wherefound', lambda p=p, od=od_data[wherefound]: p(np.hstack((x_wherefound, env_x_wherefound)), f2p=identity, offdiag=od), trace=False)        
         
         constraint_dict = {'data': Constraint(penalty_value = -1e100, logp=lambda f: -np.sum(f*(f<0)), doc="", name='data_constraint', parents={'f':f_eval_wherefound})}
     
@@ -341,6 +341,15 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         p_eval_in = pm.Lambda('p_eval_in', lambda f=f_eval_in, f2p=f2p: f2p(f), trace=False)
         p_eval_out = pm.Lambda('p_eval_out', lambda f=f_eval_out, f2p=f2p: f2p(f), trace=False)        
         p_eval_eo = pm.Lambda('p_eval_eo', lambda p_eval_in=p_eval_in, p_eval_out=p_eval_out: np.concatenate((p_eval_in,p_eval_out)), trace=False)
+
+        @pm.potential
+        def not_all_present(p=p_eval_eo):
+            """Potential that guards against global presence"""
+            if np.all(p):
+                return -np.inf
+            else:
+                return 0
+        
     
         in_prob = pm.Lambda('in_prob', lambda p_eval = p_eval_in: np.mean(p_eval)*.9999+.00005)
         out_prob = pm.Lambda('out_prob', lambda p_eval = p_eval_out: np.mean(p_eval)*.9999+.00005)    
@@ -428,19 +437,19 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
             
     # Standard step methods
     # M.use_step_method(pm.AdaptiveMetropolis, M.vals + list(M.val.extended_parents), delay=2000)
-    for p in M.val.extended_parents:
-        M.use_step_method(pm.Metropolis, p)
+    # for p in M.val.extended_parents:
+    #     M.use_step_method(pm.Metropolis, p)
     # M.use_step_method(pm.AdaptiveMetropolis, M.vals)
-    [M.use_step_method(pm.Metropolis,v) for v in M.vals]
+    # [M.use_step_method(pm.Metropolis,v) for v in M.vals]
     M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape)}, delay=2000)
     # M.use_step_method(pm.AdaptiveMetropolis, [M.f_fr, M.val], scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape), M.val: .0001*np.ones(M.val.value.shape)}, delay=2000)
 
     # Weird step methods
-    if isinstance(M.f_fr, pm.MvNormalChol):
-        if interval is not None:
-            for i in xrange(0,len(M.f_fr.value),interval):
-                M.use_step_method(SubsetMetropolis, M.f_fr, i, interval, sleep_interval)
-        M.use_step_method(MVNPriorMetropolis, M.f_fr, M.L_fr)
+    # if isinstance(M.f_fr, pm.MvNormalChol):
+    #     if interval is not None:
+    #         for i in xrange(0,len(M.f_fr.value),interval):
+    #             M.use_step_method(SubsetMetropolis, M.f_fr, i, interval, sleep_interval)
+    #     M.use_step_method(MVNPriorMetropolis, M.f_fr, M.L_fr)
     # M.use_step_method(RayMetropolis, M.vals, 1)
     
     # Givens step method

@@ -268,10 +268,10 @@ def lr_spatial_env(rl=200,**stuff):
     valV = pm.Exponential('valV',1,value=.1)
 
     # val = pm.Normal('val',valmean,1./valV,value=np.concatenate(([-2],-1*np.ones(n_env))))
-    vals = [pm.Normal('val_%i'%i,valmean[i],1./valV,value=0) for i in xrange(n_env+1)]
-    vals[0].value = -1
+    vals = [pm.Normal('val_%i'%i,valmean[i],1./valV,value=1) for i in xrange(n_env+1)]
+    vals[0].value = 0
     val = pm.Lambda('val',lambda vals=vals: np.array(vals))
-    baseval = pm.Exponential('baseval', .01, value=np.exp(-1), observed=False)
+    baseval = pm.Exponential('baseval', .01, value=np.exp(-2), observed=False)
     expval = pm.Lambda('expval',lambda val=val,baseval=baseval:np.exp(val)*baseval)    
 
     vec = cov_prior.OrthogonalBasis('vec',n_env+1,constrain=True)

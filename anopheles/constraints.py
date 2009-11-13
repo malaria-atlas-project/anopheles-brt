@@ -226,6 +226,10 @@ class LatchingMCMC(pymc.MCMC):
                         print 'Step method %s stepping' % step_method._id
                     # Step the step method
                     step_method.step()
+                    if all_closed is None:
+                        open_constraints = filter(lambda x:x.isopen, open_constraints)
+                        if len(open_constraints)==0:
+                            break
                 
                 if i % self._thin == 0 and i >= self._burn:
                     self.tally()
