@@ -1,3 +1,8 @@
+# TODO: out_prob weighted by distance from EO region
+# TODO: Add actual nugget, use Gibbs. Then can try additive, nonadditive versions easily.
+# TODO: Constrain probability of presence 1500km outside EO region to low value.
+# TODO: Then try Gibbs updates of full thing.
+
 # import matplotlib
 # matplotlib.use('pdf')
 import anopheles
