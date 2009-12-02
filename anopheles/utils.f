@@ -459,6 +459,7 @@ cf2py threadsafe
       END
 
 
+
       SUBROUTINE mod_mahal(c,ds,x,y,symm,a,l,s,cf,nx,ny,nd,cmin,cmax
      1,BK, diff_degree, GA, N)
 cf2py intent(hide) nx,ny,nd,BK
@@ -471,31 +472,37 @@ cf2py threadsafe
       DOUBLE PRECISION c(nx,ny), dev(nd+1), this, a, tdev(nd+1)
       DOUBLE PRECISION ds(nx,ny)
       DOUBLE PRECISION cf, diff_degree, rem, GA, prefac, snu
-      DOUBLE PRECISION BK(N+1)
+      DOUBLE PRECISION BK(15)
       INTEGER i,j,k,m,nx,ny,nd,cmin,cmax,N,fl
       LOGICAL symm
       
 !       DGEMV(TRANS,M,N,ALPHA,A,LDA,X,INCX,BETA,Y,INCY)
       EXTERNAL DGEMV
+      
+      diff_degree = 1.0D0
+      N = 1
+      GA = 1.0D0
             
       prefac = 0.5D0 ** (diff_degree-1.0D0) / GA
-
+ 
       snu = DSQRT(diff_degree) * 2.0D0
       fl = DINT(diff_degree)
       rem = diff_degree - fl
       
+!       print *,snu,fl,rem,diff_degree,prefac,GA      
+      
       
       do j=cmin+1,cmax     
           if (symm) then
-
+ 
                 c(j,j)=a*a
-
+ 
                 do i=1,j-1
                     dev(1) = ds(i,j)
                     do k=1,nd
                         dev(k+1) = x(i,k) - y(j,k)
                     end do
-
+ 
 !               DGEMV that is guaranteed to be single-threaded
                     do k=1,nd+1
                         tdev(k) = 0.0D0                  
@@ -503,18 +510,19 @@ cf2py threadsafe
                           tdev(k)=tdev(k)+s(m,k)*dev(m)
                         end do
                     end do
-
+ 
                     this = 0.0D0
                     do k=1,nd+1
                         this = this + tdev(k)*tdev(k)/l(k)
                     end do
                     
-!                     print *,dev(1),tdev(1),dsqrt(this)
-                    this = dsqrt(this) * snu
-                    CALL RKBESL(this,rem,fl+1,1,BK,N)
-                    this = prefac*(C(i,j)**diff_degree)*BK(fl+1)
+!                     this = dsqrt(this) * snu
+!                     CALL RKBESL(this,rem,fl+1,1,BK,N)
+!                     this = prefac*(this**diff_degree)*BK(fl+1)
+                    this = dexp(-dsqrt(this))
                     c(i,j) = (this*(1.0D0-cf)+cf)*a*a
-
+ 
+ 
                 end do              
                 
           else
@@ -539,18 +547,19 @@ cf2py threadsafe
                       this = this + tdev(k)*tdev(k)/l(k)
                   end do
               
-                  this = dsqrt(this) * snu
-                  CALL RKBESL(this,rem,fl+1,1,BK,N)
-                  this = prefac*(C(i,j)**diff_degree)*BK(fl+1)
+!                   this = dsqrt(this) * snu
+!                   CALL RKBESL(this,rem,fl+1,1,BK,N)
+!                   this = prefac*(this**diff_degree)*BK(fl+1)
+                  this = dexp(-dsqrt(this))
                   c(i,j) = (this*(1.0D0-cf)+cf)*a*a
-
+ 
+ 
               end do
           end if
       end do
       
       RETURN 
       END
-
 
 !
       SUBROUTINE RKBESL(X,ALPHA,NB,IZE,BK,NCALC)
