@@ -39,9 +39,103 @@
 !                 raise ValueError
 !         y_ -= B[:,i]*new_val[i]
 
+      SUBROUTINE lcm(B,y,nv,u,n,nc,ny,Bl,nneg,pf,nl,um,lop)
+!
+! lcm is for 'Linear constraint Metropolis'. Metropolis samples the elements of y, 
+! in order, under the constraint that B*nv <= y. nc cycles are done. The 'likelihood'
+! is evaluated based on the not-found observations as 
+! -sum(nneg*log(logit^{-1}(Bl*nv))) -sum(nneg)*log(pf), and the Metropolis acceptance
+! is chosen based on the uniform random variables um.
+!
+cf2py intent(hide) ny, n, c, nl
+cf2py intent(inplace) nv
+      DOUBLE PRECISION B(ny,n), u(n,nc), y(ny), nv(n), lop(nl)
+      DOUBLE PRECISION Bl(nl,n), um(n,nc), nneg(nl), pf
+      DOUBLE PRECISION lb, ub, lb_, ub_, na, nb, u_
+      DOUBLE PRECISION sqrt2, thisb, lopp(nl), llr, nvp, dev
+      INTEGER ny, n, nc, c, i, j,ifault
+      
+      sqrt2 = dsqrt(2.0D0)
+      
+      do c=1,nc
+          do i=1,n
+!               Figure out upper and lower bounds
+              ub = 1.0D6
+              lb = -1.0D6
+              do j=1,ny
+                  thisb = B(j,i)
+                  y(j)=y(j)+thisb*nv(i)
+                  if (thisb.GT.0.0D0) then
+                      ub_ = y(j)/thisb
+                      if (ub_.LT.ub) then
+                          ub = ub_
+                      end if
+                  else if (thisb.LT.0.0D0) then
+                      lb_ = y(j)/thisb
+                      if (lb_.GT.lb) then
+                          lb = lb_
+                      end if
+                  end if
+              end do
+                            
+              if (lb.EQ.ub) then
+                  nv(i) = lb
+                  continue
+              end if
+              
+!               Draw truncated normal and store
+              na = 0.5D0*(1.0D0+derf(lb/sqrt2))
+              nb = 0.5D0*(1.0D0+derf(ub/sqrt2))
+              u_ = u(i,c)
+              u_ = na + (nb-na)*u_
+              ifault=0
+              if (u_.EQ.1.0D0) then
+                  u_ = ub
+              else if (u_.EQ.0.0D0) then
+                  u_ = lb
+              else
+                  CALL ppnd16(u_,ifault)
+              end if
+              
+!               Evaluate log-likelihood ratio and new logit-probability.
+              nvp = u_
+              dev = nvp - nv(i)
+              llr = 0.0D0
+              do j=1,nl
+                  lopp(j)=lop(j)+Bl(j,i)*dev
+                  llr=llr+nneg(j)*(dlog(1.0D0+dexp(-lop(j)))
+     *              -dlog(1.0D0+dexp(-lopp(j))))
+              end do
+!               print *,i,llr,um(i,c)
+              
+!               M-H acceptance?
+              if (dlog(um(i,c)).LE.llr) then
+!                   print *,'accepted',i,nv(i),llr
+                  nv(i)=nvp
+                  do j=1,nl
+                      lop(j)=lopp(j)
+                  end do
+!               else
+!                   print *,'rejected',llr
+              end if
+
+!               print *,i,lb,ub,na,nb,nv(i),u_,ifault
+!               Bookkeeping on linear constraints.              
+              do j=1,ny
+                  y(j)=y(j)-B(j,i)*nv(i)
+              end do              
+          end do
+      end do
+      
+      RETURN
+      END
       
 
       SUBROUTINE lcg(B, y, nv, u, n, nc, ny)
+!
+! lcg is for 'Linear constraint Gibbs'. Gibbs samples the elements of y, in order,
+! under the constraint that B*nv <= y. nc cycles are done.
+!
 cf2py intent(hide) ny, n, c      
 cf2py intent(inplace) nv
       DOUBLE PRECISION B(ny,n), u(n,nc), y(ny), nv(n)
