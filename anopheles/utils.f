@@ -51,11 +51,12 @@ cf2py intent(hide) ny, n, c, nl
 cf2py intent(inplace) nv
       DOUBLE PRECISION B(ny,n), u(n,nc), y(ny), nv(n), lop(nl)
       DOUBLE PRECISION Bl(nl,n), um(n,nc), nneg(nl), pf
-      DOUBLE PRECISION lb, ub, lb_, ub_, na, nb, u_
+      DOUBLE PRECISION lb, ub, lb_, ub_, na, nb, u_, lpf
       DOUBLE PRECISION sqrt2, thisb, lopp(nl), llr, nvp, dev
       INTEGER ny, n, nc, c, i, j,ifault
       
       sqrt2 = dsqrt(2.0D0)
+      lpf = dlog(pf)
       
       do c=1,nc
           do i=1,n
@@ -103,8 +104,14 @@ cf2py intent(inplace) nv
               llr = 0.0D0
               do j=1,nl
                   lopp(j)=lop(j)+Bl(j,i)*dev
-                  llr=llr+nneg(j)*(dlog(1.0D0+dexp(-lop(j)))
-     *              -dlog(1.0D0+dexp(-lopp(j))))
+                  if (lopp(j).GT.0.0D0) then
+                      llr = llr + nneg(j) * lpf
+                  end if
+                  if (lop(j).GT.0.0D0) then
+                      llr=llr - nneg(j) * lpf
+                  end if 
+!                   llr=llr+nneg(j)*(dlog(1.0D0+dexp(-lop(j)))
+!      *              -dlog(1.0D0+dexp(-lopp(j))))
               end do
 !               print *,i,llr,um(i,c)
               
