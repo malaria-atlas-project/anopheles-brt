@@ -447,7 +447,7 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
     # [M.use_step_method(pm.Metropolis,v) for v in M.vals]
 
     # (self, stochastic, B, y, Bl, n_neg, p_find, pri_S, pri_M, n_cycles=1, pri_S_type='square')
-    M.use_step_method(CMVNLStepper, M.f_fr, -M.od_wherefound, np.zeros(len(M.x_wherefound)), M.od_where_notfound, M.p_find, pri_S=M.spatial_submodel['L_fr'], pri_M=None, n_cycles=100, pri_S_type='tri')
+    M.use_step_method(CMVNLStepper, M.f_fr, -M.od_wherefound, np.zeros(len(M.x_wherefound)), M.od_where_notfound, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')
 
     # Weird step methods
     # M.use_step_method(RayMetropolis, M.vals, 1)
