@@ -28,7 +28,8 @@ from mapping import *
 from spatial_submodels import *
 from constraints import *
 from cov_prior import GivensStepper, OrthogonalBasis
-from utils import bin_ubls
+from constrained_mvn_sample import CMVNLStepper
+# from utils import bin_ubls
 import datetime
 import warnings
 import shapely
@@ -301,6 +302,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         # # =======
         
         wherefound = np.where(found > 0)
+        where_notfound = np.where(found==0)
         x_wherefound = x[wherefound]
         
         if len(env_variables)>0:
@@ -310,6 +312,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         env_x_wherefound = env_x[wherefound]            
         
         od_data = C(np.hstack((x, env_x)), full_x_fr)
+        od_wherefound = od_data[wherefound]
+        od_where_notfound = od_data[where_notfound]
         p_eval = pm.Lambda('p_eval', lambda p=p, od=od_data: p(np.hstack((x, env_x)), offdiag=od), trace=False)
         f_eval_wherefound = pm.Lambda('f_eval_wherefound', lambda p=p, od=od_data[wherefound]: p(np.hstack((x_wherefound, env_x_wherefound)), f2p=identity, offdiag=od), trace=False)        
         
@@ -441,15 +445,11 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
     #     M.use_step_method(pm.Metropolis, p)
     # M.use_step_method(pm.AdaptiveMetropolis, M.vals)
     # [M.use_step_method(pm.Metropolis,v) for v in M.vals]
-    M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape)}, delay=2000)
-    # M.use_step_method(pm.AdaptiveMetropolis, [M.f_fr, M.val], scales={M.f_fr: .0001*np.ones(M.f_fr.value.shape), M.val: .0001*np.ones(M.val.value.shape)}, delay=2000)
+
+    # (self, stochastic, B, y, Bl, n_neg, p_find, pri_S, pri_M, n_cycles=1, pri_S_type='square')
+    M.use_step_method(CMVNLStepper, M.f_fr, -M.od_wherefound, np.zeros(len(M.x_wherefound)), M.od_where_notfound, M.p_find, pri_S=M.spatial_submodel['L_fr'], pri_M=None, n_cycles=100, pri_S_type='tri')
 
     # Weird step methods
-    # if isinstance(M.f_fr, pm.MvNormalChol):
-    #     if interval is not None:
-    #         for i in xrange(0,len(M.f_fr.value),interval):
-    #             M.use_step_method(SubsetMetropolis, M.f_fr, i, interval, sleep_interval)
-    #     M.use_step_method(MVNPriorMetropolis, M.f_fr, M.L_fr)
     # M.use_step_method(RayMetropolis, M.vals, 1)
     
     # Givens step method
@@ -504,7 +504,7 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     p_eval = model['p_eval']
     p_find = model['p_find']
     where_notfound = np.where(True-found)
-    M.data = pm.Binomial('data', n=(found+others_found+zero)[where_notfound], p=p_eval[where_notfound]*p_find, value=np.zeros(len(where_notfound[0])), observed=True, trace=False)            
+    # M.data = pm.Binomial('data', n=(found+others_found+zero)[where_notfound], p=p_eval[where_notfound]*p_find, value=np.zeros(len(where_notfound[0])), observed=True, trace=False)            
 
     del M.step_methods
     M._sm_assigned = False
