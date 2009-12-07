@@ -276,34 +276,11 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         # ==============
         
         breaks, x, found, zero, others_found, multipoints = sites_as_ndarray(session, species)
-        
-        # # =========================
-        # # = FIXME: TAKE THIS OUT! =
-        # # =========================
-        # x_ = []
-        # found_ = []
-        # zero_ = []
-        # others_found_ = []
-        # counter = 0
-        # for i in xrange(len(found)):
-        #     if found[i] or counter % 5 == 0:
-        #         found_.append(found[i])
-        #         zero_.append(zero[i])
-        #         others_found_.append(others_found[i])
-        #         x_.append(x[i])
-        #     counter+= 1
-        #         
-        # x = np.asarray(x_)
-        # found = np.asarray(found_)
-        # zero = np.asarray(zero_)
-        # others_found = np.asarray(others_found_)
-        # # =======
-        # # = END =
-        # # =======
-        
+                
         wherefound = np.where(found > 0)
         where_notfound = np.where(found==0)
         x_wherefound = x[wherefound]
+        n_neg = (found+others_found+zero)[where_notfound]
         
         if len(env_variables)>0:
             env_x = np.array([extract_environment(n, x * 180./np.pi) for n in env_variables]).T
@@ -447,7 +424,14 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
     # [M.use_step_method(pm.Metropolis,v) for v in M.vals]
 
     # (self, stochastic, B, y, Bl, n_neg, p_find, pri_S, pri_M, n_cycles=1, pri_S_type='square')
-    M.use_step_method(CMVNLStepper, M.f_fr, -M.od_wherefound, np.zeros(len(M.x_wherefound)), M.od_where_notfound, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')
+    
+    # FIXME: CMVNLStepper is not taking into account the EO or any of the hard constraints right now.
+    if interval is None:
+        M.use_step_method(CMVNLStepper, M.f_fr, -M.od_wherefound, np.zeros(len(M.x_wherefound)), M.od_where_notfound, M.n_neg, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')
+    else:
+        for i in xrange(0,len(M.f_fr.value),interval):
+            M.use_step_method(SubsetMetropolis, M.f_fr, i, interval, sleep_interval)
+        
 
     # Weird step methods
     # M.use_step_method(RayMetropolis, M.vals, 1)
@@ -503,8 +487,9 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     zero = model['zero']
     p_eval = model['p_eval']
     p_find = model['p_find']
-    where_notfound = np.where(True-found)
-    # M.data = pm.Binomial('data', n=(found+others_found+zero)[where_notfound], p=p_eval[where_notfound]*p_find, value=np.zeros(len(where_notfound[0])), observed=True, trace=False)            
+    where_notfound = np.where(found==0)
+    
+    M.data = pm.Binomial('data', n=M.n_neg, p=p_eval[where_notfound]*p_find, value=np.zeros(len(where_notfound[0])), observed=True, trace=False)            
 
     del M.step_methods
     M._sm_assigned = False

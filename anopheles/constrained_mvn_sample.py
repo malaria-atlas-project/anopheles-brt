@@ -18,7 +18,7 @@ class CMVNLStepper(pm.StepMethod):
         pm.StepMethod.__init__(self, stochastic)
         
     def step(self):
-        self.stochastic.value = cmvns_l(self.stochastic.value, *tuple([pm.value(v) for v in self.cvmns_l_params]))
+        self.stochastic.value = cmvns_l(self.stochastic.value, *tuple([pm.utils.value(v) for v in self.cvmns_l_params]))
         
         
 
@@ -43,9 +43,9 @@ def cmvns_l(cur_val, B, y, Bl, n_neg, p_find, pri_S = None, pri_M = None, n_cycl
             B = B*pri_S
             Bl = Bl*pri_S
         elif pri_S_type == 'tri':
+            new_val = pm.gp.trisolve(pri_S, cur_val, uplo='L', transa='N')
             B = np.dot(B,pri_S)            
             Bl = np.dot(Bl,pri_S)
-            raise NotImplementedError
         else:
             raise ValueError, 'Prior matrix square root type %s not recognized.'%pri_S_type
     else:
