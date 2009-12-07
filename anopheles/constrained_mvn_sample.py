@@ -2,23 +2,7 @@ import numpy as np
 import pymc as pm
 from utils import lcg, lcm
 
-__all__ = ['cmvns','CMVNLStepper']
-
-class CMVNLStepper(pm.StepMethod):
-    """
-    A constrained multivariate normal stepper with likelihood.
-    Metropolis samples self.stochastic under the constraint that B*self.stochastic < y,
-    with likelihood term corresponding to n_neg negative observations independently 
-    with probabilities p_find if Bl*cur_val > 0, else 0.
-    """
-    
-    def __init__(self, stochastic, B, y, Bl, n_neg, p_find, pri_S, pri_M, n_cycles=1, pri_S_type='square'):
-        self.stochastic = stochastic
-        self.cvmns_l_params = [B, y, Bl, n_neg, p_find, pri_S, pri_M, n_cycles, pri_S_type]
-        pm.StepMethod.__init__(self, stochastic)
-        
-    def step(self):
-        self.stochastic.value = cmvns_l(self.stochastic.value, *tuple([pm.utils.value(v) for v in self.cvmns_l_params]))
+__all__ = ['cmvns','cmvns_l']
         
         
 

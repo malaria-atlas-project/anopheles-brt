@@ -14,12 +14,11 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import matplotlib
-matplotlib.use('Qt4Agg')
-
 from mpl_toolkits import basemap
 b = basemap.Basemap(0,0,1,1)
 import pymc as pm
 import numpy as np
+from step_methods import *
 from query_to_rec import *
 from env_data import *
 from mahalanobis_covariance import *
@@ -28,18 +27,12 @@ from mapping import *
 from spatial_submodels import *
 from constraints import *
 from cov_prior import GivensStepper, OrthogonalBasis
-from constrained_mvn_sample import CMVNLStepper
-# from utils import bin_ubls
 import datetime
 import warnings
 import shapely
 import tables as tb
 
 __all__ = ['make_model', 'species_MCMC', 'probability_traces','potential_traces','threshold','invlogit', 'restore_species_MCMC']
-
-def bin_ubl_like(x, p_eval, p_find, breaks):
-    "The ubl likelihood function, document this."
-    return bin_ubls(x[0], x[0]+x[1]+x[2], p_find, breaks, p_eval)
 
 def identity(x):
     return x
@@ -48,165 +41,7 @@ def threshold(f):
     return f > 0
     
 def invlogit(f):
-    return pm.flib.invlogit(f.ravel()).reshape(f.shape)        
-
-BinUBL = pm.stochastic_from_dist('BinUBL', bin_ubl_like, mv=True)
-
-class DelayedMetropolis(pm.Metropolis):
-
-    def __init__(self, stochastic, sleep_interval=1, *args, **kwargs):
-        self._index = -1        
-        self.sleep_interval = sleep_interval
-        pm.Metropolis.__init__(self, stochastic, *args, **kwargs)
-
-    def step(self):
-        self._index += 1
-        if self._index % self.sleep_interval == 0:
-            pm.Metropolis.step(self)    
-
-class KindOfConditional(pm.Metropolis):
-
-    def __init__(self, stochastic, cond_jumper):
-        pm.Metropolis.__init__(self, stochastic)
-        self.stochastic = stochastic
-        self.cond_jumper = cond_jumper
-        
-    def propose(self):        
-        if self.cond_jumper.value is None:
-            pass
-        else:
-            self.stochastic.value = self.cond_jumper.value()
-        
-    def hastings_factor(self):
-        if self.cond_jumper.value is not None:
-            for_factor = pm.mv_normal_chol_like(self.stochastic.value, self.cond_jumper.value.M_cond, self.cond_jumper.value.L_cond)
-            back_factor = pm.mv_normal_chol_like(self.stochastic.last_value, self.cond_jumper.value.M_cond, self.cond_jumper.value.L_cond)
-            return back_factor - for_factor
-        else:
-            return 0.
-                
-
-class MVNPriorMetropolis(pm.Metropolis):
-
-    def __init__(self, stochastic, L):
-        self.stochastic = stochastic
-        self.L = L
-        pm.Metropolis.__init__(self, stochastic)
-        self.adaptive_scale_factor = .001
-
-    def propose(self):
-        dev = pm.rmv_normal_chol(np.zeros(self.stochastic.value.shape), self.L.value)
-        dev *= self.adaptive_scale_factor
-        self.stochastic.value = self.stochastic.value + dev
-
-class SubsetMetropolis(DelayedMetropolis):
-
-    def __init__(self, stochastic, index, interval, sleep_interval=1, *args, **kwargs):
-        self.index = index
-        self.interval = interval
-        DelayedMetropolis.__init__(self, stochastic, sleep_interval, *args, **kwargs)
-        self.adaptive_scale_factor = .01
-
-    def propose(self):
-        """
-        This method proposes values for stochastics based on the empirical
-        covariance of the values sampled so far.
-
-        The proposal jumps are drawn from a multivariate normal distribution.
-        """
-
-        newval = self.stochastic.value.copy()
-        newval[self.index:self.index+self.interval] += np.random.normal(size=self.interval) * self.proposal_sd[self.index:self.index+self.interval]*self.adaptive_scale_factor
-        self.stochastic.value = newval
-
-def gramschmidt(v):
-    m = np.eye(len(v))[:,:-1]
-    for i in xrange(len(v)-1):
-        m[:,i] -= v*v[i]
-        for j in xrange(0,i):
-            m[:,i] -= m[:,j]*np.dot(m[:,i],m[:,j])
-        m[:,i] /= np.sqrt(np.sum(m[:,i]**2))
-    return m
-
-class RayMetropolis(DelayedMetropolis):
-    """
-    Approximately Gibbs samples along a randomly-selected ray.
-    Always has the option to maintain current state.
-    """
-    def __init__(self, stochastic, sleep_interval=1):
-        DelayedMetropolis.__init__(self, stochastic, sleep_interval)
-        self.v = 1./self.stochastic.parents['tau']
-        self.m = self.stochastic.parents['mu']
-        self.n = len(self.stochastic.value)
-        self.f_fr = None
-        self.other_children = set([])
-        for c in self.stochastic.extended_children:
-            if c.__class__ is pm.MvNormalChol:
-                self.f_fr = c
-            else:
-                self.other_children.add(c)
-        if self.f_fr is None:
-            raise ValueError, 'No f_fr'
-        
-    def step(self):
-        self._index += 1
-        if self._index % self.sleep_interval == 0:
-            
-            v = pm.value(self.v)
-            m = pm.value(self.m)
-            val = self.stochastic.value
-            lp = pm.logp_of_set(self.other_children)
-        
-            # Choose a direction along which to step.
-            dirvec = np.random.normal(size=self.n)
-            dirvec /= np.sqrt(np.sum(dirvec**2))
-        
-            # Orthogonalize
-            orthoproj = gramschmidt(dirvec)
-            scaled_orthoproj = v*orthoproj.T
-            pck = np.dot(dirvec, scaled_orthoproj.T)
-            kck = np.linalg.inv(np.dot(scaled_orthoproj,orthoproj))
-            pckkck = np.dot(pck,kck)
-
-            # Figure out conditional variance
-            condvar = np.dot(dirvec, dirvec*v) - np.dot(pck, pckkck)
-            # condmean = np.dot(dirvec, m) + np.dot(pckkck, np.dot(orthoproj.T, (val-m)))
-        
-            # Compute slice of log-probability surface
-            tries = np.linspace(-4*np.sqrt(condvar), 4*np.sqrt(condvar), 501)
-            lps = 0*tries
-        
-            for i in xrange(len(tries)):
-                new_val = val + tries[i]*dirvec
-                self.stochastic.value = new_val
-                try:
-                    lps[i] = self.f_fr.logp + self.stochastic.logp
-                except:
-                    lps[i] = -np.inf              
-            if np.all(np.isinf(lps)):
-                raise ValueError, 'All -inf.'
-            lps -= pm.flib.logsum(lps[True-np.isinf(lps)])          
-            ps = np.exp(lps)
-        
-            index = pm.rcategorical(ps)
-            new_val = val + tries[index]*dirvec
-            self.stochastic.value = new_val
-            
-            try:
-                lpp = pm.logp_of_set(self.other_children)
-                if np.log(np.random.random()) < lpp - lp:
-                    self.accepted += 1
-                else:
-                    self.stochastic.value = val
-                    self.rejected += 1
-                    
-            except pm.ZeroProbability:
-                self.stochastic.value = val
-                self.rejected += 1
-        self.logp_plus_loglike
-        
-
-
+    return pm.flib.invlogit(f.ravel()).reshape(f.shape)
     
 def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}, n_in=1000, n_out=1000, f2p=threshold):
     """
@@ -296,18 +131,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         
         constraint_dict = {'data': Constraint(penalty_value = -1e100, logp=lambda f: -np.sum(f*(f<0)), doc="", name='data_constraint', parents={'f':f_eval_wherefound})}
     
-        if multipoints:
-            # FIXME: This will probably error out due to the new shape-checking in PyMC.
-            # data = pm.robust_init(BinUBL, 100, 'data', p_eval=p_eval, p_find=p_find, breaks=breaks, value=[found, others_found, zero], observed=True, trace=False)
-            raise NotImplementedError
-        else:
-            pass
-            # ===================================================================================
-            # = NB: Data is now created by species_MCMC after all constraints have been closed! =
-            # ===================================================================================
-            # data = pm.Binomial('data', n=found+others_found+zero, p=p_eval*p_find, value=found, observed=True, trace=False)
-            # data = pm.robust_init(pm.Binomial, 100, 'data', n=found+others_found+zero, p=p_eval*p_find, value=found, observed=True, trace=False)
-    
+        
     if with_eo:
         
         # ==============================
