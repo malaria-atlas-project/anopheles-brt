@@ -3,8 +3,6 @@ import pymc as pm
 from utils import lcg, lcm
 
 __all__ = ['cmvns','cmvns_l']
-        
-        
 
 def cmvns_l(cur_val, B, y, Bl, n_neg, p_find, pri_S = None, pri_M = None, n_cycles=1, pri_S_type='square'):
     """
@@ -57,9 +55,6 @@ def cmvns_l(cur_val, B, y, Bl, n_neg, p_find, pri_S = None, pri_M = None, n_cycl
     
     return new_val
     
-    
-
-
 def cmvns(cur_val, B, y, pri_S=None, pri_M=None, n_cycles=1, pri_S_type='square'):
     """
     Gibbs samples cur_val, under the constraint that B*cur_val < y.

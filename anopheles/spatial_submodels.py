@@ -3,12 +3,12 @@ import cov_prior
 from mahalanobis_covariance import *
 import pymc as pm
 
-# =======================================
-# = The spatial-only, low-rank submodel =
-# =======================================
-def mod_matern(x,y,diff_degree,amp,scale,symm=False):
-    """Matern with the mean integrated out."""
-    return pm.gp.matern.geo_rad(x,y,diff_degree=diff_degree,amp=amp,scale=scale,symm=symm)+10000
+def normalize_env(x, means, stds):
+    x_norm = x.copy().reshape(-1,x.shape[-1])
+    for i in xrange(2,x_norm.shape[1]):
+        x_norm[:,i] -= means[i-2]
+        x_norm[:,i] /= stds[i-2]
+    return x_norm
                 
 class LRP(object):
     """A closure that can evaluate a low-rank field."""
@@ -23,17 +23,19 @@ class LRP(object):
         if offdiag is None:
             offdiag = self.C(x,self.x_fr)
         return f2p(np.dot(np.asarray(offdiag), self.krige_wt).reshape(x.shape[:-1]))
-        
-def mod_spatial_mahalanobis(x,y,val,vec,const_frac,symm=False):
-    return spatial_mahalanobis_covariance(x,y,1,val,vec,const_frac,symm)
 
-def normalize_env(x, means, stds):
-    x_norm = x.copy().reshape(-1,x.shape[-1])
-    for i in xrange(2,x_norm.shape[1]):
-        x_norm[:,i] -= means[i-2]
-        x_norm[:,i] /= stds[i-2]
-    return x_norm
-
+def spatial_mahalanobis(x,y,dds,dde,amp,scale,val,vec,spat_frac,const_frac,symm=None):
+    """
+    The covariance of k + f_env(x) + f_spat, where the overall amplitude is fixed
+    to 'amp'.
+    """
+    spat_amp = np.sqrt(spat_frac*amp**2)
+    env_amp = np.sqrt((1-spat_frac-const_frac)*amp**2)
+    const_amp = np.sqrt(const_frac*amp**2)
+    spat_part = pm.gp.matern.geo_rad(x[:,:2],y[:,:2],dds,spat_amp,scale,symm=symm)
+    env_part = mahalanobis_covariance(x[:,2:],y[:,2:],env_amp,val,vec,symm=symm)
+    return spat_part+env_part+const_amp
+    
 class LRP_norm(LRP):
     """
     A closure that can evaluate a low-rank field.
@@ -47,40 +49,18 @@ class LRP_norm(LRP):
 
     def __call__(self, x,f2p=None,offdiag=None):
         x_norm = normalize_env(x, self.means, self.stds)
-        return LRP.__call__(self, x_norm.reshape(x.shape), f2p,offdiag)
-
-
-class fullcond_fr_sampler(object):
-    def __init__(self, x_fr, x_eo, n_in, n_out, C, vals_in, vals_out, nugget):
-        self.x_fr = x_fr
-        self.x_eo = x_eo
-        self.n_in = n_in
-        self.n_out = n_out
-        self.C = C
-        self.nugget = nugget
-        
-        # from IPython.Debugger import Pdb
-        # Pdb(color_scheme='Linux').set_trace()   
-        self.U_eo = self.C.cholesky(self.x_eo, nugget=self.nugget*np.ones(self.n_in+self.n_out))
-        offdiag = self.C(self.x_eo, self.x_fr)
-        self.o_U_eo = pm.gp.trisolve(self.U_eo,offdiag,uplo='U',transa='T')
-        C_cond = self.C(self.x_fr, self.x_fr)-np.dot(self.o_U_eo.T,self.o_U_eo)
-        self.L_cond = np.linalg.cholesky(C_cond)
-        self.obs_val = np.concatenate((vals_in * np.ones(self.n_in), vals_out*np.ones(self.n_out)))
-        self.M_cond = np.dot(self.o_U_eo.T, pm.gp.trisolve(self.U_eo, self.obs_val, transa='T', uplo='U'))
-        
-    def __call__(self):
-        return np.asarray(self.M_cond + np.dot(self.L_cond, np.random.normal(size=self.x_fr.shape[0]))).ravel()
-        
+        return LRP.__call__(self, x_norm.reshape(x.shape), f2p,offdiag)        
 
 def lr_spatial_env(rl=200,**stuff):
     """A low-rank spatial-only model."""
 
-    n_env = stuff['env_in'].shape[1]
     x_fr = normalize_env(stuff['full_x_fr'], stuff['env_means'], stuff['env_stds'])
-    pts_in = stuff['pts_in']
     f2p = stuff['f2p']
-    
+
+    # ====================================================
+    # = Covariance parameters of the environmental field =
+    # ====================================================
+    n_env = stuff['env_in'].shape[1]
     valpow = pm.Uniform('valpow',0,10,value=.01, observed=False)
     valmean = pm.Lambda('valmean',lambda valpow=valpow : np.arange(n_env+1)*valpow)
     valV = pm.Exponential('valV',1,value=.1)
@@ -94,21 +74,21 @@ def lr_spatial_env(rl=200,**stuff):
 
     vec = cov_prior.OrthogonalBasis('vec',n_env+1,constrain=True)
 
-    const_frac = pm.Uniform('const_frac',0,1,value=.1)
+    # =============================================
+    # = Covariance parameter of the spatial field =
+    # =============================================
+    scale = pm.Exponential('scale',.1,value=1)
+    
+    # =============================================================
+    # = Parameters controlling relative sizes of field components =
+    # =============================================================
+    fracs = pm.Dirichlet('fracs', alpha=np.repeat(2,3))
+    const_frac=fracs[0]
+    spat_frac=fracs[1]
     
     @pm.deterministic
-    def C(val=expval,vec=vec,const_frac=const_frac):
-        return pm.gp.FullRankCovariance(mod_spatial_mahalanobis, val=val, vec=vec, const_frac=const_frac)
-    
-    # TODO tomorrow: Gibbs sample through to initialize to a good, constraint-satisfying state.   
-    # Forget that, just Gibbs sample with constraint satisfaction! 
-    @pm.deterministic
-    def fullcond_sampler(C=C, vals_in=.25, vals_out=-.25, nugget=.01):
-        try:
-            return fullcond_fr_sampler(x_fr, normalize_env(stuff['full_x_eo'], stuff['env_means'], stuff['env_stds']),stuff['n_in'],stuff['n_out'],C,vals_in,vals_out,nugget)
-        except np.linalg.LinAlgError:
-            return None
-    
+    def C(val=expval,vec=vec,const_frac=const_frac,spat_frac=spat_frac,scale=scale):
+        return pm.gp.FullRankCovariance(spatial_mahalanobis, dds=2., dde=2., amp=1.0, scale=scale,val=val, vec=vec, spat_frac=spat_frac, const_frac=const_frac)
 
     @pm.deterministic(trace=False)
     def U_fr(C=C, x=x_fr):
@@ -123,12 +103,10 @@ def lr_spatial_env(rl=200,**stuff):
             return -np.inf
         else:
             return 0.
-
     L_fr = pm.Lambda('L',lambda U=U_fr: U.T, trace=False)
 
     # Evaluation of field at expert-opinion points
     init_val = np.ones(len(x_fr))*-.1
-    # init_val[len(init_val)/2]=-1
     f_fr = pm.MvNormalChol('f_fr', np.zeros(len(x_fr)), L_fr, value=init_val)
 
     @pm.deterministic(trace=False)

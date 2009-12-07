@@ -318,13 +318,8 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     model = make_model(session, species, spatial_submodel, **kwds)        
     M1=LatchingMCMC(model, db='ram')
     species_stepmethods(M1, interval=5, sleep_interval=20)
-    
-    # Try to initialize f_fr to a reaasonable value using CMVNLStepper
-    sm = CMVNLStepper(M1.f_fr, -M1.od_wherefound, np.zeros(len(M1.x_wherefound)), M1.od_where_notfound, M1.n_neg, M1.p_find, pri_S=M1.L_fr, pri_M=None, n_cycles=1000, pri_S_type='tri')
-    sm.step()
-    
     print 'Attempting to satisfy constraints'
-    M1.isample(1)
+    M1.isample(1,burn=1000)
     print 'Done!'
     
     # =======================================
@@ -336,6 +331,10 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     M2.data = pm.Binomial('data', n=M2.n_neg, p=M2.p_eval_where_notfound*M2.p_find, value=M2.n_notfound, observed=True, trace=False)            
     species_stepmethods(M2, interval=10, sleep_interval=20)
     add_metadata(M.db._h5file, kwds, species, spatial_submodel)
+    
+    # Try to initialize full-rank field to a reasonable value.
+    for i in xrange(10):
+        M2.step_method_dict[M2.f_fr][0].step()
 
     # Make sure data_constraint is evaluated before data likelihood, to avoid as meany heavy computations as possible.
     M2.assign_step_methods()
