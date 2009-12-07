@@ -3,8 +3,6 @@ import cov_prior
 from mahalanobis_covariance import *
 import pymc as pm
 
-__all__ = ['spatial_hill','hill_fn','hinge','step','lr_spatial','lr_spatial_env','MVNLRParentMetropolis','minimal_jumps','bookend','spatial_env','nogp_spatial_env','normalize_env']
-
 # =======================================
 # = The spatial-only, low-rank submodel =
 # =======================================
