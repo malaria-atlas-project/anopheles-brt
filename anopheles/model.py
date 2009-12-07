@@ -72,9 +72,12 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     # = Environmental inputs =
     # ========================
     
+    # Evaluate the environmental surfaces at the inducing points.
     if len(env_variables)>0:
         env_in = np.array([extract_environment(n, pts_in * 180./np.pi) for n in env_variables]).T
         env_out = np.array([extract_environment(n, pts_out * 180./np.pi) for n in env_variables]).T
+        # Record the means and standard deviations, because the surfaces will be scaled and shifted
+        # according to those before input into the fields.
         env_means = np.array([np.mean(np.concatenate((env_in[:,i], env_out[:,i]))) for i in xrange(len(env_variables))])
         env_stds = np.array([np.std(np.concatenate((env_in[:,i], env_out[:,i]))) for i in xrange(len(env_variables))])
     else:
@@ -87,16 +90,23 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     # = Priors =
     # ==========
     
-    p_find = pm.Uniform('p_find',0,1)
+    p_find = pm.Uniform('p_find',0,1, doc="Probability of finding a species within its range.")
 
+    # The full_ prefix implies that 'x' is the concatenation of lon,lat, and all environmental surfaces.
+    # Just 'x' means it's just lon,lat (in radians).
+    # 'env_' means it's just the environmental surfaces.
     full_x_in = np.hstack((pts_in, env_in))
     full_x_out = np.hstack((pts_out, env_out))
     full_x_eo = np.vstack((full_x_in, full_x_out))
     x_eo = np.vstack((pts_in, pts_out))
     
+    # The '_fr' suffix means 'on the inducing points'.
     x_fr = x_eo[::5]
     full_x_fr = full_x_eo[::5]
 
+    # ============================
+    # = Call to spatial submodel =
+    # ============================
     spatial_variables = spatial_submodel(**locals())
     p = spatial_variables['p']
     f_fr = spatial_variables['f_fr']
@@ -105,48 +115,72 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     C = spatial_variables['C']
     
     if with_data:
-        
         # ==============
         # = Likelihood =
         # ==============
         
+        # Read in the data, and split it up.
         breaks, x, found, zero, others_found, multipoints = sites_as_ndarray(session, species)
-                
         wherefound = np.where(found > 0)
         where_notfound = np.where(found==0)
         x_wherefound = x[wherefound]
+        x_where_notfound = x[where_notfound]
+        n_found = len(wherefound[0])
+        n_notfound = len(where_notfound[0])
+
+        # The number of failed 'attempts' at locations where the species was not found.
+        # This is used in the likelihood by the CMVNSStepper object.
         n_neg = (found+others_found+zero)[where_notfound]
         
+        # Evaluate the environmental surfaces at the data locations.
         if len(env_variables)>0:
             env_x = np.array([extract_environment(n, x * 180./np.pi) for n in env_variables]).T
         else:
             env_x = np.empty((len(x),0))
-        env_x_wherefound = env_x[wherefound]            
+        env_x_wherefound = env_x[wherefound]    
+        env_x_where_notfound = env_x[where_notfound]
         
-        od_data = C(np.hstack((x, env_x)), full_x_fr)
-        od_wherefound = od_data[wherefound]
-        od_where_notfound = od_data[where_notfound]
-        p_eval = pm.Lambda('p_eval', lambda p=p, od=od_data: p(np.hstack((x, env_x)), offdiag=od), trace=False)
-        f_eval_wherefound = pm.Lambda('f_eval_wherefound', lambda p=p, od=od_data[wherefound]: p(np.hstack((x_wherefound, env_x_wherefound)), f2p=identity, offdiag=od), trace=False)        
+        full_x_wherefound = np.hstack((x_wherefound, env_x_wherefound))
+        full_x_where_notfound = np.hstack((x_where_notfound, env_x_where_notfound))
         
-        constraint_dict = {'data': Constraint(penalty_value = -1e100, logp=lambda f: -np.sum(f*(f<0)), doc="", name='data_constraint', parents={'f':f_eval_wherefound})}
+        p_eval_where_notfound = pm.Lambda('p_eval', 
+            lambda p=p, C=C: p(full_x_where_notfound, offdiag=C(x_where_notfound, full_x_fr)), trace=False, 
+                doc="The probability being within the range, evaluated on all the data locations where the species was not found.")
+
+        # FIXME: This should be used by the CMVNSStepper and the constraint, if possible.
+        # Might be too hard though.
+        f_eval_wherefound = pm.Lambda('f_eval_wherefound', 
+            lambda p=p, C=C: p(full_x_wherefound, f2p=identity, offdiag=C(x_wherefoud, x_fr)), trace=False,
+                doc="The suitability function evaluated everywhere the species was found.")
+        
+        # Enforce presence at the data locations with a constraint.
+        constraint_dict = {'data': 
+            Constraint(penalty_value = -1e100, logp=lambda f: -np.sum(f*(f<0)), 
+                doc="A constraint enforcing presence at the data locations", 
+                name='data_constraint', parents={'f':f_eval_wherefound})}
     
-        
     if with_eo:
+        
+        # ====================================================================
+        # = FIXME: The expert opinions are not supported by CMVNStepper yet. =
+        # ====================================================================
         
         # ==============================
         # = Expert-opinion likelihoods =
         # ==============================
-        od_in = C(full_x_in, full_x_fr)
-        od_out = C(full_x_out, full_x_fr)
-        f_eval_in = pm.Lambda('f_eval_in', lambda p=p, od=od_in: p(full_x_in, f2p=identity, offdiag=od), trace=False)
-        f_eval_out = pm.Lambda('f_eval_out', lambda p=p, od=od_out: p(full_x_out, f2p=identity, offdiag=od), trace=False)   
-        f_eval_eo = pm.Lambda('f_eval_eo', lambda f_eval_in=f_eval_in, f_eval_out=f_eval_out: np.concatenate((f_eval_in,f_eval_out)), trace=False)
-    
-        p_eval_in = pm.Lambda('p_eval_in', lambda f=f_eval_in, f2p=f2p: f2p(f), trace=False)
-        p_eval_out = pm.Lambda('p_eval_out', lambda f=f_eval_out, f2p=f2p: f2p(f), trace=False)        
-        p_eval_eo = pm.Lambda('p_eval_eo', lambda p_eval_in=p_eval_in, p_eval_out=p_eval_out: np.concatenate((p_eval_in,p_eval_out)), trace=False)
+        
+        p_eval_in = pm.Lambda('p_eval_in', 
+            lambda p=p, C=C: p(full_x_in, offdiag=C(full_x_in, full_x_fr)), trace=False,
+                doc="The probability of being within the range evaluated at the inducing points inside the EO region.")
 
+        p_eval_out = pm.Lambda('p_eval_out', 
+            lambda p=p, C=C: p(full_x_out, offdiag=C(full_x_out, full_x_fr)), trace=False,
+                doc="The probability of being within the range evaluated at the inducing points outside the EO region")   
+
+        p_eval_eo = pm.Lambda('p_eval_eo', 
+            lambda p_eval_in=p_eval_in, p_eval_out=p_eval_out: np.concatenate((p_eval_in,p_eval_out)), trace=False,
+                doc="The probability of being within the range evaluated at all the inducing points.")
+    
         @pm.potential
         def not_all_present(p=p_eval_eo):
             """Potential that guards against global presence"""
@@ -155,80 +189,72 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
             else:
                 return 0
         
-    
-        in_prob = pm.Lambda('in_prob', lambda p_eval = p_eval_in: np.mean(p_eval)*.9999+.00005)
-        out_prob = pm.Lambda('out_prob', lambda p_eval = p_eval_out: np.mean(p_eval)*.9999+.00005)    
-        
+        in_prob = pm.Lambda('in_prob', lambda p = p_eval_in: np.mean(p)*.9999+.00005,
+            doc = "The probability that a uniformly-distributed point in the EO region is within the range")
+        out_prob = pm.Lambda('out_prob', lambda p = p_eval_out: np.mean(p)*.9999+.00005,
+            doc = "The probability that a uniformly-distributed point outside the EO region is within the range")
+
         alpha_out = pm.Uniform('alpha_out',0,1)
-        beta_out = pm.Uniform('beta_out',1,10)
-        alpha_in = pm.Uniform('alpha_in',1,10)
-        beta_in = pm.Uniform('beta_in',0,1)
-            
+        beta_out = pm.Uniform('beta_out',1,10)            
         @pm.potential
         def out_factor(a=alpha_out, b=beta_out, p=out_prob):
+            """The 'observation' that the range does not extend outside the EO region"""
             return pm.beta_like(p,a,b)
-        
+        eo_mean_out = pm.Lambda('eo_mean_out', 
+            lambda a=alpha_out, b=beta_out: a/(a+b),
+            doc="The 'likelihood mean' of the proportion of the non-EO region that is within the range")
+
+        alpha_in = pm.Uniform('alpha_in',1,10)
+        beta_in = pm.Uniform('beta_in',0,1)        
         @pm.potential
         def in_factor(a=alpha_in, b=beta_in, p=in_prob):
+            """The 'observation' that the range fills the entire EO region"""
             return pm.beta_like(p,a,b)
-        
-        # ========================
-        # = Hard expert opinions =
-        # ========================
-    
-        env_eo = np.vstack((env_in, env_out))
-        pts_eo = np.vstack((pts_in,pts_out))
-        env_dict = dict(zip(env_variables,env_x.T))
-        env_dict_eo = dict(zip(env_variables,env_eo.T))
-        
-        f_wherefound = np.ones(len(wherefound[0]))
-        f_in_eo = np.ones(n_in)
-        for k in constraint_fns.iterkeys():
-            if k=='location':
-                x_constraint = x
-                x_constraint_eo = pts_eo
-            else:
-                x_constraint = env_dict[k]
-                x_constraint_eo = env_dict_eo[k]
-            
-            # Make mighty sure that the constraint is satisfied at all datapoints.
-            constraint_wherefound = constraint_fns[k](x=x_constraint[wherefound], f=f_wherefound)
-            if constraint_wherefound>0:
-                raise ValueError, 'Constraint function %s with input variable %s is violated the following locations where %s was found: \n%s' %\
-                                    (constraint_fns[k].__name__, k, species[1], x_wherefound[np.where(constraint_wherefound>0)]*180./np.pi)
-                                    
-            # Make kind of sure that the constraint is satisfied in most of the expert opinion region.
-            constraint_in_eo = constraint_fns[k](x=x_constraint_eo[:n_in], f=f_in_eo)
-            if constraint_in_eo>0:
-                warnings.warn('Constraint function %s with input variable %s is violated on %f of the expert opinion region for %s.' %\
-                                    (constraint_fns[k].__name__, k, constraint_in_eo/float(n_in), species[1]))
-            
-            # Make sure the constraint doesn't get violated in the range of the species.
-            constraint_dict[k] = Constraint(penalty_value = -1e100, logp=constraint_fns[k], doc="", name='%s_constraint'%k, parents={'x': x_constraint_eo, 'f': f_eval_eo})
+        eo_mean_in = pm.Lambda('eo_mean_in', 
+            lambda a=alpha_in, b=beta_in: a/(a+b),
+            doc="The 'likelihood mean' of the proportion of the EO region that is outside the range")
+
+        # # ========================
+        # # = Hard expert opinions =
+        # # ========================
+        #
+        # # FIXME: You need to reinstate f_eval_in, f_eval_out, f_eval_eo to use these.
+        #     
+        # env_eo = np.vstack((env_in, env_out))
+        # pts_eo = np.vstack((pts_in,pts_out))
+        # env_dict = dict(zip(env_variables,env_x.T))
+        # env_dict_eo = dict(zip(env_variables,env_eo.T))
+        # 
+        # f_wherefound = np.ones(len(wherefound[0]))
+        # f_in_eo = np.ones(n_in)
+        # for k in constraint_fns.iterkeys():
+        #     if k=='location':
+        #         x_constraint = x
+        #         x_constraint_eo = pts_eo
+        #     else:
+        #         x_constraint = env_dict[k]
+        #         x_constraint_eo = env_dict_eo[k]
+        #     
+        #     # Make mighty sure that the constraint is satisfied at all datapoints.
+        #     constraint_wherefound = constraint_fns[k](x=x_constraint[wherefound], f=f_wherefound)
+        #     if constraint_wherefound>0:
+        #         raise ValueError, 'Constraint function %s with input variable %s is violated the following locations where %s was found: \n%s' %\
+        #                             (constraint_fns[k].__name__, k, species[1], x_wherefound[np.where(constraint_wherefound>0)]*180./np.pi)
+        #                             
+        #     # Make kind of sure that the constraint is satisfied in most of the expert opinion region.
+        #     constraint_in_eo = constraint_fns[k](x=x_constraint_eo[:n_in], f=f_in_eo)
+        #     if constraint_in_eo>0:
+        #         warnings.warn('Constraint function %s with input variable %s is violated on %f of the expert opinion region for %s.' %\
+        #                             (constraint_fns[k].__name__, k, constraint_in_eo/float(n_in), species[1]))
+        #     
+        #     # Make sure the constraint doesn't get violated in the range of the species.
+        #     constraint_dict[k] = Constraint(penalty_value = -1e100, logp=constraint_fns[k], 
+        #         doc="", 
+        #         name='%s_constraint'%k, parents={'x': x_constraint_eo, 'f': f_eval_eo})
 
     out = locals()
     out.update(spatial_variables)
     return out
-
-def probability_traces(M, pos_or_neg = True):
-    "Plots traces of the probability of presence at observation locations."
-    if pos_or_neg:
-        x = M.x[np.where(M.found > 0)]
-    else:
-        x = M.x[np.where(M.found == 0)]
-    vals = []
-    for i in xrange(M._cur_trace_index):
-        p = M.trace('p')[i:i+1][0]
-        vals.append(p(x))
-    return np.array(vals)
-
-def potential_traces(M, in_or_out = 'in'):
-    "Traces of the 'means' of the EO factor potentials."
-    a = M.trace('alpha_'+in_or_out)[:]
-    b = M.trace('beta_'+in_or_out)[:]    
-    
-    import pylab as pl
-    pl.plot(a/(a+b))
 
 def species_stepmethods(M, interval=None, sleep_interval=1):
     """
@@ -246,8 +272,6 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
     #     M.use_step_method(pm.Metropolis, p)
     # M.use_step_method(pm.AdaptiveMetropolis, M.vals)
     # [M.use_step_method(pm.Metropolis,v) for v in M.vals]
-
-    # (self, stochastic, B, y, Bl, n_neg, p_find, pri_S, pri_M, n_cycles=1, pri_S_type='square')
     
     # FIXME: CMVNLStepper is not taking into account the EO or any of the hard constraints right now.
     if interval is None:
@@ -255,8 +279,7 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
     else:
         for i in xrange(0,len(M.f_fr.value),interval):
             M.use_step_method(SubsetMetropolis, M.f_fr, i, interval, sleep_interval)
-        
-
+    
     # Weird step methods
     # M.use_step_method(RayMetropolis, M.vals, 1)
     
@@ -275,94 +298,51 @@ def restore_species_MCMC(session, dbpath):
     M.__dict__.update(metadata)
     return M
 
+def add_metadata(hf, kwds, species, spatial_submodel):
+    hf.createVLArray('/','metadata', atom=tb.ObjectAtom())
+    metadata = {}
+    metadata.update(kwds)
+    metadata['species']=species
+    metadata['spatial_submodel']=spatial_submodel    
+    hf.root.metadata.append(metadata)
+
 def species_MCMC(session, species, spatial_submodel, **kwds):
     print 'Environment variables: ',kwds['env_variables']
     print 'Constraints: ',kwds['constraint_fns']
     print 'Spatial submodel: ',spatial_submodel.__name__
     print 'Species: ',species[1]
 
+    # ====================================
+    # = First stage: Satisfy constraints =
+    # ====================================
     model = make_model(session, species, spatial_submodel, **kwds)        
-    M=LatchingMCMC(model, db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
+    M1=LatchingMCMC(model, db='ram')
+    species_stepmethods(M1, interval=5, sleep_interval=20)
     
-    hf = M.db._h5file
-    hf.createVLArray('/','metadata', atom=tb.ObjectAtom())
-    metadata = {}
-    metadata.update(kwds)
-    metadata['species']=species
-    metadata['spatial_submodel']=spatial_submodel
+    # Try to initialize f_fr to a reaasonable value using CMVNLStepper
+    sm = CMVNLStepper(M1.f_fr, -M1.od_wherefound, np.zeros(len(M1.x_wherefound)), M1.od_where_notfound, M1.n_neg, M1.p_find, pri_S=M1.L_fr, pri_M=None, n_cycles=1000, pri_S_type='tri')
+    sm.step()
     
-    hf.root.metadata.append(metadata)
-    
-    # species_stepmethods(M, interval=None)        
-    species_stepmethods(M, interval=5, sleep_interval=20)
-
-    try:
-        M.f_fr.value = M.fullcond_sampler.value()
-    except:
-        warnings.warn('Failed to initialize by full-conditional sampler.')
-        raise ValueError
-        
     print 'Attempting to satisfy constraints'
-    M.isample(1)
-
-    print 'Done, creating data object and returning'
-    found = model['found']
-    others_found = model['others_found']
-    zero = model['zero']
-    p_eval = model['p_eval']
-    p_find = model['p_find']
-    where_notfound = np.where(found==0)
+    M1.isample(1)
+    print 'Done!'
     
-    M.data = pm.Binomial('data', n=M.n_neg, p=p_eval[where_notfound]*p_find, value=np.zeros(len(where_notfound[0])), observed=True, trace=False)            
+    # =======================================
+    # = Second stage: sample from posterior =
+    # =======================================
+    M2=pm.MCMC(model, db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
 
-    del M.step_methods
-    M._sm_assigned = False
-    M.step_method_dict = {}
-    for s in M.stochastics:
-        M.step_method_dict[s] = []
-
-    species_stepmethods(M, interval=10, sleep_interval=20)
+    # Create data object. Don't create it far the first stage, because all you want to do at that stage is find a legal initial value.
+    M2.data = pm.Binomial('data', n=M2.n_neg, p=M2.p_eval_where_notfound*M2.p_find, value=M2.n_notfound, observed=True, trace=False)            
+    species_stepmethods(M2, interval=10, sleep_interval=20)
+    add_metadata(M.db._h5file, kwds, species, spatial_submodel)
 
     # Make sure data_constraint is evaluated before data likelihood, to avoid as meany heavy computations as possible.
-    # M.step_method_dict[M.f_fr]=[]
-    # M.use_step_method(pm.NoStepper, M.f_fr)
-    M.assign_step_methods()
-    for sm in M.step_methods:
+    M2.assign_step_methods()
+    for sm in M2.step_methods:
         for i in xrange(len(sm.markov_blanket)):
-            if sm.markov_blanket[i] is M.data:
-                sm.markov_blanket.append(M.data)
+            if sm.markov_blanket[i] is M2.data:
+                sm.markov_blanket.append(M2.data)
                 sm.markov_blanket.pop(i)
     
-    return M
-
-def mean_response_samples(M, axis, n, burn=0, thin=1):
-    pts_in = M.pts_in
-    pts_out = M.pts_out
-    pts_eo = np.vstack((pts_in, pts_out))
-    
-    x_disp = np.linspace(pts_eo[:,axis].min(), pts_eo[:,axis].max(), n)
-    
-    pts_plot = np.tile(pts_eo.T, n).T
-    pts_plot[:,axis] = np.repeat(x_disp, len(pts_eo))
-    
-    outs = []
-    for p in M.trace('p')[:][burn::thin]:
-        out = np.empty(n)
-        p_eval = p(pts_plot)
-        for i in xrange(n):
-            out[i] = np.mean(p_eval[i*len(pts_eo):(i+1)*len(pts_eo)])
-        outs.append(out)
-            
-    return x_disp, outs
-    
-def initialize_by_eo(M):    
-    new_val_fr = np.empty(M.rl)
-    new_val_fr[:] = -5
-    new_val_fr[np.where(M.piv.value[:M.rl]<M.pts_in.shape[0])] = 10
-    
-    new_val_d = np.dot(M.U.value[:,M.rl:].T,np.linalg.solve(M.U.value[:,:M.rl].T, new_val_fr))
-    
-    new_val = np.empty(len(M.f_eo.value))        
-    new_val[M.piv.value[:M.rl]] = new_val_fr
-    new_val[M.piv.value[M.rl:]] = new_val_d
-    M.f_eo.value = new_val
+    return M2
