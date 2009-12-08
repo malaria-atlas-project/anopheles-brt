@@ -33,11 +33,7 @@ def spatial_mahalanobis(x,y,dds,dde,amp,scale,val,vec,spat_frac,const_frac,symm=
     env_amp = np.sqrt((1-spat_frac-const_frac)*amp**2)
     const_amp = np.sqrt(const_frac*amp**2)
     spat_part = pm.gp.matern.geo_rad(x[:,:2],y[:,:2],amp=spat_amp,scale=scale,diff_degree=dds,symm=symm)
-    if np.any(np.isnan(spat_part)):
-        raise RuntimeError
     env_part = mahalanobis_covariance(x[:,2:],y[:,2:],diff_degree=dde,amp=env_amp,val=val,vec=vec,symm=symm)
-    if np.any(np.isnan(env_part)):
-        raise RuntimeError
     return spat_part+env_part+const_amp
     
 class LRP_norm(LRP):

@@ -98,11 +98,15 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     full_x_in = np.hstack((pts_in, env_in))
     full_x_out = np.hstack((pts_out, env_out))
     full_x_eo = np.vstack((full_x_in, full_x_out))
+    full_x_in_n = normalize_env(full_x_in, env_means, env_stds)
+    full_x_out_n = normalize_env(full_x_out, env_means, env_stds)    
+    full_x_eo_n = normalize_env(full_x_eo, env_means, env_stds)
     x_eo = np.vstack((pts_in, pts_out))
     
     # The '_fr' suffix means 'on the inducing points'.
     x_fr = x_eo[::5]
     full_x_fr = full_x_eo[::5]
+    full_x_fr_n = normalize_env(full_x_fr, env_means, env_stds)
 
     # ============================
     # = Call to spatial submodel =
@@ -141,16 +145,18 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         env_x_where_notfound = env_x[where_notfound]
         
         full_x_wherefound = np.hstack((x_wherefound, env_x_wherefound))
+        full_x_wherefound_n = normalize_env(full_x_wherefound, env_means, env_stds)
         full_x_where_notfound = np.hstack((x_where_notfound, env_x_where_notfound))
+        full_x_where_notfound_n = normalize_env(full_x_where_notfound, env_means, env_stds)
         
         p_eval_where_notfound = pm.Lambda('p_eval', 
-            lambda p=p, C=C: p(full_x_where_notfound, offdiag=C(full_x_where_notfound, full_x_fr)), trace=False, 
+            lambda p=p, C=C: p(full_x_where_notfound, offdiag=C(full_x_where_notfound_n, full_x_fr_n)), trace=False, 
                 doc="The probability being within the range, evaluated on all the data locations where the species was not found.")
 
         # FIXME: This should be used by the CMVNSStepper and the constraint, if possible.
         # Might be too hard though.
         f_eval_wherefound = pm.Lambda('f_eval_wherefound', 
-            lambda p=p, C=C: p(full_x_wherefound, f2p=identity, offdiag=C(full_x_wherefound, full_x_fr)), trace=False,
+            lambda p=p, C=C: p(full_x_wherefound, f2p=identity, offdiag=C(full_x_wherefound_n, full_x_fr_n)), trace=False,
                 doc="The suitability function evaluated everywhere the species was found.")
         
         from IPython.Debugger import Pdb
@@ -172,11 +178,11 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         # ==============================
         
         p_eval_in = pm.Lambda('p_eval_in', 
-            lambda p=p, C=C: p(full_x_in, offdiag=C(full_x_in, full_x_fr)), trace=False,
+            lambda p=p, C=C: p(full_x_in, offdiag=C(full_x_in_n, full_x_fr_n)), trace=False,
                 doc="The probability of being within the range evaluated at the inducing points inside the EO region.")
 
         p_eval_out = pm.Lambda('p_eval_out', 
-            lambda p=p, C=C: p(full_x_out, offdiag=C(full_x_out, full_x_fr)), trace=False,
+            lambda p=p, C=C: p(full_x_out, offdiag=C(full_x_out_n, full_x_fr_n)), trace=False,
                 doc="The probability of being within the range evaluated at the inducing points outside the EO region")   
 
         p_eval_eo = pm.Lambda('p_eval_eo', 
