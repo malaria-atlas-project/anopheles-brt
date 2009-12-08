@@ -32,8 +32,12 @@ def spatial_mahalanobis(x,y,dds,dde,amp,scale,val,vec,spat_frac,const_frac,symm=
     spat_amp = np.sqrt(spat_frac*amp**2)
     env_amp = np.sqrt((1-spat_frac-const_frac)*amp**2)
     const_amp = np.sqrt(const_frac*amp**2)
-    spat_part = pm.gp.matern.geo_rad(x[:,:2],y[:,:2],dds,spat_amp,scale,symm=symm)
-    env_part = mahalanobis_covariance(x[:,2:],y[:,2:],env_amp,val,vec,symm=symm)
+    spat_part = pm.gp.matern.geo_rad(x[:,:2],y[:,:2],amp=spat_amp,scale=scale,diff_degree=dds,symm=symm)
+    if np.any(np.isnan(spat_part)):
+        raise RuntimeError
+    env_part = mahalanobis_covariance(x[:,2:],y[:,2:],diff_degree=dde,amp=env_amp,val=val,vec=vec,symm=symm)
+    if np.any(np.isnan(env_part)):
+        raise RuntimeError
     return spat_part+env_part+const_amp
     
 class LRP_norm(LRP):
@@ -66,13 +70,13 @@ def lr_spatial_env(rl=200,**stuff):
     valV = pm.Exponential('valV',1,value=.1)
 
     # val = pm.Normal('val',valmean,1./valV,value=np.concatenate(([-2],-1*np.ones(n_env))))
-    vals = [pm.Normal('val_%i'%i,valmean[i],1./valV,value=1) for i in xrange(n_env+1)]
+    vals = [pm.Normal('val_%i'%i,valmean[i],1./valV,value=1) for i in xrange(n_env)]
     vals[0].value = 0
     val = pm.Lambda('val',lambda vals=vals: np.array(vals))
     baseval = pm.Exponential('baseval', .01, value=np.exp(-2), observed=False)
     expval = pm.Lambda('expval',lambda val=val,baseval=baseval:np.exp(val)*baseval)    
 
-    vec = cov_prior.OrthogonalBasis('vec',n_env+1,constrain=True)
+    vec = cov_prior.OrthogonalBasis('vec',n_env,constrain=True)
 
     # =============================================
     # = Covariance parameter of the spatial field =
@@ -82,7 +86,7 @@ def lr_spatial_env(rl=200,**stuff):
     # =============================================================
     # = Parameters controlling relative sizes of field components =
     # =============================================================
-    fracs = pm.Dirichlet('fracs', alpha=np.repeat(2,3))
+    fracs = pm.Dirichlet('fracs', theta=np.repeat(2,3))
     const_frac=fracs[0]
     spat_frac=fracs[1]
     

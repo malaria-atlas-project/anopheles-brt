@@ -22,11 +22,14 @@ n_neg = np.repeat(1,2*n)
 
 acc = []
 rej = []
-sm = CMVNLStepper(f, B, np.zeros(n), Bl, n_neg, .999, S, M, n_cycles=1000, pri_S_type='tri')
-pl.clf()
+sm = CMVNLStepper(f, B, np.zeros(n), Bl, n_neg, .8, S, M, n_cycles=1000, pri_S_type='tri')
+pl.close('all')
 for i in xrange(10):
     sm.step()
     acc.append(sm.accepted)
     rej.append(sm.rejected)
     pl.plot(f.value)
 
+pl.figure()
+pl.hist(np.concatenate((f.value[:n],f.value[2*n:])),normed=True)
+pl.hist(f.value[n:2*n],normed=True)

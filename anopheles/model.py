@@ -144,15 +144,17 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         full_x_where_notfound = np.hstack((x_where_notfound, env_x_where_notfound))
         
         p_eval_where_notfound = pm.Lambda('p_eval', 
-            lambda p=p, C=C: p(full_x_where_notfound, offdiag=C(x_where_notfound, full_x_fr)), trace=False, 
+            lambda p=p, C=C: p(full_x_where_notfound, offdiag=C(full_x_where_notfound, full_x_fr)), trace=False, 
                 doc="The probability being within the range, evaluated on all the data locations where the species was not found.")
 
         # FIXME: This should be used by the CMVNSStepper and the constraint, if possible.
         # Might be too hard though.
         f_eval_wherefound = pm.Lambda('f_eval_wherefound', 
-            lambda p=p, C=C: p(full_x_wherefound, f2p=identity, offdiag=C(x_wherefoud, x_fr)), trace=False,
+            lambda p=p, C=C: p(full_x_wherefound, f2p=identity, offdiag=C(full_x_wherefound, full_x_fr)), trace=False,
                 doc="The suitability function evaluated everywhere the species was found.")
         
+        from IPython.Debugger import Pdb
+        Pdb(color_scheme='LightBG').set_trace() 
         # Enforce presence at the data locations with a constraint.
         constraint_dict = {'data': 
             Constraint(penalty_value = -1e100, logp=lambda f: -np.sum(f*(f<0)), 

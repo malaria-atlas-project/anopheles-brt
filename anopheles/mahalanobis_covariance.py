@@ -90,7 +90,7 @@ def spatial_mahalanobis_covariance(x,y,amp,val,vec,const_frac=0,symm=None):
     return C
 
 
-def mahalanobis_covariance(x,y,amp,val,vec,symm=None):
+def mahalanobis_covariance(x,y,diff_degree,amp,val,vec,symm=None):
     """
     Converts x and y to a matrix of covariances. x and y are assumed to have
     columns (long,lat,t). Parameters are:
@@ -127,14 +127,14 @@ def mahalanobis_covariance(x,y,amp,val,vec,symm=None):
             bounds = np.array(np.sqrt(np.linspace(0,ny*ny,n_threads+1)),dtype=int)
 
     # Target function for threads
-    def targ(C,x,y,symm,amp,val,vec,cmin,cmax):
-        mahal(C,x,y,symm,amp,val,vec,cmin,cmax)
+    def targ(C,x,y,symm,diff_degree,amp,val,vec,cmin,cmax):
+        mahal(C,x,y,symm,diff_degree,amp,val,vec,cmin,cmax)
     
     # Dispatch threads        
     if n_threads <= 1:
-        targ(C,x,y,symm,amp,val,vec,0,C.shape[1])
+        mahal(C,x,y,symm,diff_degree,amp,val,vec,cmin=0,cmax=C.shape[1])
     else:
-        thread_args = [(C,x,y,symm,amp,val,vec,bounds[i],bounds[i+1]) for i in xrange(n_threads)]
+        thread_args = [(C,x,y,symm,diff_degree,amp,val,vec,bounds[i],bounds[i+1]) for i in xrange(n_threads)]
         pm.map_noreturn(targ, thread_args)
 
     if symm:

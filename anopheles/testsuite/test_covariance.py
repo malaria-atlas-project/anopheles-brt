@@ -1,59 +1,41 @@
-from numpy.testing import *
-import nose,  warnings
-from anopheles import spatial_mahalanobis_covariance
-import numpy as np
+import anopheles
+from anopheles_query import Session
+from cov_prior import OrthogonalBasis, GivensStepper
+from pymc import AdaptiveMetropolis
 import pymc as pm
 
-N = 5
-n_env = 2
+# from anopheles.species.darlingi import *
+from anopheles.species.gambiae import *
+# from anopheles.species.arabiensis import *
+# from anopheles.species.stephensi import *
 
-lon = np.random.uniform(-np.pi,np.pi,size=N)
-lat = np.random.uniform(0,np.pi/2.,size=N)
-env = []
-for i in xrange(n_env):
-    env.append(np.random.normal(size=N))
-    
-x = np.vstack([lon,lat]+env).T
+s = Session()
+species = dict([sp[::-1] for sp in anopheles.list_species(s)])
+species_tup = (species[species_name], species_name)
 
-class test_spatial_mahalanobis_covariance(object):
-    def test_spatial_only(self):
+from mpl_toolkits import basemap
+import pylab as pl
 
-        val = np.ones(n_env+1)
-        vec = np.eye(n_env+1)
-        val[1:]=1e10
+pl.close('all')
 
-        C1 = spatial_mahalanobis_covariance(x,x,1,val,vec,symm=True)
-        C2 = pm.gp.exponential.geo_rad(x[:,:2],x[:,:2],amp=1,scale=1,symm=True)
-    
-        assert_almost_equal(C1,C2)
-    
-    def test_env_only(self):
-        val = np.ones(n_env+1)
-        vec = np.eye(n_env+1)
-        val[0] = 1e10
+mask, x, img_extent = anopheles.make_covering_raster(100, env)
+mask, x, img_extent = anopheles.make_covering_raster(20, env)
+# outside_lat = (x[:,1]*180./np.pi>38)+(x[:,1]*180./np.pi<-36)
+# outside_lon = (x[:,0]*180./np.pi>56)+(x[:,0]*180./np.pi<-18)
+mask, x, img_extent = anopheles.subset_x(mask,x,img_extent,(-18,-36,56,38))
 
-        C1 = spatial_mahalanobis_covariance(x,x,1,val,vec,symm=True)
-        C2 = pm.gp.exponential.euclidean(x[:,2:],x[:,2:],amp=1,scale=1,symm=True)
-    
-        assert_almost_equal(C1,C2)
-    
-    def test_anisotropic_env_only(self):
-        B = np.random.normal(size=(n_env,n_env))
-        e_val,e_vec = np.linalg.eigh(np.dot(B,B.T))
-    
-        val = np.empty(n_env+1)
-        val[0]=1e10
-        val[1:]=e_val
+spatial_submodel = anopheles.lr_spatial_env
+# spatial_submodel = anopheles.nogp_spatial_env
+# n_in = n_out = 2
 
-        vec = np.zeros((n_env+1,n_env+1))
-        vec[1:,1:]=e_vec
-        vec[0,0]=1
-    
-        C1 = spatial_mahalanobis_covariance(x,x,1,val,vec,symm=True)
-        x_trans = np.dot(x[:,2:],e_vec)/np.sqrt(e_val)
-        C2 = pm.gp.exponential.euclidean(x_trans,x_trans,amp=1,scale=1,symm=True)
-    
-        assert_almost_equal(C1,C2)
+# spatial_submodel = lr_spatial_env
+n_in = n_out = 1000
+
+# spatial_submodel = spatial_env
+# n_out = 400
+# n_in = 100
+
+mod = anopheles.model.make_model(s, species_tup, spatial_submodel, with_eo = True, with_data = True, env_variables = env, constraint_fns=cf,n_in=n_in,n_out=n_out)
 
 if __name__ == '__main__':
     nose.runmodule()
