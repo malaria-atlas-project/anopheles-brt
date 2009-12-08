@@ -44,7 +44,7 @@ def cmvns_l(cur_val, B, y, Bl, n_neg, p_find, pri_S = None, pri_M = None, n_cycl
     um=np.random.random(size=(n,n_cycles)).copy('F')
     # Call to Fortran routine lcg, which overwrites new_val in-place. Number of
     # cycles is determined by size of u.
-    lcm(np.asarray(B,order='F'), y_, new_val, u, np.asarray(Bl,order='F'), n_neg, p_find, um, lop)
+    acc, rej = lcm(np.asarray(B,order='F'), y_, new_val, u, np.asarray(Bl,order='F'), n_neg, p_find, um, lop)
     
     # Change back to original coordinates and return.
     if pri_S is not None:
@@ -53,7 +53,7 @@ def cmvns_l(cur_val, B, y, Bl, n_neg, p_find, pri_S = None, pri_M = None, n_cycl
         else:
             new_val *= pri_S    
     
-    return new_val
+    return new_val, acc, rej
     
 def cmvns(cur_val, B, y, pri_S=None, pri_M=None, n_cycles=1, pri_S_type='square'):
     """

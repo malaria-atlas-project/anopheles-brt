@@ -16,7 +16,8 @@ class CMVNLStepper(pm.StepMethod):
         pm.StepMethod.__init__(self, stochastic)
         
     def step(self):
-        self.stochastic.value = cmvns_l(self.stochastic.value, *tuple([pm.utils.value(v) for v in self.cvmns_l_params]))
+        self.stochastic.value, self.accepted, self.rejected = \
+             cmvns_l(self.stochastic.value, *tuple([pm.utils.value(v) for v in self.cvmns_l_params]))
 
 class DelayedMetropolis(pm.Metropolis):
 

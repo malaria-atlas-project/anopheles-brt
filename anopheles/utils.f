@@ -39,7 +39,7 @@
 !                 raise ValueError
 !         y_ -= B[:,i]*new_val[i]
 
-      SUBROUTINE lcm(B,y,nv,u,n,nc,ny,Bl,nneg,pf,nl,um,lop)
+      SUBROUTINE lcm(B,y,nv,u,n,nc,ny,Bl,nneg,pf,nl,um,lop,acc,rej)
 !
 ! lcm is for 'Linear constraint Metropolis'. Metropolis samples the elements of y, 
 ! in order, under the constraint that B*nv <= y. nc cycles are done. The 'likelihood'
@@ -49,16 +49,21 @@
 !
 cf2py intent(hide) ny, n, c, nl
 cf2py intent(inplace) nv
+cf2py intent(out) acc, rej
       DOUBLE PRECISION B(ny,n), u(n,nc), y(ny), nv(n), lop(nl)
       DOUBLE PRECISION Bl(nl,n), um(n,nc), nneg(nl), pf
-      DOUBLE PRECISION lb, ub, lb_, ub_, na, nb, u_, lpf
+      INTEGER acc(nc), rej(nc)
+      DOUBLE PRECISION lb, ub, lb_, ub_, na, nb, u_, lpf, lpnf
       DOUBLE PRECISION sqrt2, thisb, lopp(nl), llr, nvp, dev
       INTEGER ny, n, nc, c, i, j,ifault
       
       sqrt2 = dsqrt(2.0D0)
       lpf = dlog(pf)
+      lpnf = dlog(1.0D0-pf)
       
       do c=1,nc
+          acc(c) = 0
+          rej(c) = 0
           do i=1,n
 !               Figure out upper and lower bounds
               ub = 1.0D6
@@ -104,11 +109,14 @@ cf2py intent(inplace) nv
               llr = 0.0D0
               do j=1,nl
                   lopp(j)=lop(j)+Bl(j,i)*dev
+!                   if ((lop(j)*lopp(j)).LT.0.0D0) then
+!                       print *,'Sign change'
+!                   end if
                   if (lopp(j).GT.0.0D0) then
-                      llr = llr + nneg(j) * lpf
+                      llr = llr + nneg(j) * lpnf
                   end if
                   if (lop(j).GT.0.0D0) then
-                      llr=llr - nneg(j) * lpf
+                      llr=llr - nneg(j) * lpnf
                   end if 
 !                   llr=llr+nneg(j)*(dlog(1.0D0+dexp(-lop(j)))
 !      *              -dlog(1.0D0+dexp(-lopp(j))))
@@ -118,12 +126,15 @@ cf2py intent(inplace) nv
 !               M-H acceptance?
               if (dlog(um(i,c)).LE.llr) then
 !                   print *,'accepted',i,nv(i),llr
+!                   print *,'Accepting'
                   nv(i)=nvp
                   do j=1,nl
                       lop(j)=lopp(j)
                   end do
-!               else
-!                   print *,'rejected',llr
+                  acc(c) = acc(c)+1
+              else
+                  rej(c) = rej(c)+1
+!                   print *,'Rejecting'
               end if
 
 !               print *,i,lb,ub,na,nb,nv(i),u_,ifault
@@ -256,12 +267,12 @@ cf2py threadsafe
 
 
       SUBROUTINE mahal(c,x,y,symm,dd,a,l,s,nx,ny,nd,cmin,cmax)
-cf2py intent(hide) nx,ny,nd
+cf2py intent(hide) nx,ny,nd,BK
 cf2py intent(inplace) c
 cf2py threadsafe
       DOUBLE PRECISION x(nx,nd), y(ny,nd), s(nd,nd), l(nd)
       DOUBLE PRECISION c(nx,ny), dev(nd), this, a, tdev(nd)
-      DOUBLE PRECISION dd, rem, GA, prefac, snu
+      DOUBLE PRECISION dd, rem, GA, prefac, snu, BK(15)
       INTEGER i,j,k,m,nx,ny,nd,cmin,cmax
       LOGICAL symm
       

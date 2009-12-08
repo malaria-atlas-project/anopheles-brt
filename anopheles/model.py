@@ -32,7 +32,7 @@ import warnings
 import shapely
 import tables as tb
 
-__all__ = ['make_model', 'species_MCMC', 'probability_traces','potential_traces','threshold','invlogit', 'restore_species_MCMC']
+__all__ = ['make_model', 'species_MCMC', 'threshold','invlogit', 'restore_species_MCMC']
 
 def identity(x):
     return x
