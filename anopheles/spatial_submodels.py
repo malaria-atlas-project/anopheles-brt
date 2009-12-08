@@ -34,7 +34,26 @@ def spatial_mahalanobis(x,y,dds,dde,amp,scale,val,vec,spat_frac,const_frac,symm=
     const_amp = np.sqrt(const_frac*amp**2)
     spat_part = pm.gp.matern.geo_rad(x[:,:2],y[:,:2],amp=spat_amp,scale=scale,diff_degree=dds,symm=symm)
     env_part = mahalanobis_covariance(x[:,2:],y[:,2:],diff_degree=dde,amp=env_amp,val=val,vec=vec,symm=symm)
-    return spat_part+env_part+const_amp
+    
+    out = spat_part+env_part+const_amp**2
+    if symm:
+        np.testing.assert_almost_equal(out.max(),amp**2)
+        
+        # import pylab as pl
+        # pl.clf()
+        # pl.subplot(1,2,1)
+        # pl.imshow(np.asarray(spat_part))
+        # pl.title('spatial')
+        # pl.colorbar()
+        # pl.subplot(1,2,2)
+        # pl.imshow(np.asarray(env_part))
+        # pl.title('environmental')
+        # pl.colorbar()
+        # 
+        # from IPython.Debugger import Pdb
+        # Pdb(color_scheme='LightBG').set_trace() 
+
+    return out
     
 class LRP_norm(LRP):
     """
@@ -62,22 +81,20 @@ def lr_spatial_env(rl=200,**stuff):
     # ====================================================
     n_env = stuff['env_in'].shape[1]
     valpow = pm.Uniform('valpow',0,10,value=.01, observed=False)
-    valmean = pm.Lambda('valmean',lambda valpow=valpow : np.arange(n_env+1)*valpow)
+    valmean = pm.Lambda('valmean',lambda valpow=valpow : np.arange(n_env)*valpow)
     valV = pm.Exponential('valV',1,value=.1)
 
-    # val = pm.Normal('val',valmean,1./valV,value=np.concatenate(([-2],-1*np.ones(n_env))))
-    vals = [pm.Normal('val_%i'%i,valmean[i],1./valV,value=1) for i in xrange(n_env)]
-    vals[0].value = 0
-    val = pm.Lambda('val',lambda vals=vals: np.array(vals))
-    baseval = pm.Exponential('baseval', .01, value=np.exp(-2), observed=False)
-    expval = pm.Lambda('expval',lambda val=val,baseval=baseval:np.exp(val)*baseval)    
+    val = pm.Normal('val',valmean,1./valV,value=np.ones(n_env)*2)
+    # vals = [pm.Normal('val_%i'%i,valmean[i],1./valV,value=1) for i in xrange(n_env)]
+    # val = pm.Lambda('val',lambda vals=vals: np.array(vals))
+    expval = pm.Lambda('expval',lambda val=val: np.exp(val))    
 
     vec = cov_prior.OrthogonalBasis('vec',n_env,constrain=True)
 
     # =============================================
     # = Covariance parameter of the spatial field =
     # =============================================
-    scale = pm.Exponential('scale',.1,value=1)
+    scale = pm.Exponential('scale',.1,value=.3)
     
     # =============================================================
     # = Parameters controlling relative sizes of field components =
@@ -88,7 +105,7 @@ def lr_spatial_env(rl=200,**stuff):
     
     @pm.deterministic
     def C(val=expval,vec=vec,const_frac=const_frac,spat_frac=spat_frac,scale=scale):
-        return pm.gp.FullRankCovariance(spatial_mahalanobis, dds=2., dde=2., amp=1.0, scale=scale,val=val, vec=vec, spat_frac=spat_frac, const_frac=const_frac)
+        return pm.gp.FullRankCovariance(spatial_mahalanobis, dds=1.5, dde=1.5, amp=1.0, scale=scale,val=val, vec=vec, spat_frac=spat_frac, const_frac=const_frac)
 
     @pm.deterministic(trace=False)
     def U_fr(C=C, x=x_fr):

@@ -43,7 +43,7 @@ def threshold(f):
 def invlogit(f):
     return pm.flib.invlogit(f.ravel()).reshape(f.shape)
     
-def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}, n_in=1000, n_out=1000, f2p=threshold):
+def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}, n_in=200, n_out=1000, f2p=threshold):
     """
     Generates a PyMC probability model with a plug-in spatial submodel.
     The likelihood and expert-opinion layers are common.
@@ -104,8 +104,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     x_eo = np.vstack((pts_in, pts_out))
     
     # The '_fr' suffix means 'on the inducing points'.
-    x_fr = x_eo[::5]
-    full_x_fr = full_x_eo[::5]
+    x_fr = x_eo[::20]
+    full_x_fr = full_x_eo[::20]
     full_x_fr_n = normalize_env(full_x_fr, env_means, env_stds)
 
     # ============================
@@ -159,8 +159,6 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
             lambda p=p, C=C: p(full_x_wherefound, f2p=identity, offdiag=C(full_x_wherefound_n, full_x_fr_n)), trace=False,
                 doc="The suitability function evaluated everywhere the species was found.")
         
-        from IPython.Debugger import Pdb
-        Pdb(color_scheme='LightBG').set_trace() 
         # Enforce presence at the data locations with a constraint.
         constraint_dict = {'data': 
             Constraint(penalty_value = -1e100, logp=lambda f: -np.sum(f*(f<0)), 

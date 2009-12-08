@@ -117,7 +117,7 @@ def presence_map(M, session, species, burn=0, thin=1, trace_thin=1, **kwds):
 def current_state_map(M, session, species, mask, x, img_extent, thin=1, f2p=None, **kwds):
     "Maps the current state of the model."
 
-    out = pm.value(M.p)(x, f2p=f2p)
+    out = pm.utils.value(M.p)(x, f2p=f2p)
 
     b = basemap.Basemap(*img_extent)
     arr = np.ma.masked_array(out, mask=True-mask)

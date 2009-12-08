@@ -35,7 +35,28 @@ n_in = n_out = 1000
 # n_out = 400
 # n_in = 100
 
-mod = anopheles.model.make_model(s, species_tup, spatial_submodel, with_eo = True, with_data = True, env_variables = env, constraint_fns=cf,n_in=n_in,n_out=n_out)
+M = pm.MCMC(anopheles.model.make_model(s, species_tup, spatial_submodel, with_eo = True, with_data = True, env_variables = env, constraint_fns=cf,n_in=n_in,n_out=n_out))
 
-if __name__ == '__main__':
-    nose.runmodule()
+pl.close('all')
+M.spatial_variables['fracs'].value = np.array([.001,.998])
+M.f_fr.rand()
+anopheles.current_state_map(M, s, species_tup, mask, x, img_extent, thin=100, f2p=anopheles.model.identity)
+pl.colorbar()
+pl.title('All spatial')
+
+pl.figure()
+M.spatial_variables['fracs'].value = np.array([.001,.001])
+M.f_fr.rand()
+anopheles.current_state_map(M, s, species_tup, mask, x, img_extent, thin=100, f2p=anopheles.model.identity)
+pl.colorbar()
+pl.title('All environmental')
+
+pl.figure()
+M.spatial_variables['fracs'].value = np.array([.998,.001])
+M.f_fr.rand()
+anopheles.current_state_map(M, s, species_tup, mask, x, img_extent, thin=100, f2p=anopheles.model.identity)
+pl.colorbar()
+pl.title('Mostly constant')
+
+# if __name__ == '__main__':
+#     nose.runmodule()

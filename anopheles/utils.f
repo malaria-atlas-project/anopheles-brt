@@ -265,26 +265,22 @@ cf2py threadsafe
       RETURN
       END
 
-
-      SUBROUTINE mahal(c,x,y,symm,dd,a,l,s,nx,ny,nd,cmin,cmax)
+! (C,x,y,symm,diff_degree,amp,val,vec,bounds[i],bounds[i+1])
+      SUBROUTINE mahal(c,x,y,symm,dd,GA,a,l,s,nx,ny,nd,cmin,cmax)
 cf2py intent(hide) nx,ny,nd,BK
 cf2py intent(inplace) c
 cf2py threadsafe
       DOUBLE PRECISION x(nx,nd), y(ny,nd), s(nd,nd), l(nd)
       DOUBLE PRECISION c(nx,ny), dev(nd), this, a, tdev(nd)
       DOUBLE PRECISION dd, rem, GA, prefac, snu, BK(15)
-      INTEGER i,j,k,m,nx,ny,nd,cmin,cmax
+      INTEGER i,j,k,m,nx,ny,nd,cmin,cmax, fl, N
       LOGICAL symm
-      
-      dd = 2.0D0
-      N = 1
-      ! FIXME: Double-check this GA.
-      GA = 1.0D0
             
       prefac = 0.5D0 ** (dd-1.0D0) / GA
  
       snu = DSQRT(dd) * 2.0D0
       fl = DINT(dd)
+      N = fl
       rem = dd - fl
       
 !       DGEMV(TRANS,M,N,ALPHA,A,LDA,X,INCX,BETA,Y,INCY)
@@ -312,10 +308,13 @@ cf2py threadsafe
                     do k=1,nd
                         this = this + tdev(k)*tdev(k)/l(k)
                     end do
+                    
+!                     print *,this
 
                   this = dsqrt(this) * snu
                   CALL RKBESL(this,rem,fl+1,1,BK,N)
-                  c(i,j) = prefac*(this**diff_degree)*BK(fl+1)
+                  c(i,j) = prefac*(this**dd)*BK(fl+1)*a**2
+!                     c(i,j) = dexp(-dsqrt(this))*a**2
 
                 end do              
                 
@@ -342,7 +341,8 @@ cf2py threadsafe
               
                   this = dsqrt(this) * snu
                   CALL RKBESL(this,rem,fl+1,1,BK,N)
-                  c(i,j) = prefac*(this**diff_degree)*BK(fl+1)
+                  c(i,j) = prefac*(this**dd)*BK(fl+1)*a**2
+!                     c(i,j) = dexp(-dsqrt(this))*a**2
 
               end do
           end if
