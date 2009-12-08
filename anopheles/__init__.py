@@ -5,7 +5,7 @@ from anopheles_query import *
 import species
 
 
-for mod in ['query_to_rec','model','spatial_submodels','utils','env_data','mahalanobis_covariance','mapping','validation_metrics']:
+for mod in ['query_to_rec','model','spatial_submodels','utils','env_data','mahalanobis_covariance','mapping','validation_metrics','constrained_mvn_sample','constraints','step_methods']:
     try:
         exec('from %s import *'%mod)
     except ImportError:

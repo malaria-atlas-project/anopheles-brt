@@ -277,7 +277,7 @@ cf2py threadsafe
       rem = dd - fl
       
 !       DGEMV(TRANS,M,N,ALPHA,A,LDA,X,INCX,BETA,Y,INCY)
-      EXTERNAL DGEMV
+!       EXTERNAL DGEMV
       
       do j=cmin+1,cmax     
           if (symm) then
@@ -359,7 +359,7 @@ cf2py threadsafe
       LOGICAL symm
       
 !       DGEMV(TRANS,M,N,ALPHA,A,LDA,X,INCX,BETA,Y,INCY)
-      EXTERNAL DGEMV
+!       EXTERNAL DGEMV
       
       diff_degree = 1.0D0
       N = 1
