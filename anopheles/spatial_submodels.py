@@ -39,12 +39,6 @@ def spatial_mahalanobis(x,y,dds,dde,amp,scale,val,vec,spat_frac,const_frac,symm=
     # if symm:
     #     np.testing.assert_almost_equal(out.max(),amp**2)
     #     
-    #     print """
-    #     The environmental part is damn near low-rank even when it's not. You probably have shitty inducing points.
-    #     Try using ichol to figure out where the rank deficiency begins. You might also want to sample from the
-    #     empirical mean and covariance of the on-data environmental shit. Or do something with Latin hypercubes.
-    #     """
-    #     
     #     import pylab as pl
     #     pl.clf()
     #     pl.subplot(1,2,1)

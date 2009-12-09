@@ -29,11 +29,11 @@ spatial_submodel = anopheles.lr_spatial_env
 # n_in = n_out = 2
 
 # spatial_submodel = lr_spatial_env
-n_in = n_out = 1000
+# n_in = n_out = 1000
 
 # spatial_submodel = spatial_env
-# n_out = 400
-# n_in = 100
+n_out = 1000
+n_in = 1000
 
 M = pm.MCMC(anopheles.model.make_model(s, species_tup, spatial_submodel, with_eo = True, with_data = True, env_variables = env, constraint_fns=cf,n_in=n_in,n_out=n_out))
 

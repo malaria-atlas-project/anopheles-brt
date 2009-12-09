@@ -71,10 +71,10 @@ def mahalanobis_covariance(x,y,diff_degree,amp,val,vec,symm=None):
     if symm:
         pm.gp.symmetrize(C)
 
-        eigs = np.linalg.eigh(C)
-        val,vec = eigs
-        if np.any(val<-1.e-3):
-            raise RuntimeError, 'Negative eigenvalues: %s'%val[np.where(val<0)]
+        # eigs = np.linalg.eigh(C)
+        # val,vec = eigs
+        # if np.any(val<-1.e-3):
+        #     raise RuntimeError, 'Negative eigenvalues: %s'%val[np.where(val<0)]
 
     return C
     
