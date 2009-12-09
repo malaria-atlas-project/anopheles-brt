@@ -295,7 +295,6 @@ cf2py threadsafe
                     do k=1,nd
                         dev(k) = x(i,k) - y(j,k)
                     end do
-
 !               DGEMV that is guaranteed to be single-threaded
                     do k=1,nd
                         tdev(k) = 0.0D0                  
@@ -310,11 +309,13 @@ cf2py threadsafe
                     end do
                     
 !                     print *,this
-
-                  this = dsqrt(this) * snu
-                  CALL RKBESL(this,rem,fl+1,1,BK,N)
-                  c(i,j) = prefac*(this**dd)*BK(fl+1)*a**2
-!                     c(i,j) = dexp(-dsqrt(this))*a**2
+                  if (this.EQ.0.0D0) then
+                      c(i,j)=a*a
+                  else
+                      this = dsqrt(this) * snu
+                      CALL RKBESL(this,rem,fl+1,1,BK,N)
+                      c(i,j) = prefac*(this**dd)*BK(fl+1)*a**2
+                  end if
 
                 end do              
                 
@@ -339,10 +340,13 @@ cf2py threadsafe
                       this = this + tdev(k)*tdev(k)/l(k)
                   end do
               
-                  this = dsqrt(this) * snu
-                  CALL RKBESL(this,rem,fl+1,1,BK,N)
-                  c(i,j) = prefac*(this**dd)*BK(fl+1)*a**2
-!                     c(i,j) = dexp(-dsqrt(this))*a**2
+                  if (this.EQ.0.0D0) then
+                      c(i,j)=a*a
+                  else
+                      this = dsqrt(this) * snu
+                      CALL RKBESL(this,rem,fl+1,1,BK,N)
+                      c(i,j) = prefac*(this**dd)*BK(fl+1)*a**2
+                  end if
 
               end do
           end if

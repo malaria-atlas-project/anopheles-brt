@@ -36,22 +36,28 @@ def spatial_mahalanobis(x,y,dds,dde,amp,scale,val,vec,spat_frac,const_frac,symm=
     env_part = mahalanobis_covariance(x[:,2:],y[:,2:],diff_degree=dde,amp=env_amp,val=val,vec=vec,symm=symm)
     
     out = spat_part+env_part+const_amp**2
-    if symm:
-        np.testing.assert_almost_equal(out.max(),amp**2)
-        
-        # import pylab as pl
-        # pl.clf()
-        # pl.subplot(1,2,1)
-        # pl.imshow(np.asarray(spat_part))
-        # pl.title('spatial')
-        # pl.colorbar()
-        # pl.subplot(1,2,2)
-        # pl.imshow(np.asarray(env_part))
-        # pl.title('environmental')
-        # pl.colorbar()
-        # 
-        # from IPython.Debugger import Pdb
-        # Pdb(color_scheme='LightBG').set_trace() 
+    # if symm:
+    #     np.testing.assert_almost_equal(out.max(),amp**2)
+    #     
+    #     print """
+    #     The environmental part is damn near low-rank even when it's not. You probably have shitty inducing points.
+    #     Try using ichol to figure out where the rank deficiency begins. You might also want to sample from the
+    #     empirical mean and covariance of the on-data environmental shit. Or do something with Latin hypercubes.
+    #     """
+    #     
+    #     import pylab as pl
+    #     pl.clf()
+    #     pl.subplot(1,2,1)
+    #     pl.imshow(np.asarray(spat_part), interpolation='nearest')
+    #     pl.title('spatial')
+    #     pl.colorbar()
+    #     pl.subplot(1,2,2)
+    #     pl.imshow(np.asarray(env_part), interpolation='nearest')
+    #     pl.title('environmental')
+    #     pl.colorbar()
+    #     
+    #     from IPython.Debugger import Pdb
+    #     Pdb(color_scheme='LightBG').set_trace() 
 
     return out
     
@@ -94,7 +100,7 @@ def lr_spatial_env(rl=200,**stuff):
     # =============================================
     # = Covariance parameter of the spatial field =
     # =============================================
-    scale = pm.Exponential('scale',.1,value=.3)
+    scale = pm.Exponential('scale',.1,value=.1)
     
     # =============================================================
     # = Parameters controlling relative sizes of field components =
