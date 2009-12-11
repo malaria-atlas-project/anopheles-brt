@@ -15,7 +15,7 @@
 
 import numpy as np
 from anopheles_query import *
-from map_utils import multipoly_sample
+from map_utils import multipoly_sample, shapely_multipoly_area
 import tables as tb
 import sys, os
 import shapely
@@ -123,24 +123,36 @@ def sites_as_ndarray(session, species):
     
     return breaks, x, found, zero, others_found, multipoints
             
-def sample_eo(session, species, n_in, n_out):
+def sample_eo(session, species, n_inducing):
     
-    fname = '%s_eo_pts_%i_%i.hdf5'%(species[1],n_in,n_out)
+    # Don't compute the world's land surface area using Shapely, because it
+    # uses cylindrical coordinates & will be wrong.
+    world_area = 150000000
+    
+    fname = '%s_eo_pts_%i.hdf5'%(species[1],n_inducing)
     
     if fname in os.listdir('anopheles-caches'):
         hf = tb.openFile(os.path.join('anopheles-caches', fname))
         pts_in = hf.root.pts_in[:]
         pts_out = hf.root.pts_out[:]
         hf.close()
-
     else:
+        print 'Cached expert-opinion points not found, recomputing.'        
+        print 'Querying species'
         sites, eo = species_query(session, species[0])
-
-        print 'Cached expert-opinion points not found, recomputing.'
         print 'Querying world'
         world = session.query(World)[0].geom
         print 'Differencing with expert opinion'
         not_eo = world.difference(eo)
+        
+        eo_area = shapely_multipoly_area(eo)
+        
+        # Area of the EO region computed by Shapely will not be so bad
+        # because all the EO regions are near the equator
+        n_in = max(int(eo_area/world_area*n_inducing),20)
+        n_out = n_inducing-n_in
+        print 'Outside area=%f, n_out=%i:'%(world_area-eo_area,n_out)
+        print 'Inside area=%f, n_in=%i:'%(eo_area,n_in)
     
         print 'Sampling outside'
         lon_out, lat_out = multipoly_sample(n_out, not_eo)
@@ -150,6 +162,9 @@ def sample_eo(session, species, n_in, n_out):
         print 'Writing out'
         pts_in = np.vstack((lon_in, lat_in)).T*np.pi/180. 
         pts_out = np.vstack((lon_out, lat_out)).T*np.pi/180.
+        
+        from IPython.Debugger import Pdb
+        Pdb(color_scheme='LightBG').set_trace()
     
         hf = tb.openFile(os.path.join('anopheles-caches',fname),'w')
         hf.createArray('/','pts_in',pts_in)

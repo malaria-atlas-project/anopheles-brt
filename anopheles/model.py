@@ -43,7 +43,7 @@ def threshold(f):
 def invlogit(f):
     return pm.flib.invlogit(f.ravel()).reshape(f.shape)
     
-def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}, n_in=200, n_out=1000, f2p=threshold):
+def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}, n_inducing=1000, f2p=threshold):
     """
     Generates a PyMC probability model with a plug-in spatial submodel.
     The likelihood and expert-opinion layers are common.
@@ -66,7 +66,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     # = Query =
     # =========
     
-    pts_in, pts_out = sample_eo(session, species, n_in, n_out)
+    pts_in, pts_out = sample_eo(session, species, n_inducing)
     
     # ========================
     # = Environmental inputs =
