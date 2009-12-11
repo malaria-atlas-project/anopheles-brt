@@ -32,7 +32,7 @@ import warnings
 import shapely
 import tables as tb
 
-__all__ = ['make_model', 'species_MCMC', 'threshold','invlogit', 'restore_species_MCMC']
+__all__ = ['make_model', 'species_MCMC', 'threshold','invlogit', 'restore_species_MCMC','identity','threshold','invlogit']
 
 def identity(x):
     return x
@@ -323,10 +323,15 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     # ====================================
     model = make_model(session, species, spatial_submodel, **kwds)        
     M1=LatchingMCMC(model, db='ram')
-    species_stepmethods(M1, interval=5, sleep_interval=20)
-    print 'Attempting to satisfy constraints'
-    M1.isample(1,burn=1000)
+    new_val = M1.f_fr.value*0+.01
+    new_val[len(M1.pts_in):] = .001
+    
+    # species_stepmethods(M1, interval=5, sleep_interval=20)
+    # print 'Attempting to satisfy constraints'
+    M1.isample(1)
     print 'Done!'
+    for v in M1._variables_to_tally:
+        v.trace = True
     
     # =======================================
     # = Second stage: sample from posterior =
@@ -334,9 +339,9 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     M2=pm.MCMC(model, db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
 
     # Create data object. Don't create it far the first stage, because all you want to do at that stage is find a legal initial value.
-    M2.data = pm.Binomial('data', n=M2.n_neg, p=M2.p_eval_where_notfound*M2.p_find, value=M2.n_notfound, observed=True, trace=False)            
+    M2.data = pm.Binomial('data', n=M2.n_neg, p=M2.p_eval_where_notfound*M2.p_find, value=M2.n_neg*0, observed=True, trace=False)            
     species_stepmethods(M2, interval=10, sleep_interval=20)
-    add_metadata(M.db._h5file, kwds, species, spatial_submodel)
+    add_metadata(M2.db._h5file, kwds, species, spatial_submodel)
     
     # Try to initialize full-rank field to a reasonable value.
     for i in xrange(10):
