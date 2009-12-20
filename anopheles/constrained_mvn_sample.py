@@ -40,7 +40,10 @@ def cmvns_l(cur_val, B, y, Bl, n_neg, p_find, pri_S = None, pri_M = None, n_cycl
         new_val = cur_val.copy()
     
     if np.any(np.dot(B,new_val) > y):
-        raise ValueError, 'Starting values do not satisfy constraints.'
+        # Adjust in case of numerical problems.
+        new_val = new_val + 1e-5
+        if np.any(np.dot(B,new_val) > y):
+            raise ValueError, 'Starting values do not satisfy constraints.'
     
     # Do the specified number of cycles.
     n = len(cur_val)

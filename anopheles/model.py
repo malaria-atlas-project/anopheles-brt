@@ -104,8 +104,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     x_eo = np.vstack((pts_in, pts_out))
     
     # The '_fr' suffix means 'on the inducing points'.
-    x_fr = x_eo[::10]
-    full_x_fr = full_x_eo[::10]
+    x_fr = x_eo[::5]
+    full_x_fr = full_x_eo[::5]
     full_x_fr_n = normalize_env(full_x_fr, env_means, env_stds)
 
     # ============================
@@ -277,7 +277,7 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
         
     for s in nonbases - set(scalar_nonbases):
         if s is not M.f_fr:
-            M.use_step_method(pm.AdaptiveMetropolis, s, scales={s: np.ones(np.shape(s.value))*.0001})
+            M.use_step_method(pm.AdaptiveMetropolis, s, scales={s: np.ones(np.shape(s.value))*.000001})
 
     M.use_step_method(pm.AdaptiveMetropolis, scalar_nonbases, scales=dict([(s, np.ones(np.shape(s.value))*.00001) for s in scalar_nonbases]))
     if hasattr(M, 'val'):
@@ -300,7 +300,7 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
             return np.asarray(o2.T,order='F')
         
         M.use_step_method(CMVNLStepper, M.f_fr, B, np.zeros(len(M.x_wherefound)), Bl, M.n_neg, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')
-        M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: np.ones(np.shape(M.f_fr.value))*.00001})
+        M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: np.ones(np.shape(M.f_fr.value))*.000001})
         # M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: M.f_fr.value*0+.0001})
     else:
         for i in xrange(0,len(M.f_fr.value),interval):
