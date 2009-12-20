@@ -11,11 +11,17 @@ def cmvns_l(cur_val, B, y, Bl, n_neg, p_find, pri_S = None, pri_M = None, n_cycl
     with probabilities p_find if Bl*cur_val>0, else 0.
     """
     
+    cur_val = np.asarray(cur_val).squeeze()
+    B = np.asarray(B)
+    Bl = np.asarray(Bl)
+    
     # Change coordinates so that the elements of cur_val are standard normal.
     if pri_M is not None:
+        pri_M =np.asarray(pri_M).squeeze()
         cur_val = cur_val - pri_M
     
     if pri_S is not None:
+        pri_S = np.asarray(pri_S).squeeze()
         if pri_S_type == 'square':
             new_val = np.linalg.solve(pri_S, cur_val)
             B = np.dot(B,pri_S)

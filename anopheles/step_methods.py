@@ -1,6 +1,14 @@
 import pymc as pm
 import numpy as np
+import warnings
 from constrained_mvn_sample import cmvns_l
+
+def value_and_maybe_copy(v):
+    v = pm.utils.value(v)
+    if isinstance(v, np.ndarray):
+        return v.copy('F')
+    return v
+        
 
 class CMVNLStepper(pm.StepMethod):
     """
@@ -16,8 +24,31 @@ class CMVNLStepper(pm.StepMethod):
         pm.StepMethod.__init__(self, stochastic)
         
     def step(self):
-        self.stochastic.value, self.accepted, self.rejected = \
-             cmvns_l(self.stochastic.value, *tuple([pm.utils.value(v) for v in self.cvmns_l_params]))
+        new_val, self.accepted, self.rejected = \
+             cmvns_l(self.stochastic.value.copy('F'), *tuple([value_and_maybe_copy(v) for v in self.cvmns_l_params]))
+        self.stochastic.value = np.reshape(new_val, self.stochastic.value.shape)
+        try:
+            self.logp_plus_loglike
+        except pm.ZeroProbability:
+            warnstr = 'Oops, jumped to forbidden state. Forbidding variables are:'
+            for s in self.markov_blanket:
+                try:
+                    s.logp
+                except pm.ZeroProbability:
+                    if s.__name__ in ['data_constraint', 'data']:
+                        warnstr += '\n\t%s'%s.__name__
+            warnstr += 'Adding a bit to self.stochastic.value'
+            lastv = self.stochastic.last_value
+            self.stochastic.value = self.stochastic.value + 1.e-5
+            try:
+                self.logp_plus_loglike
+            except pm.ZeroProbability:
+                warnstr += '\nCrap, that did not work. Rejecting jump outright.'
+                self.stochastic.value = lastv
+                self.logp_plus_loglike
+            warnings.warn(warnstr)
+        if np.any(self.accepted==0):
+            warnings.warn('Some elements not updated by CMVNLStepper')
 
 class DelayedMetropolis(pm.Metropolis):
 
