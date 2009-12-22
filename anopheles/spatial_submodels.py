@@ -105,7 +105,8 @@ def lr_spatial_env(rl=200,**stuff):
     # =============================================================
     # = Parameters controlling relative sizes of field components =
     # =============================================================
-    fracs = pm.Dirichlet('fracs', theta=np.repeat(2,3))
+    # fracs = pm.Dirichlet('fracs', theta=np.repeat(2,3))
+    fracs = np.array([1./3, 1./3])
     const_frac=1-fracs[0]-fracs[1]
     spat_frac=fracs[1]
     
