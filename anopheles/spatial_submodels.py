@@ -101,7 +101,8 @@ def lr_spatial_env(rl=200,**stuff):
     # =============================================
     # = Covariance parameter of the spatial field =
     # =============================================
-    scale = pm.Exponential('scale',.1,value=.1, observed=True)
+    # scale = pm.Exponential('scale',.1,value=.1, observed=True)
+    scale = .2
     
     # =============================================================
     # = Parameters controlling relative sizes of field components =
