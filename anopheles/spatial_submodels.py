@@ -80,9 +80,10 @@ def lr_spatial_env(rl=200,**stuff):
     # = Covariance parameters of the environmental field =
     # ====================================================
     n_env = stuff['env_in'].shape[1]
-    val_alpha = pm.Exponential('val_alpha',.1,value=3)
-    val_beta = pm.Exponential('val_beta',.1,value=3)
-    val = pm.Gamma('val',val_alpha,val_beta,size=n_env)
+    # val_alpha = pm.Exponential('val_alpha',.1,value=3)
+    # val_beta = pm.Exponential('val_beta',.1,value=3)
+    # val = pm.Gamma('val',val_alpha,val_beta,size=n_env)
+    val = np.ones(n_env)
     vec = np.eye(n_env)
     # valpow = pm.Uniform('valpow',0,10,value=.9, observed=False)
     # valbasemean = pm.Normal('valbasemean', 0, 1., value=0)
