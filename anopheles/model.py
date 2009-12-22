@@ -282,9 +282,9 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
             M.use_step_method(pm.AdaptiveMetropolis, s, scales={s: .0001*np.ones(np.shape(s.value))})
 
     M.use_step_method(pm.AdaptiveMetropolis, scalar_nonbases)
-    if hasattr(M, 'val'):
-        if not isinstance(M.val, pm.Stochastic):
-            M.use_step_method(pm.AdaptiveMetropolis, M.vals)    
+    # if hasattr(M, 'val'):
+    #     if not isinstance(M.val, pm.Stochastic):
+    #         M.use_step_method(pm.AdaptiveMetropolis, M.vals)    
             
     # FIXME: CMVNLStepper is not taking into account the EO or any of the hard constraints right now.
     if interval is None:
