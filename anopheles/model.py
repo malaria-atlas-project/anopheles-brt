@@ -104,8 +104,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     x_eo = np.vstack((pts_in, pts_out))
     
     # The '_fr' suffix means 'on the inducing points'.
-    x_fr = x_eo[::5]
-    full_x_fr = full_x_eo[::5]
+    x_fr = x_eo#[::2]
+    full_x_fr = full_x_eo#[::2]
     
     full_x_fr_n = normalize_env(full_x_fr, env_means, env_stds)
 
