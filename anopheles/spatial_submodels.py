@@ -80,18 +80,22 @@ def lr_spatial_env(rl=200,**stuff):
     # = Covariance parameters of the environmental field =
     # ====================================================
     n_env = stuff['env_in'].shape[1]
-    valpow = pm.Uniform('valpow',0,10,value=.9, observed=False)
-    valbasemean = pm.Normal('valbasemean', 0, 1., value=0)
-    valmean = pm.Lambda('valmean',lambda valpow=valpow, valbasemean=valbasemean : valbasemean + np.arange(n_env)*valpow)
-
-    # valV = pm.Exponential('valV',1,value=.1)
-    # val = pm.Normal('val',valmean,1./valV,value=np.ones(n_env)*2)
-    # vals = [pm.Normal('val_%i'%i,valmean[i],1./valV,value=2) for i in xrange(n_env)]
-    # val = pm.Lambda('val',lambda vals=vals: np.array(vals))
-
-    expval = pm.Lambda('expval',lambda val=valmean: np.exp(val))    
-
-    vec = cov_prior.OrthogonalBasis('vec',n_env,constrain=True)
+    val_alpha = pm.Exponential('val_alpha',.1,value=3)
+    val_beta = pm.Exponential('val_beta',.1,value=3)
+    val = pm.Gamma('val',val_alpha,val_beta,size=n_env)
+    vec = np.eye(n_env)
+    # valpow = pm.Uniform('valpow',0,10,value=.9, observed=False)
+    # valbasemean = pm.Normal('valbasemean', 0, 1., value=0)
+    # valmean = pm.Lambda('valmean',lambda valpow=valpow, valbasemean=valbasemean : valbasemean + np.arange(n_env)*valpow)
+    # 
+    # # valV = pm.Exponential('valV',1,value=.1)
+    # # val = pm.Normal('val',valmean,1./valV,value=np.ones(n_env)*2)
+    # # vals = [pm.Normal('val_%i'%i,valmean[i],1./valV,value=2) for i in xrange(n_env)]
+    # # val = pm.Lambda('val',lambda vals=vals: np.array(vals))
+    # 
+    # expval = pm.Lambda('expval',lambda val=valmean: np.exp(val))    
+    # 
+    # vec = cov_prior.OrthogonalBasis('vec',n_env,constrain=True)
 
     # =============================================
     # = Covariance parameter of the spatial field =
@@ -102,11 +106,11 @@ def lr_spatial_env(rl=200,**stuff):
     # = Parameters controlling relative sizes of field components =
     # =============================================================
     fracs = pm.Dirichlet('fracs', theta=np.repeat(2,3))
-    const_frac=fracs[0]
+    const_frac=1-fracs[0]-fracs[1]
     spat_frac=fracs[1]
     
     @pm.deterministic
-    def C(val=expval,vec=vec,const_frac=const_frac,spat_frac=spat_frac,scale=scale):
+    def C(val=val,vec=vec,const_frac=const_frac,spat_frac=spat_frac,scale=scale):
         return pm.gp.FullRankCovariance(spatial_mahalanobis, dds=1.5, dde=1.5, amp=1.0, scale=scale,val=val, vec=vec, spat_frac=spat_frac, const_frac=const_frac)
 
     @pm.deterministic(trace=False)
