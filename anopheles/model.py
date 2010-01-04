@@ -284,7 +284,7 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
     M.use_step_method(pm.AdaptiveMetropolis, scalar_nonbases)
     # if hasattr(M, 'val'):
     #     if not isinstance(M.val, pm.Stochastic):
-    #         M.use_step_method(pm.AdaptiveMetropolis, M.vals)    
+    #         M.use_step_method(pm.AdaptiveMetropolis, M.val)    
             
     # FIXME: CMVNLStepper is not taking into account the EO or any of the hard constraints right now.
     if interval is None:
@@ -301,8 +301,10 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
             o2 = pm.gp.trisolve(U,o1,uplo='U',transa='N',inplace=True)
             return np.asarray(o2.T,order='F')
         
-        M.use_step_method(CMVNLStepper, M.f_fr, B, np.zeros(len(M.x_wherefound)), Bl, M.n_neg, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')
-        M.use_step_method(pm.AdaptiveMetropolis, M.f_fr)
+        M.use_step_method(pm.NoStepper, M.f_fr)
+        M.sm_ = CMVNLStepper(M.f_fr, B, np.zeros(len(M.x_wherefound)), Bl, M.n_neg, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')
+        # M.use_step_method(CMVNLStepper, M.f_fr, B, np.zeros(len(M.x_wherefound)), Bl, M.n_neg, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')
+        # M.use_step_method(pm.AdaptiveMetropolis, M.f_fr)
         # M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: M.f_fr.value*0+.0001})
     else:
         for i in xrange(0,len(M.f_fr.value),interval):
@@ -371,7 +373,8 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     # new_val[len(M1.pts_in):] = .001
     M1.f_fr.value = new_val
     
-    species_stepmethods(M1, interval=5, sleep_interval=20)
+    # species_stepmethods(M1, interval=5, sleep_interval=20)
+    species_stepmethods(M1)
     for s in M1.stochastics:
         for sm in M1.step_method_dict[s]:
             sm.step()
@@ -392,10 +395,10 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
         c.close()
 
     # Create data object. Don't create it far the first stage, because all you want to do at that stage is find a legal initial value.
-    M2.data = pm.Binomial('data', n=M2.n_neg, p=M2.p_eval_where_notfound*M2.p_find, value=M2.n_neg*0, observed=True, trace=False)    
-    M2.observed_stochastics.add(M2.data)
-    M2.variables.add(M2.data)        
-    M2.nodes.add(M2.data)
+    # M2.data = pm.Binomial('data', n=M2.n_neg, p=M2.p_eval_where_notfound*M2.p_find, value=M2.n_neg*0, observed=True, trace=False)    
+    # M2.observed_stochastics.add(M2.data)
+    # M2.variables.add(M2.data)        
+    # M2.nodes.add(M2.data)
     species_stepmethods(M2)
     
     add_metadata(M2.db._h5file, kwds, species, spatial_submodel)
@@ -406,10 +409,10 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
 
     # Make sure data_constraint is evaluated before data likelihood, to avoid as meany heavy computations as possible.
     M2.assign_step_methods()
-    for sm in M2.step_methods:
-        for i in xrange(len(sm.markov_blanket)):
-            if sm.markov_blanket[i] is M2.data:
-                sm.markov_blanket.append(M2.data)
-                sm.markov_blanket.pop(i)
+    # for sm in M2.step_methods:
+    #     for i in xrange(len(sm.markov_blanket)):
+    #         if sm.markov_blanket[i] is M2.data:
+    #             sm.markov_blanket.append(M2.data)
+    #             sm.markov_blanket.pop(i)
     
     return M2

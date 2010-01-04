@@ -82,8 +82,10 @@ def lr_spatial_env(rl=200,**stuff):
     n_env = stuff['env_in'].shape[1]
     # val_alpha = pm.Exponential('val_alpha',.1,value=3)
     # val_beta = pm.Exponential('val_beta',.1,value=3)
-    # val = pm.Gamma('val',val_alpha,val_beta,size=n_env)
-    val = np.ones(n_env)
+    val_alpha = 3
+    val_beta = 3
+    val = np.array([pm.Gamma('val_%i'%i,val_alpha,val_beta,value=1) for i in xrange(n_env)])
+    # val = np.ones(n_env)
     vec = np.eye(n_env)
     # valpow = pm.Uniform('valpow',0,10,value=.9, observed=False)
     # valbasemean = pm.Normal('valbasemean', 0, 1., value=0)
@@ -92,7 +94,7 @@ def lr_spatial_env(rl=200,**stuff):
     # # valV = pm.Exponential('valV',1,value=.1)
     # # val = pm.Normal('val',valmean,1./valV,value=np.ones(n_env)*2)
     # # vals = [pm.Normal('val_%i'%i,valmean[i],1./valV,value=2) for i in xrange(n_env)]
-    # # val = pm.Lambda('val',lambda vals=vals: np.array(vals))
+    # val = pm.Lambda('val',lambda vals=vals: np.array(vals))
     # 
     # expval = pm.Lambda('expval',lambda val=valmean: np.exp(val))    
     # 
@@ -102,7 +104,8 @@ def lr_spatial_env(rl=200,**stuff):
     # = Covariance parameter of the spatial field =
     # =============================================
     # scale = pm.Exponential('scale',.1,value=.1, observed=True)
-    scale = .2
+    scale = pm.Gamma('scale',3,3)
+    # scale = .2
     
     # =============================================================
     # = Parameters controlling relative sizes of field components =
