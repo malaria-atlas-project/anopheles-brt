@@ -42,6 +42,13 @@ def threshold(f):
     
 def invlogit(f):
     return pm.flib.invlogit(f.ravel()).reshape(f.shape)
+
+def evaluation_group(C,U,p,x,x_p,f2p,suffix,doc=''):
+    od = pm.Lambda('od_%s'%suffix, lambda C=C, U=U: compute_offdiag(C,U,x,x_p), trace=False)
+    f_eval = pm.Lambda('f_eval_%s'%suffix, lambda p=p, od=od: p(x_p, f2p=identity, offdiag=od), trace=False, doc=doc)
+    p_eval = pm.Lambda('p_eval_%s'%suffix, lambda f=f_eval, f2p=f2p: f2p(f), trace=False)
+    return od, f_eval, p_eval
+    
     
 def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}, n_inducing=1000, f2p=threshold):
     """
@@ -119,6 +126,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         val = spatial_variables['val']
     vec = spatial_variables['vec']
     C = spatial_variables['C']
+    U_fr = spatial_variables['U_fr']
+    g_fr = spatial_variables['g_fr']
     
     if with_data:
         # ==============
@@ -151,16 +160,14 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         full_x_where_notfound = np.hstack((x_where_notfound, env_x_where_notfound))
         full_x_where_notfound_n = normalize_env(full_x_where_notfound, env_means, env_stds)
         
-        od_where_notfound = pm.Lambda('od_where_notfound', lambda C=C: C(full_x_where_notfound_n, full_x_fr_n), trace=False)
-        p_eval_where_notfound = pm.Lambda('p_eval', 
-            lambda p=p, od=od_where_notfound: p(full_x_where_notfound, offdiag=od), trace=False, 
-                doc="The probability being within the range, evaluated on all the data locations where the species was not found.")
+        od_where_notfound, f_eval_where_notfound, p_eval_where_notfound = \
+            evaluation_group(C,U_fr,p,full_x_fr_n,full_x_where_notfound_n,f2p,'where_notfound',
+                doc="The suitability function evaluated on all the data locations where the species was not found.")
 
-        od_wherefound = pm.Lambda('od_wherefound', lambda C=C: C(full_x_wherefound_n, full_x_fr_n), trace=False)
-        f_eval_wherefound = pm.Lambda('f_eval_wherefound', 
-            lambda p=p, od=od_wherefound: p(full_x_wherefound, f2p=identity, offdiag=od), trace=False,
+        od_wherefound, f_eval_wherefound, p_eval_wherefound = \
+            evaluation_group(C,U_fr,p,full_x_fr_n,full_x_wherefound_n,f2p,'wherefound',
                 doc="The suitability function evaluated everywhere the species was found.")
-        
+
         # Enforce presence at the data locations with a constraint.
         constraint_dict = {'data': 
             Constraint(penalty_value = -1e100, logp=lambda f: -np.sum(f*(f<0)), 
@@ -177,13 +184,13 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         # = Expert-opinion likelihoods =
         # ==============================
         
-        p_eval_in = pm.Lambda('p_eval_in', 
-            lambda p=p, C=C: p(full_x_in, offdiag=C(full_x_in_n, full_x_fr_n)), trace=False,
-                doc="The probability of being within the range evaluated at the inducing points inside the EO region.")
+        od_in, f_eval_in, p_eval_in = \
+            evaluation_group(C,U_fr,p,full_x_fr_n,full_x_in_n,f2p,'in',
+                doc="The suitability function evaluated at the inducing points inside the EO region.")
 
-        p_eval_out = pm.Lambda('p_eval_out', 
-            lambda p=p, C=C: p(full_x_out, offdiag=C(full_x_out_n, full_x_fr_n)), trace=False,
-                doc="The probability of being within the range evaluated at the inducing points outside the EO region")   
+        od_out, f_eval_out, p_eval_out = \
+            evaluation_group(C,U_fr,p,full_x_fr_n,full_x_out_n,f2p,'out',
+                doc="The suitability function evaluated at the inducing points outside the EO region.")
 
         p_eval_eo = pm.Lambda('p_eval_eo', 
             lambda p_eval_in=p_eval_in, p_eval_out=p_eval_out: np.concatenate((p_eval_in,p_eval_out)), trace=False,
@@ -301,7 +308,7 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
             o2 = pm.gp.trisolve(U,o1,uplo='U',transa='N',inplace=True)
             return np.asarray(o2.T,order='F')
         
-        M.use_step_method(pm.NoStepper, M.f_fr)
+        # M.use_step_method(pm.NoStepper, M.f_fr)
         M.sm_ = CMVNLStepper(M.f_fr, B, np.zeros(len(M.x_wherefound)), Bl, M.n_neg, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')
         # M.use_step_method(CMVNLStepper, M.f_fr, B, np.zeros(len(M.x_wherefound)), Bl, M.n_neg, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')
         # M.use_step_method(pm.AdaptiveMetropolis, M.f_fr)
@@ -395,10 +402,10 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
         c.close()
 
     # Create data object. Don't create it far the first stage, because all you want to do at that stage is find a legal initial value.
-    # M2.data = pm.Binomial('data', n=M2.n_neg, p=M2.p_eval_where_notfound*M2.p_find, value=M2.n_neg*0, observed=True, trace=False)    
-    # M2.observed_stochastics.add(M2.data)
-    # M2.variables.add(M2.data)        
-    # M2.nodes.add(M2.data)
+    M2.data = pm.Binomial('data', n=M2.n_neg, p=M2.p_eval_where_notfound*M2.p_find, value=M2.n_neg*0, observed=True, trace=False)    
+    M2.observed_stochastics.add(M2.data)
+    M2.variables.add(M2.data)        
+    M2.nodes.add(M2.data)
     species_stepmethods(M2)
     
     add_metadata(M2.db._h5file, kwds, species, spatial_submodel)
@@ -409,10 +416,10 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
 
     # Make sure data_constraint is evaluated before data likelihood, to avoid as meany heavy computations as possible.
     M2.assign_step_methods()
-    # for sm in M2.step_methods:
-    #     for i in xrange(len(sm.markov_blanket)):
-    #         if sm.markov_blanket[i] is M2.data:
-    #             sm.markov_blanket.append(M2.data)
-    #             sm.markov_blanket.pop(i)
+    for sm in M2.step_methods:
+        for i in xrange(len(sm.markov_blanket)):
+            if sm.markov_blanket[i] is M2.data:
+                sm.markov_blanket.append(M2.data)
+                sm.markov_blanket.pop(i)
     
     return M2

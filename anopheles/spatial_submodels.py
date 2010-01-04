@@ -9,19 +9,23 @@ def normalize_env(x, means, stds):
         x_norm[:,i] -= means[i-2]
         x_norm[:,i] /= stds[i-2]
     return x_norm
+
+def compute_offdiag(C, U, x, xp):
+    return pm.gp.trisolve(U, C(x,xp), uplo='U', transa='T').T
                 
 class LRP(object):
     """A closure that can evaluate a low-rank field."""
-    def __init__(self, x_fr, C, krige_wt, f2p):
+    def __init__(self, x_fr, C, krige_wt, U_fr, f2p):
         self.x_fr = x_fr
         self.C = C
         self.krige_wt = krige_wt
         self.f2p = f2p
+        self.U_fr = U_fr
     def __call__(self, x, f2p=None, offdiag=None):
         if f2p is None:
             f2p = self.f2p
         if offdiag is None:
-            offdiag = self.C(x,self.x_fr)
+            offdiag = compute_offdiag(self.C, self.U_fr, self.x_fr, x)
         return f2p(np.dot(np.asarray(offdiag), self.krige_wt).reshape(x.shape[:-1]))
 
 def spatial_mahalanobis(x,y,dds,dde,amp,scale,val,vec,spat_frac,const_frac,symm=None):
@@ -36,22 +40,6 @@ def spatial_mahalanobis(x,y,dds,dde,amp,scale,val,vec,spat_frac,const_frac,symm=
     env_part = mahalanobis_covariance(x[:,2:],y[:,2:],diff_degree=dde,amp=env_amp,val=val,vec=vec,symm=symm)
     
     out = spat_part+env_part+const_amp**2
-    # if symm:
-    #     np.testing.assert_almost_equal(out.max(),amp**2)
-    #     
-    #     import pylab as pl
-    #     pl.clf()
-    #     pl.subplot(1,2,1)
-    #     pl.imshow(np.asarray(spat_part), interpolation='nearest')
-    #     pl.title('spatial')
-    #     pl.colorbar()
-    #     pl.subplot(1,2,2)
-    #     pl.imshow(np.asarray(env_part), interpolation='nearest')
-    #     pl.title('environmental')
-    #     pl.colorbar()
-    #     
-    #     from IPython.Debugger import Pdb
-    #     Pdb(color_scheme='LightBG').set_trace() 
 
     return out
     
@@ -61,8 +49,8 @@ class LRP_norm(LRP):
     
     Normalizes the third argument onward.
     """
-    def __init__(self, x_fr, C, krige_wt, means, stds, f2p):
-        LRP.__init__(self, x_fr, C, krige_wt, f2p)
+    def __init__(self, x_fr, C, krige_wt, U_fr, means, stds, f2p):
+        LRP.__init__(self, x_fr, C, krige_wt, U_fr, f2p)
         self.means = means
         self.stds = stds
 
@@ -139,10 +127,9 @@ def lr_spatial_env(rl=200,**stuff):
     f_fr = pm.MvNormalChol('f_fr', np.zeros(len(x_fr)), L_fr, value=init_val)
 
     @pm.deterministic(trace=False)
-    def krige_wt(f_fr=f_fr, U_fr=U_fr):
-        return pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
+    def g_fr(f_fr=f_fr, U_fr=U_fr):
+        return pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T')
 
-    p = pm.Lambda('p', lambda x_fr=x_fr, C=C, krige_wt=krige_wt, means=stuff['env_means'], stds=stuff['env_stds'], f2p=f2p: LRP_norm(x_fr, C, krige_wt, means, stds, f2p))
+    p = pm.Lambda('p', lambda x_fr=x_fr, C=C, krige_wt=g_fr, U_fr=U_fr, means=stuff['env_means'], stds=stuff['env_stds'], f2p=f2p: LRP_norm(x_fr, C, krige_wt, U_fr, means, stds, f2p))
 
     return locals()
-    
