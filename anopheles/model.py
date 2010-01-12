@@ -49,7 +49,6 @@ def evaluation_group(C,U,p,x,x_p,f2p,suffix,doc=''):
     p_eval = pm.Lambda('p_eval_%s'%suffix, lambda f=f_eval, f2p=f2p: f2p(f), trace=False)
     return od, f_eval, p_eval
     
-    
 def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}, n_inducing=1000, f2p=threshold):
     """
     Generates a PyMC probability model with a plug-in spatial submodel.
@@ -296,20 +295,26 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
     # FIXME: CMVNLStepper is not taking into account the EO or any of the hard constraints right now.
     if interval is None:
         # pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
-        @pm.deterministic(trace=False)
-        def B(od=M.od_wherefound, U=M.U_fr):
-            o1 = pm.gp.trisolve(U,(-od.T).copy('F'),uplo='U',transa='T',inplace=True)
-            o2 = pm.gp.trisolve(U,o1,uplo='U',transa='N',inplace=True)
-            return np.asarray(o2.T,order='F')
-            
-        @pm.deterministic(trace=False)
-        def Bl(od=M.od_where_notfound, U=M.U_fr):
-            o1 = pm.gp.trisolve(U,(od.T).copy('F'),uplo='U',transa='T',inplace=True)
-            o2 = pm.gp.trisolve(U,o1,uplo='U',transa='N',inplace=True)
-            return np.asarray(o2.T,order='F')
+        # @pm.deterministic(trace=False)
+        # def B(od=M.od_wherefound, U=M.U_fr):
+        #     o1 = pm.gp.trisolve(U,(-od.T).copy('F'),uplo='U',transa='T',inplace=True)
+        #     o2 = pm.gp.trisolve(U,o1,uplo='U',transa='N',inplace=True)
+        #     return np.asarray(o2.T,order='F')
+        #     
+        # @pm.deterministic(trace=False)
+        # def Bl(od=M.od_where_notfound, U=M.U_fr):
+        #     o1 = pm.gp.trisolve(U,(od.T).copy('F'),uplo='U',transa='T',inplace=True)
+        #     o2 = pm.gp.trisolve(U,o1,uplo='U',transa='N',inplace=True)
+        #     return np.asarray(o2.T,order='F')
+        
+        likelihood_offdiags = [M.od_where_notfound, M.od_in, M.od_out]
+        constraint_offdiags = [M.od_wherefound]
+        # 1 = must be above 0, -1 = must be below 0.
+        constraint_signs = [1]
+        M.use_step_method(CMVNLStepper, M.f_fr, M.g_fr, M.U_fr, likelihood_offdiags, constraint_offdiags, constraint_signs)
         
         # M.use_step_method(pm.NoStepper, M.f_fr)
-        M.sm_ = CMVNLStepper(M.f_fr, B, np.zeros(len(M.x_wherefound)), Bl, M.n_neg, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')
+        # M.sm_ = CMVNLStepper(M.f_fr, B, np.zeros(len(M.x_wherefound)), Bl, M.n_neg, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')
         # M.use_step_method(CMVNLStepper, M.f_fr, B, np.zeros(len(M.x_wherefound)), Bl, M.n_neg, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')
         # M.use_step_method(pm.AdaptiveMetropolis, M.f_fr)
         # M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: M.f_fr.value*0+.0001})
