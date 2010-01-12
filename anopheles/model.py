@@ -42,6 +42,12 @@ def threshold(f):
     
 def invlogit(f):
     return pm.flib.invlogit(f.ravel()).reshape(f.shape)
+
+def evaluation_group(C,U,p,x,x_p,f2p,suffix,doc=''):
+    od = pm.Lambda('od_%s'%suffix, lambda C=C, U=U: compute_offdiag(C,U,x,x_p), trace=False)
+    f_eval = pm.Lambda('f_eval_%s'%suffix, lambda p=p, od=od: p(x_p, f2p=identity, offdiag=od), trace=False, doc=doc)
+    p_eval = pm.Lambda('p_eval_%s'%suffix, lambda f=f_eval, f2p=f2p: f2p(f), trace=False)
+    return od, f_eval, p_eval
     
 def make_model(session, species, spatial_submodel, with_eo = True, with_data = True, env_variables = (), constraint_fns={}, n_inducing=1000, f2p=threshold):
     """
@@ -104,8 +110,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
     x_eo = np.vstack((pts_in, pts_out))
     
     # The '_fr' suffix means 'on the inducing points'.
-    x_fr = x_eo[::5]
-    full_x_fr = full_x_eo[::5]
+    x_fr = x_eo#[::2]
+    full_x_fr = full_x_eo#[::2]
     
     full_x_fr_n = normalize_env(full_x_fr, env_means, env_stds)
 
@@ -119,6 +125,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         val = spatial_variables['val']
     vec = spatial_variables['vec']
     C = spatial_variables['C']
+    U_fr = spatial_variables['U_fr']
+    g_fr = spatial_variables['g_fr']
     
     if with_data:
         # ==============
@@ -151,16 +159,14 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         full_x_where_notfound = np.hstack((x_where_notfound, env_x_where_notfound))
         full_x_where_notfound_n = normalize_env(full_x_where_notfound, env_means, env_stds)
         
-        od_where_notfound = pm.Lambda('od_where_notfound', lambda C=C: C(full_x_where_notfound_n, full_x_fr_n), trace=False)
-        p_eval_where_notfound = pm.Lambda('p_eval', 
-            lambda p=p, od=od_where_notfound: p(full_x_where_notfound, offdiag=od), trace=False, 
-                doc="The probability being within the range, evaluated on all the data locations where the species was not found.")
+        od_where_notfound, f_eval_where_notfound, p_eval_where_notfound = \
+            evaluation_group(C,U_fr,p,full_x_fr_n,full_x_where_notfound_n,f2p,'where_notfound',
+                doc="The suitability function evaluated on all the data locations where the species was not found.")
 
-        od_wherefound = pm.Lambda('od_wherefound', lambda C=C: C(full_x_wherefound_n, full_x_fr_n), trace=False)
-        f_eval_wherefound = pm.Lambda('f_eval_wherefound', 
-            lambda p=p, od=od_wherefound: p(full_x_wherefound, f2p=identity, offdiag=od), trace=False,
+        od_wherefound, f_eval_wherefound, p_eval_wherefound = \
+            evaluation_group(C,U_fr,p,full_x_fr_n,full_x_wherefound_n,f2p,'wherefound',
                 doc="The suitability function evaluated everywhere the species was found.")
-        
+
         # Enforce presence at the data locations with a constraint.
         constraint_dict = {'data': 
             Constraint(penalty_value = -1e100, logp=lambda f: -np.sum(f*(f<0)), 
@@ -177,13 +183,13 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         # = Expert-opinion likelihoods =
         # ==============================
         
-        p_eval_in = pm.Lambda('p_eval_in', 
-            lambda p=p, C=C: p(full_x_in, offdiag=C(full_x_in_n, full_x_fr_n)), trace=False,
-                doc="The probability of being within the range evaluated at the inducing points inside the EO region.")
+        od_in, f_eval_in, p_eval_in = \
+            evaluation_group(C,U_fr,p,full_x_fr_n,full_x_in_n,f2p,'in',
+                doc="The suitability function evaluated at the inducing points inside the EO region.")
 
-        p_eval_out = pm.Lambda('p_eval_out', 
-            lambda p=p, C=C: p(full_x_out, offdiag=C(full_x_out_n, full_x_fr_n)), trace=False,
-                doc="The probability of being within the range evaluated at the inducing points outside the EO region")   
+        od_out, f_eval_out, p_eval_out = \
+            evaluation_group(C,U_fr,p,full_x_fr_n,full_x_out_n,f2p,'out',
+                doc="The suitability function evaluated at the inducing points outside the EO region.")
 
         p_eval_eo = pm.Lambda('p_eval_eo', 
             lambda p_eval_in=p_eval_in, p_eval_out=p_eval_out: np.concatenate((p_eval_in,p_eval_out)), trace=False,
@@ -282,28 +288,35 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
             M.use_step_method(pm.AdaptiveMetropolis, s, scales={s: .0001*np.ones(np.shape(s.value))})
 
     M.use_step_method(pm.AdaptiveMetropolis, scalar_nonbases)
-    if hasattr(M, 'val'):
-        if not isinstance(M.val, pm.Stochastic):
-            M.use_step_method(pm.AdaptiveMetropolis, M.vals)    
-
+    # if hasattr(M, 'val'):
+    #     if not isinstance(M.val, pm.Stochastic):
+    #         M.use_step_method(pm.AdaptiveMetropolis, M.val)    
             
     # FIXME: CMVNLStepper is not taking into account the EO or any of the hard constraints right now.
     if interval is None:
         # pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
-        @pm.deterministic(trace=False)
-        def B(od=M.od_wherefound, U=M.U_fr):
-            o1 = pm.gp.trisolve(U,(-od.T).copy('F'),uplo='U',transa='T',inplace=True)
-            o2 = pm.gp.trisolve(U,o1,uplo='U',transa='N',inplace=True)
-            return np.asarray(o2.T,order='F')
-            
-        @pm.deterministic(trace=False)
-        def Bl(od=M.od_where_notfound, U=M.U_fr):
-            o1 = pm.gp.trisolve(U,(od.T).copy('F'),uplo='U',transa='T',inplace=True)
-            o2 = pm.gp.trisolve(U,o1,uplo='U',transa='N',inplace=True)
-            return np.asarray(o2.T,order='F')
+        # @pm.deterministic(trace=False)
+        # def B(od=M.od_wherefound, U=M.U_fr):
+        #     o1 = pm.gp.trisolve(U,(-od.T).copy('F'),uplo='U',transa='T',inplace=True)
+        #     o2 = pm.gp.trisolve(U,o1,uplo='U',transa='N',inplace=True)
+        #     return np.asarray(o2.T,order='F')
+        #     
+        # @pm.deterministic(trace=False)
+        # def Bl(od=M.od_where_notfound, U=M.U_fr):
+        #     o1 = pm.gp.trisolve(U,(od.T).copy('F'),uplo='U',transa='T',inplace=True)
+        #     o2 = pm.gp.trisolve(U,o1,uplo='U',transa='N',inplace=True)
+        #     return np.asarray(o2.T,order='F')
         
-        M.use_step_method(CMVNLStepper, M.f_fr, B, np.zeros(len(M.x_wherefound)), Bl, M.n_neg, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')
-        M.use_step_method(pm.AdaptiveMetropolis, M.f_fr)
+        likelihood_offdiags = [M.od_where_notfound, M.od_in, M.od_out]
+        constraint_offdiags = [M.od_wherefound]
+        # 1 = must be above 0, -1 = must be below 0.
+        constraint_signs = [1]
+        M.use_step_method(CMVNLStepper, M.f_fr, M.g_fr, M.U_fr, likelihood_offdiags, constraint_offdiags, constraint_signs)
+        
+        # M.use_step_method(pm.NoStepper, M.f_fr)
+        # M.sm_ = CMVNLStepper(M.f_fr, B, np.zeros(len(M.x_wherefound)), Bl, M.n_neg, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')
+        # M.use_step_method(CMVNLStepper, M.f_fr, B, np.zeros(len(M.x_wherefound)), Bl, M.n_neg, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')
+        # M.use_step_method(pm.AdaptiveMetropolis, M.f_fr)
         # M.use_step_method(pm.AdaptiveMetropolis, M.f_fr, scales={M.f_fr: M.f_fr.value*0+.0001})
     else:
         for i in xrange(0,len(M.f_fr.value),interval):
@@ -315,7 +328,7 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
     # Givens step method
     for b in bases:
         M.use_step_method(GivensStepper, b)    
-        M.step_method_dict[b][0].adaptive_scale_factor=.001
+        M.step_method_dict[b][0].adaptive_scale_factor=.1
 
 def restore_species_MCMC(session, dbpath):
 
@@ -372,7 +385,8 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     # new_val[len(M1.pts_in):] = .001
     M1.f_fr.value = new_val
     
-    species_stepmethods(M1, interval=5, sleep_interval=20)
+    # species_stepmethods(M1, interval=5, sleep_interval=20)
+    species_stepmethods(M1)
     for s in M1.stochastics:
         for sm in M1.step_method_dict[s]:
             sm.step()

@@ -9,19 +9,23 @@ def normalize_env(x, means, stds):
         x_norm[:,i] -= means[i-2]
         x_norm[:,i] /= stds[i-2]
     return x_norm
+
+def compute_offdiag(C, U, x, xp):
+    return pm.gp.trisolve(U, C(x,xp), uplo='U', transa='T').T
                 
 class LRP(object):
     """A closure that can evaluate a low-rank field."""
-    def __init__(self, x_fr, C, krige_wt, f2p):
+    def __init__(self, x_fr, C, krige_wt, U_fr, f2p):
         self.x_fr = x_fr
         self.C = C
         self.krige_wt = krige_wt
         self.f2p = f2p
+        self.U_fr = U_fr
     def __call__(self, x, f2p=None, offdiag=None):
         if f2p is None:
             f2p = self.f2p
         if offdiag is None:
-            offdiag = self.C(x,self.x_fr)
+            offdiag = compute_offdiag(self.C, self.U_fr, self.x_fr, x)
         return f2p(np.dot(np.asarray(offdiag), self.krige_wt).reshape(x.shape[:-1]))
 
 def spatial_mahalanobis(x,y,dds,dde,amp,scale,val,vec,spat_frac,const_frac,symm=None):
@@ -36,22 +40,6 @@ def spatial_mahalanobis(x,y,dds,dde,amp,scale,val,vec,spat_frac,const_frac,symm=
     env_part = mahalanobis_covariance(x[:,2:],y[:,2:],diff_degree=dde,amp=env_amp,val=val,vec=vec,symm=symm)
     
     out = spat_part+env_part+const_amp**2
-    # if symm:
-    #     np.testing.assert_almost_equal(out.max(),amp**2)
-    #     
-    #     import pylab as pl
-    #     pl.clf()
-    #     pl.subplot(1,2,1)
-    #     pl.imshow(np.asarray(spat_part), interpolation='nearest')
-    #     pl.title('spatial')
-    #     pl.colorbar()
-    #     pl.subplot(1,2,2)
-    #     pl.imshow(np.asarray(env_part), interpolation='nearest')
-    #     pl.title('environmental')
-    #     pl.colorbar()
-    #     
-    #     from IPython.Debugger import Pdb
-    #     Pdb(color_scheme='LightBG').set_trace() 
 
     return out
     
@@ -61,8 +49,8 @@ class LRP_norm(LRP):
     
     Normalizes the third argument onward.
     """
-    def __init__(self, x_fr, C, krige_wt, means, stds, f2p):
-        LRP.__init__(self, x_fr, C, krige_wt, f2p)
+    def __init__(self, x_fr, C, krige_wt, U_fr, means, stds, f2p):
+        LRP.__init__(self, x_fr, C, krige_wt, U_fr, f2p)
         self.means = means
         self.stds = stds
 
@@ -80,33 +68,43 @@ def lr_spatial_env(rl=200,**stuff):
     # = Covariance parameters of the environmental field =
     # ====================================================
     n_env = stuff['env_in'].shape[1]
-    valpow = pm.Uniform('valpow',0,10,value=.9, observed=False)
-    valbasemean = pm.Normal('valbasemean', 0, 1., value=0)
-    valmean = pm.Lambda('valmean',lambda valpow=valpow, valbasemean=valbasemean : valbasemean + np.arange(n_env)*valpow)
-
-    # valV = pm.Exponential('valV',1,value=.1)
-    # val = pm.Normal('val',valmean,1./valV,value=np.ones(n_env)*2)
-    # vals = [pm.Normal('val_%i'%i,valmean[i],1./valV,value=2) for i in xrange(n_env)]
+    # val_alpha = pm.Exponential('val_alpha',.1,value=3)
+    # val_beta = pm.Exponential('val_beta',.1,value=3)
+    val_alpha = 3
+    val_beta = 3
+    val = np.array([pm.Gamma('val_%i'%i,val_alpha,val_beta,value=1) for i in xrange(n_env)])
+    # val = np.ones(n_env)
+    vec = np.eye(n_env)
+    # valpow = pm.Uniform('valpow',0,10,value=.9, observed=False)
+    # valbasemean = pm.Normal('valbasemean', 0, 1., value=0)
+    # valmean = pm.Lambda('valmean',lambda valpow=valpow, valbasemean=valbasemean : valbasemean + np.arange(n_env)*valpow)
+    # 
+    # # valV = pm.Exponential('valV',1,value=.1)
+    # # val = pm.Normal('val',valmean,1./valV,value=np.ones(n_env)*2)
+    # # vals = [pm.Normal('val_%i'%i,valmean[i],1./valV,value=2) for i in xrange(n_env)]
     # val = pm.Lambda('val',lambda vals=vals: np.array(vals))
-
-    expval = pm.Lambda('expval',lambda val=valmean: np.exp(val))    
-
-    vec = cov_prior.OrthogonalBasis('vec',n_env,constrain=True)
+    # 
+    # expval = pm.Lambda('expval',lambda val=valmean: np.exp(val))    
+    # 
+    # vec = cov_prior.OrthogonalBasis('vec',n_env,constrain=True)
 
     # =============================================
     # = Covariance parameter of the spatial field =
     # =============================================
-    scale = pm.Exponential('scale',.1,value=.1)
+    # scale = pm.Exponential('scale',.1,value=.1, observed=True)
+    scale = pm.Gamma('scale',3,3)
+    # scale = .2
     
     # =============================================================
     # = Parameters controlling relative sizes of field components =
     # =============================================================
-    fracs = pm.Dirichlet('fracs', theta=np.repeat(2,3))
-    const_frac=fracs[0]
+    # fracs = pm.Dirichlet('fracs', theta=np.repeat(2,3))
+    fracs = np.array([1./3, 1./3])
+    const_frac=1-fracs[0]-fracs[1]
     spat_frac=fracs[1]
     
     @pm.deterministic
-    def C(val=expval,vec=vec,const_frac=const_frac,spat_frac=spat_frac,scale=scale):
+    def C(val=val,vec=vec,const_frac=const_frac,spat_frac=spat_frac,scale=scale):
         return pm.gp.FullRankCovariance(spatial_mahalanobis, dds=1.5, dde=1.5, amp=1.0, scale=scale,val=val, vec=vec, spat_frac=spat_frac, const_frac=const_frac)
 
     @pm.deterministic(trace=False)
@@ -129,10 +127,9 @@ def lr_spatial_env(rl=200,**stuff):
     f_fr = pm.MvNormalChol('f_fr', np.zeros(len(x_fr)), L_fr, value=init_val)
 
     @pm.deterministic(trace=False)
-    def krige_wt(f_fr=f_fr, U_fr=U_fr):
-        return pm.gp.trisolve(U_fr,pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T'),uplo='U',transa='N',inplace=True)
+    def g_fr(f_fr=f_fr, U_fr=U_fr):
+        return pm.gp.trisolve(U_fr,f_fr,uplo='U',transa='T')
 
-    p = pm.Lambda('p', lambda x_fr=x_fr, C=C, krige_wt=krige_wt, means=stuff['env_means'], stds=stuff['env_stds'], f2p=f2p: LRP_norm(x_fr, C, krige_wt, means, stds, f2p))
+    p = pm.Lambda('p', lambda x_fr=x_fr, C=C, krige_wt=g_fr, U_fr=U_fr, means=stuff['env_means'], stds=stuff['env_stds'], f2p=f2p: LRP_norm(x_fr, C, krige_wt, U_fr, means, stds, f2p))
 
     return locals()
-    

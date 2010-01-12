@@ -2,54 +2,160 @@ import pymc as pm
 import numpy as np
 import warnings
 from constrained_mvn_sample import cmvns_l
+import time
 
 def value_and_maybe_copy(v):
     v = pm.utils.value(v)
     if isinstance(v, np.ndarray):
         return v.copy('F')
-    return v
-        
+    return v        
+    
+def union(sets):
+    out = set()
+    for s in sets:
+        out |= s
+    return out
+    
+class ConstraintError(ValueError):
+    pass
 
 class CMVNLStepper(pm.StepMethod):
     """
-    A constrained multivariate normal stepper with likelihood.
-    Metropolis samples self.stochastic under the constraint that B*self.stochastic < y,
-    with likelihood term corresponding to n_neg negative observations independently 
-    with probabilities p_find if Bl*cur_val > 0, else 0.
+    Arguments:
+        - f : Multivariate normal
+        - g : U^{-T} f, a deterministic
+        - U : Upper triangular Cholesky factor of covariance of f.
+        - likelihood_offdiags: C(xp, x) U^{-1} for xp in the set of evaluation locations
+            that don't correspond to hard constraints
+        - constraint_offdiags: C(xp, x) U^{-1} for xp in the set of evaluation locations
+            that do correspond to hard constraints
+        - constraint_signs: Whether f has to be positive or negative at the xp's in 
+            constraint_offdiags.
     """
     
-    def __init__(self, stochastic, B, y, Bl, n_neg, p_find, pri_S, pri_M, n_cycles=1, pri_S_type='square'):
-        self.stochastic = stochastic
-        self.cvmns_l_params = [B, y, Bl, n_neg, p_find, pri_S, pri_M, n_cycles, pri_S_type]
-        pm.StepMethod.__init__(self, stochastic)
+    def __init__(self, f, g, U, likelihood_offdiags, constraint_offdiags, constraint_signs):
+        self.f = f
+        self.g = g
+        self.U = U
+        self.n = len(self.g.value)
+        self.likelihood_offdiags = likelihood_offdiags
+        self.constraint_offdiags = constraint_offdiags
+        self.all_offdiags = list(self.likelihood_offdiags) + list(self.constraint_offdiags)
+        self.constraint_signs = constraint_signs
+        self.adaptive_scale_factor = np.ones(self.n)
+        self.accepted = np.zeros(self.n)
+        self.rejected = np.zeros(self.n)
+        self.n_draws = 100
         
-    def step(self):
-        new_val, self.accepted, self.rejected = \
-             cmvns_l(self.stochastic.value.copy('F'), *tuple([value_and_maybe_copy(v) for v in self.cvmns_l_params]))
-        self.stochastic.value = np.reshape(new_val, self.stochastic.value.shape)
-        try:
-            self.logp_plus_loglike
-        except pm.ZeroProbability:
-            warnstr = 'Oops, jumped to forbidden state. Forbidding variables are:'
-            for s in self.markov_blanket:
-                try:
-                    s.logp
-                except pm.ZeroProbability:
-                    if s.__name__ in ['data_constraint', 'data']:
-                        warnstr += '\n\t%s'%s.__name__
-            warnstr += 'Adding a bit to self.stochastic.value'
-            lastv = self.stochastic.last_value
-            self.stochastic.value = self.stochastic.value + 1.e-5
-            try:
-                self.logp_plus_loglike
-            except pm.ZeroProbability:
-                warnstr += '\nCrap, that did not work. Rejecting jump outright.'
-                self.stochastic.value = lastv
-                self.logp_plus_loglike
-            warnings.warn(warnstr)
-        if np.any(self.accepted==0):
-            warnings.warn('Some elements not updated by CMVNLStepper')
+        self.likelihood_children = union([pm.extend_children(od.children) for od in self.likelihood_offdiags])
+        
+        pm.StepMethod.__init__(self, f)
 
+    def get_bounds(self, i):
+        # Linear constraints.
+        lb = -4
+        ub = 4
+        rhs = {}
+        g = self.g.value
+        for j,od in enumerate(self.constraint_offdiags):
+            rhs[od] = self.rhs[od].copy()
+            coef = np.asarray(pm.utils.value(od))[:,i].ravel()
+            rhs[od] -= coef * g[i]
+            
+            where_coef_neg = np.where(coef<0)
+            where_coef_pos = np.where(coef>0)
+            
+            lolims = -rhs[od][where_coef_pos] / coef[where_coef_pos]
+            uplims = -rhs[od][where_coef_neg] / coef[where_coef_neg]
+            
+            if self.constraint_signs[j] == -1:
+                tmp = uplims
+                uplims = lolims
+                lolims = tmp
+            
+            lb = np.hstack((lb, lolims)).max()
+            ub = np.hstack((ub, uplims)).min()
+        return lb, ub, rhs            
+    
+    def set_g_value(self, newg, i, cv):
+        g = self.g.value.copy()
+        dg = newg-g[i]
+        g[i] = newg
+        self.f.value = self.f.value + np.asarray(pm.utils.value(self.U)[i,:]).ravel()*dg
+        self.g._value.force_cache(g)
+        
+        for j,od in enumerate(self.constraint_offdiags):
+            # The children of the offdiags are just the f_evals.
+            for c in od.children:
+                c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).ravel()*dg)
+                if np.any(c.value*self.constraint_signs[j]<0):
+                    raise ConstraintError, 'Constraint broken!'
+        
+        for od in self.likelihood_offdiags:
+            # The children of the offdiags are just the f_evals.
+            for c in od.children:
+                c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).ravel()*dg)
+
+    def set_g_value(self, newgi, i):
+        # Record current values of the f_evals, because they won't be available after 
+        # f_fr's value is set.
+        cv = {}
+        for od in self.all_offdiags:
+            for c in od.children:
+                cv[c] = c.value.copy()
+                    
+        g = self.g.value.copy()            
+        dg = newgi-g[i]
+        g[i]=newgi
+        
+        t1 = time.time()
+        # Record change in f.
+        self.f.value = self.f.value + np.asarray(pm.utils.value(self.U)[i,:]).ravel()*dg
+        self.g._value.force_cache(g)
+        
+        for j,od in enumerate(self.constraint_offdiags):
+            # The children of the offdiags are just the f_evals.
+            for c in od.children:
+                c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).ravel()*dg)
+                if np.any(c.value*self.constraint_signs[j]<0):
+                    raise ValueError, 'Constraint broken!'
+        
+        for od in self.likelihood_offdiags:
+            # The children of the offdiags are just the f_evals.
+            for c in od.children:
+                c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).ravel()*dg)
+        
+
+    def step(self):
+        
+        # The right-hand sides for the linear constraints
+        self.rhs = dict(zip(self.constraint_offdiags, 
+                            [np.asarray(np.dot(pm.utils.value(od), self.g.value)).ravel() for od in self.constraint_offdiags]))
+        
+        for i in xrange(self.n):
+            # Jump an element of g.
+            lb, ub, rhs = self.get_bounds(i)
+            
+            newgs = np.hstack((self.g.value[i], pm.rtruncnorm(0,1,lb,ub,size=self.n_draws)))
+            lpls = np.hstack((pm.utils.logp_of_set(self.likelihood_children), np.empty(self.n_draws)))
+            for j, newg in enumerate(newgs[1:]):
+                self.set_g_value(newg, i)
+                try:
+                    lpls[j+1] = pm.utils.logp_of_set(self.likelihood_children)
+                except pm.ZeroProbability:
+                    lpls[j+1] = -np.inf
+            
+            # from IPython.Debugger import Pdb
+            # Pdb(color_scheme='LightBG').set_trace() 
+            lpls -= pm.flib.logsum(lpls)
+            newg = newgs[pm.rcategorical(np.exp(lpls))]
+            self.set_g_value(newg, i)
+                    
+            for od in self.constraint_offdiags:
+                rhs[od] += np.asarray(pm.utils.value(od))[:,i].ravel() * newg
+                self.rhs = rhs
+        
+            
 class DelayedMetropolis(pm.Metropolis):
 
     def __init__(self, stochastic, sleep_interval=1, *args, **kwargs):
