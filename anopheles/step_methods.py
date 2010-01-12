@@ -73,58 +73,51 @@ class CMVNLStepper(pm.StepMethod):
             ub = np.hstack((ub, uplims)).min()
         return lb, ub, rhs
 
-    def step(self):
-        t = [0, 0, 0]
-        self.last_accepted = True
+    def set_g_value(self, newgi, i):
+        # Record current values of the f_evals, because they won't be available after 
+        # f_fr's value is set.
         cv = {}
+        for od in self.all_offdiags:
+            for c in od.children:
+                cv[c] = c.value.copy()
+                    
+        g = self.g.value.copy()            
+        dg = newgi-g[i]
+        g[i]=newgi
+        
+        t1 = time.time()
+        # Record change in f.
+        self.f.value = self.f.value + np.asarray(pm.utils.value(self.U)[i,:]).ravel()*dg
+        self.g._value.force_cache(g)
+        
+        for j,od in enumerate(self.constraint_offdiags):
+            # The children of the offdiags are just the f_evals.
+            for c in od.children:
+                c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).ravel()*dg)
+                if np.any(c.value*self.constraint_signs[j]<0):
+                    raise ValueError, 'Constraint broken!'
+        
+        for od in self.likelihood_offdiags:
+            # The children of the offdiags are just the f_evals.
+            for c in od.children:
+                c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).ravel()*dg)
+        
+
+    def step(self):
         
         # The right-hand sides for the linear constraints
         self.rhs = dict(zip(self.constraint_offdiags, 
                             [np.asarray(np.dot(pm.utils.value(od), self.g.value)).ravel() for od in self.constraint_offdiags]))
         
         for i in xrange(self.n):
-            t1 = time.time()
-            # Make copies of the f_evals' values now, they won't be available
-            # once f_fr changes.
-            if self.last_accepted:
-                for od in self.all_offdiags:
-                    for c in od.children:
-                        cv[c] = c.value.copy()
-            t[0] += time.time() - t1
-
             # Jump an element of g.
             lb, ub, rhs = self.get_bounds(i)
-                
-            g = self.g.value.copy()
-            newgi = pm.rtruncnorm(0,1,lb,ub)
-            dg = newgi-g[i]
-            g[i]=newgi
             
-            for od in self.constraint_offdiags:
-                rhs[od] += np.asarray(pm.utils.value(od))[:,i].ravel() * g[i]
-
             lpl = pm.utils.logp_of_set(self.likelihood_children)
+                
+            newgi = pm.rtruncnorm(0,1,lb,ub)
+            self.set_g_value(newgi, i)
             
-            t1 = time.time()
-            # Record change in f.
-            self.f.value = self.f.value + np.asarray(pm.utils.value(self.U)[i,:]).ravel()*dg
-            self.g._value.force_cache(g)
-            
-            for j,od in enumerate(self.constraint_offdiags):
-                # The children of the offdiags are just the f_evals.
-                for c in od.children:
-                    c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).ravel()*dg)
-                    if np.any(c.value*self.constraint_signs[j]<0):
-                        raise ValueError, 'Constraint broken!'
-            
-            for od in self.likelihood_offdiags:
-                # The children of the offdiags are just the f_evals.
-                for c in od.children:
-                    c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).ravel()*dg)
-            
-            t[1] += time.time() - t1
-            
-            t1 = time.time()
             try:
                 lpl_p = pm.utils.logp_of_set(self.likelihood_children)
             except pm.ZeroProbability:
@@ -133,17 +126,15 @@ class CMVNLStepper(pm.StepMethod):
             
             if np.log(np.random.random()) < lpl_p - lpl:
                 self.accepted[i] += 1
-                self.last_accepted = True
+                for od in self.constraint_offdiags:
+                    rhs[od] += np.asarray(pm.utils.value(od))[:,i].ravel() * newgi
                 self.rhs = rhs
             else:
                 self.reject(i)
-            t[2] += time.time() - t1
-        print t
 
     def reject(self, i):
         self.f.revert()
         self.rejected[i] += 1
-        self.last_accepted = False
         
             
 class DelayedMetropolis(pm.Metropolis):
