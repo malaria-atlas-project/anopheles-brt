@@ -15,6 +15,9 @@ def union(sets):
     for s in sets:
         out |= s
     return out
+    
+class ConstraintError(ValueError):
+    pass
 
 class CMVNLStepper(pm.StepMethod):
     """
@@ -42,6 +45,7 @@ class CMVNLStepper(pm.StepMethod):
         self.adaptive_scale_factor = np.ones(self.n)
         self.accepted = np.zeros(self.n)
         self.rejected = np.zeros(self.n)
+        self.n_draws = 100
         
         self.likelihood_children = union([pm.extend_children(od.children) for od in self.likelihood_offdiags])
         
@@ -71,7 +75,26 @@ class CMVNLStepper(pm.StepMethod):
             
             lb = np.hstack((lb, lolims)).max()
             ub = np.hstack((ub, uplims)).min()
-        return lb, ub, rhs
+        return lb, ub, rhs            
+    
+    def set_g_value(self, newg, i, cv):
+        g = self.g.value.copy()
+        dg = newg-g[i]
+        g[i] = newg
+        self.f.value = self.f.value + np.asarray(pm.utils.value(self.U)[i,:]).ravel()*dg
+        self.g._value.force_cache(g)
+        
+        for j,od in enumerate(self.constraint_offdiags):
+            # The children of the offdiags are just the f_evals.
+            for c in od.children:
+                c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).ravel()*dg)
+                if np.any(c.value*self.constraint_signs[j]<0):
+                    raise ConstraintError, 'Constraint broken!'
+        
+        for od in self.likelihood_offdiags:
+            # The children of the offdiags are just the f_evals.
+            for c in od.children:
+                c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).ravel()*dg)
 
     def set_g_value(self, newgi, i):
         # Record current values of the f_evals, because they won't be available after 
@@ -113,28 +136,24 @@ class CMVNLStepper(pm.StepMethod):
             # Jump an element of g.
             lb, ub, rhs = self.get_bounds(i)
             
-            lpl = pm.utils.logp_of_set(self.likelihood_children)
-                
-            newgi = pm.rtruncnorm(0,1,lb,ub)
-            self.set_g_value(newgi, i)
+            newgs = np.hstack((self.g.value[i], pm.rtruncnorm(0,1,lb,ub,size=self.n_draws)))
+            lpls = np.hstack((pm.utils.logp_of_set(self.likelihood_children), np.empty(self.n_draws)))
+            for j, newg in enumerate(newgs[1:]):
+                self.set_g_value(newg, i)
+                try:
+                    lpls[j+1] = pm.utils.logp_of_set(self.likelihood_children)
+                except pm.ZeroProbability:
+                    lpls[j+1] = -np.inf
             
-            try:
-                lpl_p = pm.utils.logp_of_set(self.likelihood_children)
-            except pm.ZeroProbability:
-                self.reject(i)
-                continue
-            
-            if np.log(np.random.random()) < lpl_p - lpl:
-                self.accepted[i] += 1
-                for od in self.constraint_offdiags:
-                    rhs[od] += np.asarray(pm.utils.value(od))[:,i].ravel() * newgi
+            # from IPython.Debugger import Pdb
+            # Pdb(color_scheme='LightBG').set_trace() 
+            lpls -= pm.flib.logsum(lpls)
+            newg = newgs[pm.rcategorical(np.exp(lpls))]
+            self.set_g_value(newg, i)
+                    
+            for od in self.constraint_offdiags:
+                rhs[od] += np.asarray(pm.utils.value(od))[:,i].ravel() * newg
                 self.rhs = rhs
-            else:
-                self.reject(i)
-
-    def reject(self, i):
-        self.f.revert()
-        self.rejected[i] += 1
         
             
 class DelayedMetropolis(pm.Metropolis):
