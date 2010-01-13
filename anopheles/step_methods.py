@@ -19,7 +19,7 @@ def union(sets):
 class ConstraintError(ValueError):
     pass
 
-class CMVNLStepper(pm.StepMethod):
+class CMVNImportance(pm.StepMethod):
     """
     Arguments:
         - f : Multivariate normal
@@ -42,9 +42,6 @@ class CMVNLStepper(pm.StepMethod):
         self.constraint_offdiags = constraint_offdiags
         self.all_offdiags = list(self.likelihood_offdiags) + list(self.constraint_offdiags)
         self.constraint_signs = constraint_signs
-        # self.adaptive_scale_factor = np.ones(self.n)
-        # self.accepted = np.zeros(self.n)
-        # self.rejected = np.zeros(self.n)
         self.n_draws = 20
         
         self.likelihood_children = union([pm.extend_children(od.children) for od in self.likelihood_offdiags])
@@ -79,25 +76,6 @@ class CMVNLStepper(pm.StepMethod):
     
     def get_likelihood_only(self):
         return pm.utils.logp_of_set(self.likelihood_children)
-        
-    def set_g_value(self, newg, i, cv):
-        g = self.g.value.copy()
-        dg = newg-g[i]
-        g[i] = newg
-        self.f.value = self.f.value + np.asarray(pm.utils.value(self.U)[i,:]).squeeze()*dg
-        self.g._value.force_cache(g)
-        
-        for j,od in enumerate(self.constraint_offdiags):
-            # The children of the offdiags are just the f_evals.
-            for c in od.children:
-                c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).squeeze()*dg)
-                if np.any(c.value*self.constraint_signs[j]<0):
-                    raise ConstraintError, 'Constraint broken!'
-        
-        for od in self.likelihood_offdiags:
-            # The children of the offdiags are just the f_evals.
-            for c in od.children:
-                c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).squeeze()*dg)
 
     def set_g_value(self, newgi, i):
         # Record current values of the f_evals, because they won't be available after 
@@ -127,7 +105,6 @@ class CMVNLStepper(pm.StepMethod):
             # The children of the offdiags are just the f_evals.
             for c in od.children:
                 c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).squeeze()*dg)
-        
 
     def step(self):
         
@@ -158,6 +135,46 @@ class CMVNLStepper(pm.StepMethod):
                 rhs[od] += np.asarray(pm.utils.value(od))[:,i].squeeze() * newg
                 self.rhs = rhs
         
+class CMVNMetropolis(CMVNImportance):
+    def __init__(self, *args, **kwds):
+        CMVNImportance.__init__(self, *args, **kwds)
+        self.adaptive_scale_factor = np.ones(self.n)
+        self.accepted = np.zeros(self.n)
+        self.rejected = np.zeros(self.n)
+
+    def step(self):
+        
+        # The right-hand sides for the linear constraints
+        self.rhs = dict(zip(self.constraint_offdiags, 
+                            [np.asarray(np.dot(pm.utils.value(od), self.g.value)).squeeze() for od in self.constraint_offdiags]))
+        
+        for i in xrange(self.n):
+            # Jump an element of g.
+            lb, ub, rhs = self.get_bounds(i)
+            
+            newg = pm.rtruncnorm(0,1,lb,ub)
+            lpl = self.get_likelihood_only()
+            self.set_g_value(newg, i)
+
+            # The newgs are drawn from the prior, taking the canstraints into account, so 
+            # accept them based on the 'likelihood children' only.
+            try:
+                lpl_p = self.get_likelihood_only()
+            except pm.ZeroProbability:
+                self.reject(i)
+                continue
+            
+            if np.log(np.random.random()) < lpl_p - lpl:
+                self.accepted[i] += 1
+                for od in self.constraint_offdiags:
+                    rhs[od] += np.asarray(pm.utils.value(od))[:,i].squeeze() * newg
+                    self.rhs = rhs
+            else:
+                self.reject(i)
+
+    def reject(self, i):
+        self.f.revert()
+        self.rejected[i] += 1
             
 class DelayedMetropolis(pm.Metropolis):
 

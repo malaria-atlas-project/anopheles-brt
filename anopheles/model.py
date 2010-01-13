@@ -282,14 +282,14 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
     nonbases = set(filter(lambda x: True-isinstance(x, OrthogonalBasis), M.stochastics))
     scalar_nonbases = filter(lambda x: np.prod(np.shape(x.value))<=1, nonbases)
 
-    for s in scalar_nonbases:
-        M.use_step_method(pm.Metropolis, s)
-        if s in M.f_fr.extended_parents:
-            M.step_method_dict[s][0].adaptive_scale_factor=.01
+    # for s in scalar_nonbases:
+    #     M.use_step_method(pm.Metropolis, s)
+    #     if s in M.f_fr.extended_parents:
+    #         M.step_method_dict[s][0].adaptive_scale_factor=.01
         
     for s in nonbases - set(scalar_nonbases):
         if s is not M.f_fr:
-            M.use_step_method(pm.AdaptiveMetropolis, s, scales={s: .0001*np.ones(np.shape(s.value))})
+            M.use_step_method(pm.AdaptiveMetropolis, s, scales={s: .000001*np.ones(np.shape(s.value))})
 
     M.use_step_method(pm.AdaptiveMetropolis, scalar_nonbases)
     # if hasattr(M, 'val'):
@@ -315,9 +315,10 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
         constraint_offdiags = [M.od_wherefound]
         # 1 = must be above 0, -1 = must be below 0.
         constraint_signs = [1]
-        M.use_step_method(CMVNLStepper, M.f_fr, M.g_fr, M.U_fr, likelihood_offdiags, constraint_offdiags, constraint_signs)
-        
+        # M.use_step_method(CMVNImportance, M.f_fr, M.g_fr, M.U_fr, likelihood_offdiags, constraint_offdiags, constraint_signs)
+        M.use_step_method(CMVNMetropolis, M.f_fr, M.g_fr, M.U_fr, likelihood_offdiags, constraint_offdiags, constraint_signs)
         # M.use_step_method(pm.NoStepper, M.f_fr)
+        
         # M.sm_ = CMVNLStepper(M.f_fr, B, np.zeros(len(M.x_wherefound)), Bl, M.n_neg, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')
         # M.use_step_method(CMVNLStepper, M.f_fr, B, np.zeros(len(M.x_wherefound)), Bl, M.n_neg, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')
         # M.use_step_method(pm.AdaptiveMetropolis, M.f_fr)
