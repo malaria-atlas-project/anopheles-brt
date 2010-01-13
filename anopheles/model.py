@@ -31,6 +31,7 @@ import datetime
 import warnings
 import shapely
 import tables as tb
+import utils
 
 __all__ = ['make_model', 'species_MCMC', 'threshold','invlogit', 'restore_species_MCMC','identity','threshold','invlogit']
 
@@ -333,8 +334,22 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
         M.use_step_method(GivensStepper, b)    
         M.step_method_dict[b][0].adaptive_scale_factor=.1
 
+def ftb_wrap(x,n,p):
+    "Wrapper for Fortran fast, threaded binomial"
+    # if len(x) > 10000:
+    #     cmin = [0,int(len(x)/2)]
+    #     cmax = [cmin[1]+1,len(x)]
+    #     lp = np.empty(2, order='F')
+    #     pm.map_noreturn(utils.ftb, [(lp,x,n,p,i,cmin[i],cmax[i]) for i in [0,1]])
+    #     return lp.sum()
+    # else:
+    cmin,cmax = 0,len(x)
+    lp = np.empty(1,order='F')
+    utils.ftb(lp,x,n,p,0,cmin,cmax)
+    return lp[0]
+FTB = pm.stochastic_from_dist('ftb', ftb_wrap, random=None, dtype='int', mv=False)
 def add_data(M2):
-    M2.data = pm.Binomial('data', 
+    M2.data = FTB('data', 
         n=np.hstack((M2.n_pos, M2.n_neg)), 
         p=M2.p_eval_wheredata*M2.p_find, 
         value=np.hstack((M2.found[M2.wherefound], np.zeros(M2.n_notfound))),
