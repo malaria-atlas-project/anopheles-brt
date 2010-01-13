@@ -39,6 +39,7 @@
 !                 raise ValueError
 !         y_ -= B[:,i]*new_val[i]
 
+
       SUBROUTINE lcm(B,y,nv,u,n,nc,ny,Bl,nneg,pf,nl,um,lop,acc,rej)
 !
 ! lcm is for 'Linear constraint Metropolis'. Metropolis samples the elements of y, 

@@ -145,6 +145,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         # The number of failed 'attempts' at locations where the species was not found.
         # This is used in the likelihood by the CMVNSStepper object.
         n_neg = (found+others_found+zero)[where_notfound]
+        n_pos = (found+others_found+zero)[wherefound]
         
         # Evaluate the environmental surfaces at the data locations.
         if len(env_variables)>0:
@@ -166,6 +167,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         od_wherefound, f_eval_wherefound, p_eval_wherefound = \
             evaluation_group(C,U_fr,p,full_x_fr_n,full_x_wherefound_n,f2p,'wherefound',
                 doc="The suitability function evaluated everywhere the species was found.")
+                
+        p_eval_wheredata = pm.Lambda('p_eval_wheredata', lambda p1=p_eval_wherefound, p2=p_eval_where_notfound: np.hstack((p1,p2)), trace=False)
 
         # Enforce presence at the data locations with a constraint.
         constraint_dict = {'data': 
@@ -330,6 +333,17 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
         M.use_step_method(GivensStepper, b)    
         M.step_method_dict[b][0].adaptive_scale_factor=.1
 
+def add_data(M2):
+    M2.data = pm.Binomial('data', 
+        n=np.hstack((M2.n_pos, M2.n_neg)), 
+        p=M2.p_eval_wheredata*M2.p_find, 
+        value=np.hstack((M2.found[M2.wherefound], np.zeros(M2.n_notfound))),
+        observed=True, trace=False)
+    M2.observed_stochastics.add(M2.data)
+    M2.variables.add(M2.data)        
+    M2.nodes.add(M2.data)
+
+
 def restore_species_MCMC(session, dbpath):
 
     # Load the database from the disk
@@ -342,10 +356,7 @@ def restore_species_MCMC(session, dbpath):
     M.restore_sampler_state()
     for c in filter(lambda x: isinstance(x,Constraint), M.potentials):
         c.close()
-    M.data = pm.Binomial('data', n=M.n_neg, p=M.p_eval_where_notfound*M.p_find, value=M.n_neg*0, observed=True, trace=False)
-    M.observed_stochastics.add(M.data)
-    M.variables.add(M.data)        
-    M.nodes.add(M.data)
+    add_data(M)
     
     
     # Assign step methods and restore states
@@ -407,10 +418,7 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
         c.close()
 
     # Create data object. Don't create it far the first stage, because all you want to do at that stage is find a legal initial value.
-    M2.data = pm.Binomial('data', n=M2.n_neg, p=M2.p_eval_where_notfound*M2.p_find, value=M2.n_neg*0, observed=True, trace=False)    
-    M2.observed_stochastics.add(M2.data)
-    M2.variables.add(M2.data)        
-    M2.nodes.add(M2.data)
+    add_data(M2)
     species_stepmethods(M2)
     
     add_metadata(M2.db._h5file, kwds, species, spatial_submodel)
