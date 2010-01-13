@@ -42,10 +42,10 @@ class CMVNLStepper(pm.StepMethod):
         self.constraint_offdiags = constraint_offdiags
         self.all_offdiags = list(self.likelihood_offdiags) + list(self.constraint_offdiags)
         self.constraint_signs = constraint_signs
-        self.adaptive_scale_factor = np.ones(self.n)
-        self.accepted = np.zeros(self.n)
-        self.rejected = np.zeros(self.n)
-        self.n_draws = 100
+        # self.adaptive_scale_factor = np.ones(self.n)
+        # self.accepted = np.zeros(self.n)
+        # self.rejected = np.zeros(self.n)
+        self.n_draws = 20
         
         self.likelihood_children = union([pm.extend_children(od.children) for od in self.likelihood_offdiags])
         
@@ -59,7 +59,7 @@ class CMVNLStepper(pm.StepMethod):
         g = self.g.value
         for j,od in enumerate(self.constraint_offdiags):
             rhs[od] = self.rhs[od].copy()
-            coef = np.asarray(pm.utils.value(od))[:,i].ravel()
+            coef = np.asarray(pm.utils.value(od))[:,i].squeeze()
             rhs[od] -= coef * g[i]
             
             where_coef_neg = np.where(coef<0)
@@ -77,24 +77,27 @@ class CMVNLStepper(pm.StepMethod):
             ub = np.hstack((ub, uplims)).min()
         return lb, ub, rhs            
     
+    def get_likelihood_only(self):
+        return pm.utils.logp_of_set(self.likelihood_children)
+        
     def set_g_value(self, newg, i, cv):
         g = self.g.value.copy()
         dg = newg-g[i]
         g[i] = newg
-        self.f.value = self.f.value + np.asarray(pm.utils.value(self.U)[i,:]).ravel()*dg
+        self.f.value = self.f.value + np.asarray(pm.utils.value(self.U)[i,:]).squeeze()*dg
         self.g._value.force_cache(g)
         
         for j,od in enumerate(self.constraint_offdiags):
             # The children of the offdiags are just the f_evals.
             for c in od.children:
-                c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).ravel()*dg)
+                c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).squeeze()*dg)
                 if np.any(c.value*self.constraint_signs[j]<0):
                     raise ConstraintError, 'Constraint broken!'
         
         for od in self.likelihood_offdiags:
             # The children of the offdiags are just the f_evals.
             for c in od.children:
-                c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).ravel()*dg)
+                c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).squeeze()*dg)
 
     def set_g_value(self, newgi, i):
         # Record current values of the f_evals, because they won't be available after 
@@ -110,49 +113,49 @@ class CMVNLStepper(pm.StepMethod):
         
         t1 = time.time()
         # Record change in f.
-        self.f.value = self.f.value + np.asarray(pm.utils.value(self.U)[i,:]).ravel()*dg
+        self.f.value = self.f.value + np.asarray(pm.utils.value(self.U)[i,:]).squeeze()*dg
         self.g._value.force_cache(g)
         
         for j,od in enumerate(self.constraint_offdiags):
             # The children of the offdiags are just the f_evals.
             for c in od.children:
-                c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).ravel()*dg)
+                c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).squeeze()*dg)
                 if np.any(c.value*self.constraint_signs[j]<0):
                     raise ValueError, 'Constraint broken!'
         
         for od in self.likelihood_offdiags:
             # The children of the offdiags are just the f_evals.
             for c in od.children:
-                c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).ravel()*dg)
+                c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).squeeze()*dg)
         
 
     def step(self):
         
         # The right-hand sides for the linear constraints
         self.rhs = dict(zip(self.constraint_offdiags, 
-                            [np.asarray(np.dot(pm.utils.value(od), self.g.value)).ravel() for od in self.constraint_offdiags]))
+                            [np.asarray(np.dot(pm.utils.value(od), self.g.value)).squeeze() for od in self.constraint_offdiags]))
         
         for i in xrange(self.n):
             # Jump an element of g.
             lb, ub, rhs = self.get_bounds(i)
             
             newgs = np.hstack((self.g.value[i], pm.rtruncnorm(0,1,lb,ub,size=self.n_draws)))
-            lpls = np.hstack((pm.utils.logp_of_set(self.likelihood_children), np.empty(self.n_draws)))
+            lpls = np.hstack((self.get_likelihood_only(), np.empty(self.n_draws)))
             for j, newg in enumerate(newgs[1:]):
                 self.set_g_value(newg, i)
+                # The newgs are drawn from the prior, taking the canstraints into account, so 
+                # accept them based on the 'likelihood children' only.
                 try:
-                    lpls[j+1] = pm.utils.logp_of_set(self.likelihood_children)
+                    lpls[j+1] = self.get_likelihood_only()
                 except pm.ZeroProbability:
                     lpls[j+1] = -np.inf
             
-            # from IPython.Debugger import Pdb
-            # Pdb(color_scheme='LightBG').set_trace() 
             lpls -= pm.flib.logsum(lpls)
             newg = newgs[pm.rcategorical(np.exp(lpls))]
             self.set_g_value(newg, i)
                     
             for od in self.constraint_offdiags:
-                rhs[od] += np.asarray(pm.utils.value(od))[:,i].ravel() * newg
+                rhs[od] += np.asarray(pm.utils.value(od))[:,i].squeeze() * newg
                 self.rhs = rhs
         
             
