@@ -328,6 +328,7 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
         constraint_signs = [1]
         # M.use_step_method(CMVNImportance, M.f_fr, M.g_fr, M.U_fr, likelihood_offdiags, constraint_offdiags, constraint_signs)
         M.use_step_method(CMVNMetropolis, M.f_fr, M.g_fr, M.U_fr, likelihood_offdiags, constraint_offdiags, constraint_signs)
+        M.step_method_dict[M.f_fr][0].adaptive_scale_factor *= .01
         # M.use_step_method(pm.NoStepper, M.f_fr)
         
         # M.sm_ = CMVNLStepper(M.f_fr, B, np.zeros(len(M.x_wherefound)), Bl, M.n_neg, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')

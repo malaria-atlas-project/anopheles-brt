@@ -66,15 +66,13 @@ class CMVNImportance(pm.StepMethod):
             uplims = -rhs[od][where_coef_neg] / coef[where_coef_neg]
             
             if self.constraint_signs[j] == -1:
-                tmp = uplims
-                uplims = lolims
-                lolims = tmp
+                uplims, lolims = lolims, uplims
             
-            lb = np.hstack((lb, lolims)).max()
-            ub = np.hstack((ub, uplims)).min()
+        lb = np.hstack((lb, lolims)).max()
+        ub = np.hstack((ub, uplims)).min()
         if lb>ub:
             raise ConstraintError
-        return lb, ub, rhs            
+        return lb, ub, rhs
     
     def get_likelihood_only(self):
         return pm.utils.logp_of_set(self.likelihood_children)
@@ -100,13 +98,20 @@ class CMVNImportance(pm.StepMethod):
             # The children of the offdiags are just the f_evals.
             for c in od.children:
                 c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).squeeze()*dg)
-                if np.any(c.value*self.constraint_signs[j]<0):
-                    raise ValueError, 'Constraint broken!'
+        
+        self.check_constraints()
         
         for od in self.likelihood_offdiags:
             # The children of the offdiags are just the f_evals.
             for c in od.children:
                 c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).squeeze()*dg)
+
+    def check_constraints(self):
+        for j,od in enumerate(self.constraint_offdiags):
+            # The children of the offdiags are just the f_evals.
+            for c in od.children:
+                if np.any(c.value*self.constraint_signs[j]<0):
+                    raise ValueError, 'Constraint broken!'
 
     def step(self):
         
@@ -115,6 +120,7 @@ class CMVNImportance(pm.StepMethod):
                             [np.asarray(np.dot(pm.utils.value(od), self.g.value)).squeeze() for od in self.constraint_offdiags]))
         
         for i in xrange(self.n):
+            
             try:
                 lb, ub, rhs = self.get_bounds(i)
             except ConstraintError:
@@ -155,6 +161,7 @@ class CMVNMetropolis(CMVNImportance):
                             [np.asarray(np.dot(pm.utils.value(od), self.g.value)).squeeze() for od in self.constraint_offdiags]))
         
         for i in xrange(self.n):
+            self.check_constraints()
             # Jump an element of g.
             lb, ub, rhs = self.get_bounds(i)
             
@@ -185,7 +192,7 @@ class CMVNMetropolis(CMVNImportance):
                 self.accepted[i] += 1
                 for od in self.constraint_offdiags:
                     rhs[od] += np.asarray(pm.utils.value(od))[:,i].squeeze() * newg
-                    self.rhs = rhs
+                self.rhs = rhs
             else:
                 self.reject(i)
 
