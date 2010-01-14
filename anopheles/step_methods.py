@@ -50,8 +50,8 @@ class CMVNImportance(pm.StepMethod):
 
     def get_bounds(self, i):
         # Linear constraints.
-        lb = -4
-        ub = 4
+        lb = -np.inf
+        ub = np.inf
         rhs = {}
         g = self.g.value
         for j,od in enumerate(self.constraint_offdiags):
@@ -72,6 +72,8 @@ class CMVNImportance(pm.StepMethod):
             
             lb = np.hstack((lb, lolims)).max()
             ub = np.hstack((ub, uplims)).min()
+        if lb>ub:
+            raise ConstraintError
         return lb, ub, rhs            
     
     def get_likelihood_only(self):
@@ -113,8 +115,11 @@ class CMVNImportance(pm.StepMethod):
                             [np.asarray(np.dot(pm.utils.value(od), self.g.value)).squeeze() for od in self.constraint_offdiags]))
         
         for i in xrange(self.n):
-            # Jump an element of g.
-            lb, ub, rhs = self.get_bounds(i)
+            try:
+                lb, ub, rhs = self.get_bounds(i)
+            except ConstraintError:
+                warnings.warn('Bounds could not be set, this element is very highly constrained')
+                continue
             
             newgs = np.hstack((self.g.value[i], pm.rtruncnorm(0,1,lb,ub,size=self.n_draws)))
             lpls = np.hstack((self.get_likelihood_only(), np.empty(self.n_draws)))
@@ -144,6 +149,7 @@ class CMVNMetropolis(CMVNImportance):
 
     def step(self):
         
+        # TODO: Propose from not the prior, and tune using the asf's.
         # The right-hand sides for the linear constraints
         self.rhs = dict(zip(self.constraint_offdiags, 
                             [np.asarray(np.dot(pm.utils.value(od), self.g.value)).squeeze() for od in self.constraint_offdiags]))
@@ -152,25 +158,67 @@ class CMVNMetropolis(CMVNImportance):
             # Jump an element of g.
             lb, ub, rhs = self.get_bounds(i)
             
-            newg = pm.rtruncnorm(0,1,lb,ub)
+            # Propose a new value
+            curg = self.g.value[i]
+            tau = 1./self.adaptive_scale_factor[i]
+            newg = pm.rtruncnorm(curg,tau,lb,ub)
+            
+            # The Hastings factor
+            hf = pm.truncnorm_like(curg,newg,tau,lb,ub)-pm.truncnorm_like(newg,curg,tau,lb,ub)
+            
+            # The difference in prior log-probabilities of g
+            dpri = .5*(curg**2 - newg**2)
+            
+            # Get the current log-likelihood of the non-constraint children.
             lpl = self.get_likelihood_only()
-            self.set_g_value(newg, i)
 
-            # The newgs are drawn from the prior, taking the canstraints into account, so 
-            # accept them based on the 'likelihood children' only.
+            # Inter the proposed value and get the proposed log-likelihood.
+            self.set_g_value(newg, i)            
             try:
                 lpl_p = self.get_likelihood_only()
             except pm.ZeroProbability:
                 self.reject(i)
                 continue
             
-            if np.log(np.random.random()) < lpl_p - lpl:
+            # M-H acceptance
+            if np.log(np.random.random()) < lpl_p - lpl + hf + dpri:
                 self.accepted[i] += 1
                 for od in self.constraint_offdiags:
                     rhs[od] += np.asarray(pm.utils.value(od))[:,i].squeeze() * newg
                     self.rhs = rhs
             else:
                 self.reject(i)
+
+    def tune(self):
+        tuning = self.accepted*0+1
+        
+        for i in xrange(len(self.accepted)):
+            acc_rate = self.accepted[i]/(self.accepted[i]+self.rejected[i])
+            
+            # Switch statement
+            if acc_rate<0.001:
+                # reduce by 90 percent
+                self.adaptive_scale_factor[i] *= 0.1
+            elif acc_rate<0.05:           
+                # reduce by 50 percent    
+                self.adaptive_scale_factor[i] *= 0.5
+            elif acc_rate<0.2:            
+                # reduce by ten percent   
+                self.adaptive_scale_factor[i] *= 0.9
+            elif acc_rate>0.95:           
+                # increase by factor of ten
+                self.adaptive_scale_factor[i] *= 10.0
+            elif acc_rate>0.75:           
+                # increase by double      
+                self.adaptive_scale_factor[i] *= 2.0
+            elif acc_rate>0.5:            
+                self.adaptive_scale_factor[i] *= 1.1
+            else:
+                tuning[i] = 0
+                
+        self.accepted *= 0
+        self.rejected *= 0
+        return np.any(tuning)
 
     def reject(self, i):
         self.f.revert()

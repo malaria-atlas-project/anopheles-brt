@@ -281,15 +281,26 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
     bases = filter(lambda x: isinstance(x, OrthogonalBasis), M.stochastics)
     nonbases = set(filter(lambda x: True-isinstance(x, OrthogonalBasis), M.stochastics))
     scalar_nonbases = filter(lambda x: np.prod(np.shape(x.value))<=1, nonbases)
+    
+    chunk = 4
+    for i in xrange(len(scalar_nonbases)/chunk+1):
+        sbc = scalar_nonbases[chunk*i:chunk*(i+1)]
+        if len(sbc)==0:
+            pass
+        elif len(sbc) == 1:
+            M.use_step_method(pm.Metropolis, sbc[0])
+            M.step_method_dict[sbc[0]][0].adaptive_scale_factor=.01
+        else:
+            M.use_step_method(pm.AdaptiveMetropolis, sbc, scales=dict(zip(sbc, np.repeat(.0001,len(sbc)))))
 
     # for s in scalar_nonbases:
     #     M.use_step_method(pm.Metropolis, s)
-    #     if s in M.f_fr.extended_parents:
-    #         M.step_method_dict[s][0].adaptive_scale_factor=.01
+    #     # if s in M.f_fr.extended_parents:
+    #     M.step_method_dict[s][0].adaptive_scale_factor=.01
         
     for s in nonbases - set(scalar_nonbases):
         if s is not M.f_fr:
-            M.use_step_method(pm.AdaptiveMetropolis, s, scales={s: .000001*np.ones(np.shape(s.value))})
+            M.use_step_method(pm.AdaptiveMetropolis, s, scales={s: .00001*np.ones(np.shape(s.value))})
 
     M.use_step_method(pm.AdaptiveMetropolis, scalar_nonbases)
     # if hasattr(M, 'val'):
