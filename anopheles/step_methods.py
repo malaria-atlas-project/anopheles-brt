@@ -167,7 +167,7 @@ class CMVNMetropolis(CMVNImportance):
             
             # Propose a new value
             curg = self.g.value[i]
-            tau = 1./self.adaptive_scale_factor[i]
+            tau = 1./self.adaptive_scale_factor[i]**2
             newg = pm.rtruncnorm(curg,tau,lb,ub)
             
             # The Hastings factor
