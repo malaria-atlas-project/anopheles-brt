@@ -19,6 +19,33 @@ def union(sets):
 class ConstraintError(ValueError):
     pass
 
+def check_cached_value(v):
+    if isinstance(v, pm.Deterministic):
+        if np.any(v.value != v._value.fun(**v.parents.value)):
+            raise ValueError
+    else:
+        try:
+            lp = v.logp
+        except pm.ZeroProbability:
+            lp = -np.inf
+            
+        try:
+            lpc = v._logp.fun(**v._logp.arguments.value)
+        except pm.ZeroProbability:
+            lpc = -np.inf
+            
+        if lp != lpc:
+            raise ValueError
+
+def eval_all_children(v):
+    for c in v.children:
+        if isinstance(c, pm.Deterministic):
+            c._value.force_compute()
+            eval_all_children(c)
+        else:
+            c._logp.force_compute()
+        check_cached_value(c)
+
 class CMVNImportance(pm.StepMethod):
     """
     Arguments:
@@ -80,6 +107,9 @@ class CMVNImportance(pm.StepMethod):
     def set_g_value(self, newgi, i):
         # Record current values of the f_evals, because they won't be available after 
         # f_fr's value is set.
+        # if np.random.random()<.001:
+        #     from IPython.Debugger import Pdb
+        #     Pdb(color_scheme='LightBG').set_trace() 
         cv = {}
         for od in self.all_offdiags:
             for c in od.children:
@@ -96,15 +126,24 @@ class CMVNImportance(pm.StepMethod):
         
         for j,od in enumerate(self.constraint_offdiags):
             # The children of the offdiags are just the f_evals.
+            # check_cached_value(od)
             for c in od.children:
                 c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).squeeze()*dg)
+                # check_cached_value(c)
+                eval_all_children(c)
         
         self.check_constraints()
         
         for od in self.likelihood_offdiags:
+            # check_cached_value(od)
             # The children of the offdiags are just the f_evals.
             for c in od.children:
-                c._value.force_cache(cv[c] + np.asarray(od.value[:,i]).squeeze()*dg)
+                # check_cached_value(c)
+                new_val = cv[c] + np.asarray(od.value[:,i]).squeeze()*dg
+                c._value.force_cache(new_val)
+                eval_all_children(c)
+                        
+                
 
     def check_constraints(self):
         for j,od in enumerate(self.constraint_offdiags):
@@ -159,7 +198,8 @@ class CMVNMetropolis(CMVNImportance):
         # The right-hand sides for the linear constraints
         self.rhs = dict(zip(self.constraint_offdiags, 
                             [np.asarray(np.dot(pm.utils.value(od), self.g.value)).squeeze() for od in self.constraint_offdiags]))
-        
+        this_round = np.zeros(self.n, dtype='int')
+
         for i in xrange(self.n):
             self.check_constraints()
             # Jump an element of g.
@@ -168,7 +208,7 @@ class CMVNMetropolis(CMVNImportance):
             # Propose a new value
             curg = self.g.value[i]
             tau = 1./self.adaptive_scale_factor[i]**2
-            newg = pm.rtruncnorm(curg,tau,lb,ub)
+            newg = pm.rtruncnorm(curg,tau,lb,ub)[0]
             
             # The Hastings factor
             hf = pm.truncnorm_like(curg,newg,tau,lb,ub)-pm.truncnorm_like(newg,curg,tau,lb,ub)
@@ -179,24 +219,35 @@ class CMVNMetropolis(CMVNImportance):
             # Get the current log-likelihood of the non-constraint children.
             lpl = self.get_likelihood_only()
 
+            cv = {}
+            for od in self.all_offdiags:
+                for c in od.children:
+                    cv[c] = c.value.copy()
+
             # Inter the proposed value and get the proposed log-likelihood.
-            self.set_g_value(newg, i)            
+            self.set_g_value(newg, i) 
             try:
                 lpl_p = self.get_likelihood_only()
             except pm.ZeroProbability:
-                self.reject(i)
+                self.reject(i, cv)
+                self.check_constraints()
+                this_round[i] = -1
                 continue
             
             # M-H acceptance
             if np.log(np.random.random()) < lpl_p - lpl + hf + dpri:
                 self.accepted[i] += 1
+                this_round[i] = 1
                 for od in self.constraint_offdiags:
                     rhs[od] += np.asarray(pm.utils.value(od))[:,i].squeeze() * newg
                 self.rhs = rhs
+                self.check_constraints()
             else:
-                self.reject(i)
+                self.reject(i, cv)
+                self.check_constraints()
+                this_round[i] = -1
 
-    def tune(self):
+    def tune(self, verbose=0):
         tuning = self.accepted*0+1
         
         for i in xrange(len(self.accepted)):
@@ -227,8 +278,12 @@ class CMVNMetropolis(CMVNImportance):
         self.rejected *= 0
         return np.any(tuning)
 
-    def reject(self, i):
+    def reject(self, i, cv):
         self.f.revert()
+        for od in self.all_offdiags:
+            for c in od.children:
+                if np.any(cv[c] != c.value):
+                    raise ValueError
         self.rejected[i] += 1
             
 class DelayedMetropolis(pm.Metropolis):

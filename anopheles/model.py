@@ -437,7 +437,7 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     # =======================================
     # = Second stage: sample from posterior =
     # =======================================
-    M2=pm.MCMC(make_model(session, species, spatial_submodel, **kwds), db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
+    M2=pm.MCMC(make_model(session, species, spatial_submodel, **kwds), db='hdf5', dbcomplevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
     for s2 in M2.stochastics:
         for s1 in M1.stochastics:
             if s2.__name__ == s1.__name__:
