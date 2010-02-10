@@ -31,6 +31,7 @@ import datetime
 import warnings
 import shapely
 import tables as tb
+import utils
 
 __all__ = ['make_model', 'species_MCMC', 'threshold','invlogit', 'restore_species_MCMC','identity','threshold','invlogit']
 
@@ -145,6 +146,7 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         # The number of failed 'attempts' at locations where the species was not found.
         # This is used in the likelihood by the CMVNSStepper object.
         n_neg = (found+others_found+zero)[where_notfound]
+        n_pos = (found+others_found+zero)[wherefound]
         
         # Evaluate the environmental surfaces at the data locations.
         if len(env_variables)>0:
@@ -166,6 +168,8 @@ def make_model(session, species, spatial_submodel, with_eo = True, with_data = T
         od_wherefound, f_eval_wherefound, p_eval_wherefound = \
             evaluation_group(C,U_fr,p,full_x_fr_n,full_x_wherefound_n,f2p,'wherefound',
                 doc="The suitability function evaluated everywhere the species was found.")
+                
+        p_eval_wheredata = pm.Lambda('p_eval_wheredata', lambda p1=p_eval_wherefound, p2=p_eval_where_notfound: np.hstack((p1,p2)), trace=False)
 
         # Enforce presence at the data locations with a constraint.
         constraint_dict = {'data': 
@@ -277,15 +281,26 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
     bases = filter(lambda x: isinstance(x, OrthogonalBasis), M.stochastics)
     nonbases = set(filter(lambda x: True-isinstance(x, OrthogonalBasis), M.stochastics))
     scalar_nonbases = filter(lambda x: np.prod(np.shape(x.value))<=1, nonbases)
+    
+    chunk = 4
+    for i in xrange(len(scalar_nonbases)/chunk+1):
+        sbc = scalar_nonbases[chunk*i:chunk*(i+1)]
+        if len(sbc)==0:
+            pass
+        elif len(sbc) == 1:
+            M.use_step_method(pm.Metropolis, sbc[0])
+            M.step_method_dict[sbc[0]][0].adaptive_scale_factor=.01
+        else:
+            M.use_step_method(pm.AdaptiveMetropolis, sbc, scales=dict(zip(sbc, np.repeat(.0001,len(sbc)))))
 
-    for s in scalar_nonbases:
-        M.use_step_method(pm.Metropolis, s)
-        if s in M.f_fr.extended_parents:
-            M.step_method_dict[s][0].adaptive_scale_factor=.01
+    # for s in scalar_nonbases:
+    #     M.use_step_method(pm.Metropolis, s)
+    #     # if s in M.f_fr.extended_parents:
+    #     M.step_method_dict[s][0].adaptive_scale_factor=.01
         
     for s in nonbases - set(scalar_nonbases):
         if s is not M.f_fr:
-            M.use_step_method(pm.AdaptiveMetropolis, s, scales={s: .0001*np.ones(np.shape(s.value))})
+            M.use_step_method(pm.AdaptiveMetropolis, s, scales={s: .00001*np.ones(np.shape(s.value))})
 
     M.use_step_method(pm.AdaptiveMetropolis, scalar_nonbases)
     # if hasattr(M, 'val'):
@@ -311,9 +326,11 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
         constraint_offdiags = [M.od_wherefound]
         # 1 = must be above 0, -1 = must be below 0.
         constraint_signs = [1]
-        M.use_step_method(CMVNLStepper, M.f_fr, M.g_fr, M.U_fr, likelihood_offdiags, constraint_offdiags, constraint_signs)
-        
+        # M.use_step_method(CMVNImportance, M.f_fr, M.g_fr, M.U_fr, likelihood_offdiags, constraint_offdiags, constraint_signs)
+        M.use_step_method(CMVNMetropolis, M.f_fr, M.g_fr, M.U_fr, likelihood_offdiags, constraint_offdiags, constraint_signs)
+        M.step_method_dict[M.f_fr][0].adaptive_scale_factor *= .01
         # M.use_step_method(pm.NoStepper, M.f_fr)
+        
         # M.sm_ = CMVNLStepper(M.f_fr, B, np.zeros(len(M.x_wherefound)), Bl, M.n_neg, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')
         # M.use_step_method(CMVNLStepper, M.f_fr, B, np.zeros(len(M.x_wherefound)), Bl, M.n_neg, M.p_find, pri_S=M.L_fr, pri_M=None, n_cycles=100, pri_S_type='tri')
         # M.use_step_method(pm.AdaptiveMetropolis, M.f_fr)
@@ -330,6 +347,31 @@ def species_stepmethods(M, interval=None, sleep_interval=1):
         M.use_step_method(GivensStepper, b)    
         M.step_method_dict[b][0].adaptive_scale_factor=.1
 
+def ftb_wrap(x,n,p):
+    "Wrapper for Fortran fast, threaded binomial"
+    # if len(x) > 10000:
+    #     cmin = [0,int(len(x)/2)]
+    #     cmax = [cmin[1]+1,len(x)]
+    #     lp = np.empty(2, order='F')
+    #     pm.map_noreturn(utils.ftb, [(lp,x,n,p,i,cmin[i],cmax[i]) for i in [0,1]])
+    #     return lp.sum()
+    # else:
+    cmin,cmax = 0,len(x)
+    lp = np.empty(1,order='F')
+    utils.ftb(lp,x,n,p,0,cmin,cmax)
+    return lp[0]
+FTB = pm.stochastic_from_dist('ftb', ftb_wrap, random=None, dtype='int', mv=False)
+def add_data(M2):
+    M2.data = FTB('data', 
+        n=np.hstack((M2.n_pos, M2.n_neg)), 
+        p=M2.p_eval_wheredata*M2.p_find, 
+        value=np.hstack((M2.found[M2.wherefound], np.zeros(M2.n_notfound))),
+        observed=True, trace=False)
+    M2.observed_stochastics.add(M2.data)
+    M2.variables.add(M2.data)        
+    M2.nodes.add(M2.data)
+
+
 def restore_species_MCMC(session, dbpath):
 
     # Load the database from the disk
@@ -342,10 +384,7 @@ def restore_species_MCMC(session, dbpath):
     M.restore_sampler_state()
     for c in filter(lambda x: isinstance(x,Constraint), M.potentials):
         c.close()
-    M.data = pm.Binomial('data', n=M.n_neg, p=M.p_eval_where_notfound*M.p_find, value=M.n_neg*0, observed=True, trace=False)
-    M.observed_stochastics.add(M.data)
-    M.variables.add(M.data)        
-    M.nodes.add(M.data)
+    add_data(M)
     
     
     # Assign step methods and restore states
@@ -398,7 +437,7 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
     # =======================================
     # = Second stage: sample from posterior =
     # =======================================
-    M2=pm.MCMC(make_model(session, species, spatial_submodel, **kwds), db='hdf5', complevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
+    M2=pm.MCMC(make_model(session, species, spatial_submodel, **kwds), db='hdf5', dbcomplevel=1, dbname=species[1]+str(datetime.datetime.now())+'.hdf5')
     for s2 in M2.stochastics:
         for s1 in M1.stochastics:
             if s2.__name__ == s1.__name__:
@@ -407,10 +446,7 @@ def species_MCMC(session, species, spatial_submodel, **kwds):
         c.close()
 
     # Create data object. Don't create it far the first stage, because all you want to do at that stage is find a legal initial value.
-    M2.data = pm.Binomial('data', n=M2.n_neg, p=M2.p_eval_where_notfound*M2.p_find, value=M2.n_neg*0, observed=True, trace=False)    
-    M2.observed_stochastics.add(M2.data)
-    M2.variables.add(M2.data)        
-    M2.nodes.add(M2.data)
+    add_data(M2)
     species_stepmethods(M2)
     
     add_metadata(M2.db._h5file, kwds, species, spatial_submodel)

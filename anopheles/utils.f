@@ -39,6 +39,37 @@
 !                 raise ValueError
 !         y_ -= B[:,i]*new_val[i]
 
+      SUBROUTINE ftb(lp,x,n,p,nx,nlp,lpi,cmin,cmax)
+
+c Fast, threaded binomial. Assumes n to be constant
+c and assumes x is observed.
+c Assumes all constraints on x,n,p are maintained.
+cf2py intent(inplace) lp
+cf2py intent(in) x,n,p,lpi,cmin,cmax
+cf2py intent(hide) nx,nlp
+cf2py threadsafe
+      IMPLICIT NONE
+      INTEGER nx,i,lpi
+      DOUBLE PRECISION lp(nlp), p(nx),lptmp
+      INTEGER x(nx),n(nx),cmin,cmax,nlp
+      INTEGER ntmp
+      DOUBLE PRECISION ptmp
+      DOUBLE PRECISION infinity
+      PARAMETER (infinity = 1.7976931348623157d308)
+      
+      lptmp = 0.0D0
+      do i=cmin+1,cmax
+       ntmp = n(i)
+       ptmp = p(i)
+       if (ptmp .GT. 0.0D0) then
+        lptmp = lptmp + x(i)*dlog(ptmp) + (ntmp-x(i))*dlog(1.0D0-ptmp)
+       end if
+      enddo
+      lp(lpi+1)=lptmp
+      return
+      END
+
+
       SUBROUTINE lcm(B,y,nv,u,n,nc,ny,Bl,nneg,pf,nl,um,lop,acc,rej)
 !
 ! lcm is for 'Linear constraint Metropolis'. Metropolis samples the elements of y, 
