@@ -19,9 +19,10 @@ from map_utils import multipoly_sample, shapely_multipoly_area
 import tables as tb
 import sys, os
 import shapely
+import hashlib
 import cPickle
 
-__all__ = ['site_to_rec', 'sitelist_to_recarray', 'list_species', 'species_query', 'map_extents', 'multipoint_to_ndarray', 'sample_eo', 'map_extents', 'point_to_ndarray', 'sites_as_ndarray']
+__all__ = ['site_to_rec', 'sitelist_to_recarray', 'list_species', 'species_query', 'multipoint_to_ndarray', 'point_to_ndarray', 'sites_as_ndarray']
 
 def multipoint_to_ndarray(mp):
     "Converts a multipont to a coordinate array IN RADIANS."
@@ -101,9 +102,9 @@ def sites_as_ndarray(session, species):
                 breaks.append(breaks[-1] + 1)
             else:
                 raise ValueError, 'Your list of sites has something in it that is neither a multipoint nor a point, you fruitcake.'
-            found.append(site[1] if site[1] is not None else 0)
-            zero.append(site[2] if site[2] is not None else 0)
-            others_found.append(site[3] if site[3] is not None else 0)
+            found.append(site[1] or 0)
+            zero.append(site[2] or 0)
+            others_found.append(site[3] or 0)
             totals.append(site[4])
 
         breaks = np.array(breaks)
@@ -122,90 +123,7 @@ def sites_as_ndarray(session, species):
         hf.close()
     
     return breaks, x, found, zero, others_found, multipoints
-            
-def sample_eo(session, species, n_inducing):
     
-    # Don't compute the world's land surface area using Shapely, because it
-    # uses cylindrical coordinates & will be wrong.
-    world_area = 150000000
-    
-    fname = '%s_eo_pts_%i.hdf5'%(species[1],n_inducing)
-    
-    if fname in os.listdir('anopheles-caches'):
-        hf = tb.openFile(os.path.join('anopheles-caches', fname))
-        pts_in = hf.root.pts_in[:]
-        pts_out = hf.root.pts_out[:]
-        hf.close()
-    else:
-        print 'Cached expert-opinion points not found, recomputing.'        
-        print 'Querying species'
-        sites, eo = species_query(session, species[0])
-        print 'Querying world'
-        world = session.query(World)[0].geom
-        print 'Differencing with expert opinion'
-        not_eo = world.difference(eo)
-        
-        eo_area = shapely_multipoly_area(eo)
-        
-        # Area of the EO region computed by Shapely will not be so bad
-        # because all the EO regions are near the equator
-        n_in = max(int(eo_area/world_area*n_inducing),20)
-        n_out = n_inducing-n_in
-        print 'Outside area=%f, n_out=%i:'%(world_area-eo_area,n_out)
-        print 'Inside area=%f, n_in=%i:'%(eo_area,n_in)
-    
-        print 'Sampling outside'
-        lon_out, lat_out = multipoly_sample(n_out, not_eo)
-        print 'Sampling inside'
-        lon_in, lat_in = multipoly_sample(n_in, eo)
-    
-        print 'Writing out'
-        pts_in = np.vstack((lon_in, lat_in)).T*np.pi/180. 
-        pts_out = np.vstack((lon_out, lat_out)).T*np.pi/180.
-        
-        from IPython.Debugger import Pdb
-        Pdb(color_scheme='LightBG').set_trace()
-    
-        hf = tb.openFile(os.path.join('anopheles-caches',fname),'w')
-        hf.createArray('/','pts_in',pts_in)
-        hf.createArray('/','pts_out',pts_out)
-    
-    return pts_in, pts_out
-
-# Pylab-dependent stuff
-try:
-    import pylab as pl
-    from mpl_toolkits import basemap
-    from map_utils import plot_unit
-
-    __all__ += ['split_recs', 'plot_species']
-
-    def split_recs(recs):
-        "Splits records into positive and negative versions."
-        pos_recs = recs[np.where(recs.n>0)]
-        neg_recs = recs[np.where(recs.n<=0)]
-        return pos_recs, neg_recs
-    
-    def plot_species(session, species, name, b=None, negs=True, **kwds):
-        "Plots the expert opinion, positives and not-observeds for the given species."
-        sites, eo = species_query(session, species)
-        ra = sitelist_to_recarray(sites)
-        pos_recs, neg_recs = split_recs(ra)
-        if b is None:
-            b = basemap.Basemap(*map_extents(pos_recs, eo), **kwds)
-        b.drawcoastlines(color='w',linewidth=.5)
-        # b.drawcountries(color='w',linewidth=.5)
-        pl.title(name, style='italic')        
-        plot_unit(b, eo, '-', color=(.4,.4,.9), label='_nolegend_', linewidth=.75)        
-        if negs:
-            b.plot(neg_recs.x, neg_recs.y, '.', color=(.1,.6,.6), markersize=1.5, label='Observed')        
-        b.plot(pos_recs.x, pos_recs.y, '.', color=(.9,.4,.4), markersize=1.5, label='Observed')
-
-
-except ImportError:
-    kls,inst,tb = sys.exc_info()
-    print 'Warning, could not import Pylab. Original error message:\n\n' + inst.message
-
 if __name__ == '__main__':
     session = Session()
     species = list_species(session)    

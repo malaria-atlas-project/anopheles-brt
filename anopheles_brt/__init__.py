@@ -1,11 +1,10 @@
 import os,sys
-import anopheles
 import anopheles_query
 from anopheles_query import *
-import species
 
 
-for mod in ['query_to_rec','model','spatial_submodels','utils','env_data','mahalanobis_covariance','mapping','validation_metrics','constrained_mvn_sample','constraints','step_methods']:
+
+for mod in ['env_data','validation_metrics','export_vectors','query_to_rec','brt_wrap']:
     try:
         exec('from %s import *'%mod)
     except ImportError:
@@ -15,5 +14,3 @@ try:
     import utils
 except ImportError:
     print 'Failed to import utils'
-    
-#from testsuite import test
