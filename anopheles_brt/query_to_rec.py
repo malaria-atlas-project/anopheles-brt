@@ -26,10 +26,10 @@ __all__ = ['site_to_rec', 'sitelist_to_recarray', 'list_species', 'species_query
 
 def multipoint_to_ndarray(mp):
     "Converts a multipont to a coordinate array IN RADIANS."
-    return np.array([[p.x, p.y] for p in mp.geoms])*np.pi/180.
+    return np.array([[p.x, p.y] for p in mp.geoms])
 
 def point_to_ndarray(p):
-    return np.array([p.x, p.y])*np.pi/180.
+    return np.array([p.x, p.y])
 
 def site_to_rec(s):
     """
@@ -80,17 +80,17 @@ def sites_as_ndarray(session, species):
     
     else:
         sites, eo = species_query(session, species[0])
-    
+        
         # Forget about non-records
         sites = filter(lambda s:s[0] is not None, sites)
-    
+        
         x = []
         breaks = [0]
         found = []
         zero = []
         others_found = []
         totals = []
-
+    
         multipoints = False
         for site in sites:
             if isinstance(site[0], shapely.geometry.multipoint.MultiPoint):
@@ -106,7 +106,7 @@ def sites_as_ndarray(session, species):
             zero.append(site[2] or 0)
             others_found.append(site[3] or 0)
             totals.append(site[4])
-
+    
         breaks = np.array(breaks)
         x = np.concatenate(x)
         found = np.array(found)
