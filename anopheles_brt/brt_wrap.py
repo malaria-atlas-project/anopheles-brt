@@ -5,6 +5,7 @@ from query_to_rec import sites_as_ndarray
 import hashlib
 import warnings
 import matplotlib
+import cPickle
 matplotlib.use('pdf')
 
 from pylab import rec2csv, csv2rec
@@ -114,16 +115,24 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels):
 # side of the split. Not sure what MissingNode is about but we have no missing data.
 
 
-def unpack_brt_results(brt_results, *names):
+def unpack_gbm_object(brt_results, *names):
+    """
+    Allows retrieval of elements in the R vector brt_results
+    by column name.
+    """
     namelist = np.array(brt_results.names)
     return map(lambda n: np.array(brt_results[np.where(namelist==n)[0][0]]), names)
 
 def unpack_brt_trees(brt_results, layer_names, glob_name, glob_channels):
-    
+    """
+    Returns a dictionary whose keys are the predictors used. The values of the 
+    dictionary are record arrays giving the split points and node values 
+    associated with the corresponding predictors.
+    """
     all_names = map(lambda ch: str.lower(os.path.basename(ch)),layer_names) \
                 + map(lambda ch: str.lower(os.path.basename(glob_name)) + '_' + str(ch), glob_channels)
     
-    tree_matrix = unpack_brt_results(brt_results, 'trees')[0]
+    tree_matrix = unpack_gbm_object(brt_results, 'trees')[0]
     nice_trees = []
     for split_var, split_code_pred, left_node, right_node, missing_node, error_reduction, weight, prediction in tree_matrix:
         new_tree = {'variable': all_names[int(split_var[0])],
@@ -140,20 +149,23 @@ def unpack_brt_trees(brt_results, layer_names, glob_name, glob_channels):
         v_array = map(lambda t: [t['split_loc'], t['left_val'], t['right_val']], filter(lambda t: t['variable']==v, nice_trees))
         nice_tree_dict[v] = np.rec.fromarrays(np.array(v_array).T, names='split_loc,left_val,right_val') if v_array else None
                 
-    return all_names, nice_tree_dict
-    
+    return nice_tree_dict
+
 class brt_evaluator(object):
-    def __init__(self, all_names, nice_tree_dict, intercept):
-        self.all_names = map(str.lower, all_names)
+    """
+    A lexical closure. Once created, takes predictive variables
+    as a dictionary as an argument and returns a prediction on the
+    corresponding grid.
+    """
+    def __init__(self, nice_tree_dict, intercept):
         self.nice_tree_dict = dict(map(lambda t: (str.lower(t[0]), t[1]), nice_tree_dict.iteritems()))
         self.intercept = intercept
     def __call__(self, pred_vars):
-        if set(pred_vars.keys()) != set(self.all_names):
+        if set(pred_vars.keys()) != set(self.nice_tree_dict.keys()):
             raise ValueError, "You haven't supplied all the predictors."
         out = np.zeros(len(pred_vars.values()[0]))
         N = 0.
-        for n in self.all_names:
-            trees = self.nice_tree_dict[n]
+        for n, trees in self.nice_tree_dict.iteritems():
             if trees is None:
                 continue
             N += len(trees)
@@ -167,23 +179,35 @@ class brt_evaluator(object):
         return out+self.intercept
 
 def brt_doublecheck(fname, brt_evaluator, brt_results):
-    ures = unpack_brt_results(brt_results, 'fit')
+    """
+    Computes the 'fit' element of a gbm.object and compares it
+    with that stored in the gbm.object.
+    """
+    ures = unpack_gbm_object(brt_results, 'fit')
     data = csv2rec(os.path.join('anopheles-caches', fname))
     ddict = dict([(k, data[k]) for k in data.dtype.names[1:]])
     out = brt_evaluator(ddict)
     
     print np.abs(out-ures).max()
-    
-def brt(session, species, layer_names, glob_name, glob_channels, gbm_opts):
+
+def brt(fname, gbm_opts):
+    """
+    Takes the name of a CSV file containing a data frame and a dict
+    of options for gbm.step, runs gbm.step, and returns the results.
+    """
     from rpy2.robjects import r
     import anopheles_brt
     r.source(os.path.join(anopheles_brt.__path__[0],'brt.functions.R'))
     
-    fname = sites_and_env(session, species, layer_names, glob_name, glob_channels)
-    
-    base_argstr = 'data=read.csv("anopheles-caches/%s"), gbm.x=2:%i, gbm.y=1, family="bernoulli"'%(fname, len(layer_names)+len(glob_channels)+1)
+    heads = file(os.path.join('anopheles-caches',fname)).readline().split(',')
+    base_argstr = 'data=read.csv("anopheles-caches/%s"), gbm.x=2:%i, gbm.y=1, family="bernoulli"'%(fname, len(heads))
     opt_argstr = ', '.join([base_argstr] + map(lambda t: '%s=%s'%t, gbm_opts.iteritems()))
     
-    brt_results = r('gbm.step(%s)'%opt_argstr)
-    
-    return brt_results, fname
+    brt_fname = hashlib.sha1(opt_argstr).hexdigest()+'.brt'
+    if brt_fname in os.listdir('anopheles-caches'):
+        return cPickle.loads(os.path.join('anopheles-caches',brt_fname))
+
+    else:
+        brt_results = r('gbm.step(%s)'%opt_argstr)
+        file(brt_fname,'w').write(cPickle.dumps(brt_results))
+        return brt_results

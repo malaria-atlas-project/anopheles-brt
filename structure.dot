@@ -4,27 +4,36 @@ digraph program{
     grids [shape=box];
     
     query [shape=diamond];
-    config -> sites_as_ndarray;
+    config -> sites_as_ndarray [label=species];
     db -> sites_as_ndarray;
     sites_as_ndarray -> query;
     
+    pseudoabsences [shape=diamond];
+    config -> gen_pseudoabsences [label=buffer];
+    query -> gen_pseudoabsences;
+    gen_pseudoabsences -> pseudoabsences;
+    
     extractions [shape=diamond];
     query -> extract_environment;
+    pseudoabsences -> extract_environment;
     grids -> extract_environment;
+    config -> extract_environment [label=predictors];
     extract_environment -> extractions;
     
     dataframe [shape=diamond];
     query -> sites_and_env;
     extractions -> sites_and_env;
+    pseudoabsences -> sites_and_env;
     sites_and_env -> dataframe;
     
     trees [shape=diamond];
-    config -> brt;
+    config -> brt [label=brt_params];
     dataframe -> brt;
     brt -> trees;
     
     maps [shape=box];
     trees -> brt_predict;
     dataframe -> brt_predict;
+    config -> brt_predict [label=box];
     brt_predict -> maps;
 }
