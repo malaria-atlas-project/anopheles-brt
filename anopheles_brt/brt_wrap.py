@@ -7,7 +7,7 @@ import warnings
 import matplotlib
 matplotlib.use('pdf')
 
-from pylab import rec2csv
+from pylab import rec2csv, csv2rec
 
 def df_to_ra(d):
     "Converts an R data fram to a NumPy record array."
@@ -120,7 +120,8 @@ def unpack_brt_results(brt_results, *names):
 
 def unpack_brt_trees(brt_results, layer_names, glob_name, glob_channels):
     
-    all_names = map(os.path.basename,layer_names) + map(lambda ch: os.path.basename(glob_name) + '_' + str(ch), glob_channels)
+    all_names = map(lambda ch: str.lower(os.path.basename(ch)),layer_names) \
+                + map(lambda ch: str.lower(os.path.basename(glob_name)) + '_' + str(ch), glob_channels)
     
     tree_matrix = unpack_brt_results(brt_results, 'trees')[0]
     nice_trees = []
@@ -142,15 +143,36 @@ def unpack_brt_trees(brt_results, layer_names, glob_name, glob_channels):
     return all_names, nice_tree_dict
     
 class brt_evaluator(object):
-    def __init__(self, all_names, nice_tree_dict):
-        self.all_names = all_names
-        self.nice_tree_dict = nice_tree_dict
-    def __call__(self, **pred_vars):
+    def __init__(self, all_names, nice_tree_dict, intercept):
+        self.all_names = map(str.lower, all_names)
+        self.nice_tree_dict = dict(map(lambda t: (str.lower(t[0]), t[1]), nice_tree_dict.iteritems()))
+        self.intercept = intercept
+    def __call__(self, pred_vars):
         if set(pred_vars.keys()) != set(self.all_names):
             raise ValueError, "You haven't supplied all the predictors."
+        out = np.zeros(len(pred_vars.values()[0]))
+        N = 0.
         for n in self.all_names:
-            pass
-            
+            trees = self.nice_tree_dict[n]
+            if trees is None:
+                continue
+            N += len(trees)
+            for i in xrange(len(trees)):
+                tree = trees[i]
+                if np.isinf(tree.split_loc) or np.isnan(tree.split_loc):
+                    raise ValueError                
+                less = pred_vars[n] < tree.split_loc
+                out[np.where(less)] += tree.left_val
+                out[np.where(True-less)] += tree.right_val
+        return out+self.intercept
+
+def brt_doublecheck(fname, brt_evaluator, brt_results):
+    ures = unpack_brt_results(brt_results, 'fit')
+    data = csv2rec(os.path.join('anopheles-caches', fname))
+    ddict = dict([(k, data[k]) for k in data.dtype.names[1:]])
+    out = brt_evaluator(ddict)
+    
+    print np.abs(out-ures).max()
     
 def brt(session, species, layer_names, glob_name, glob_channels, gbm_opts):
     from rpy2.robjects import r
@@ -164,4 +186,4 @@ def brt(session, species, layer_names, glob_name, glob_channels, gbm_opts):
     
     brt_results = r('gbm.step(%s)'%opt_argstr)
     
-    return brt_results
+    return brt_results, fname
