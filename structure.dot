@@ -1,0 +1,30 @@
+digraph program{
+    config [shape=box];
+    db [shape=box];
+    grids [shape=box];
+    
+    query [shape=diamond];
+    config -> sites_as_ndarray;
+    db -> sites_as_ndarray;
+    sites_as_ndarray -> query;
+    
+    extractions [shape=diamond];
+    query -> extract_environment;
+    grids -> extract_environment;
+    extract_environment -> extractions;
+    
+    dataframe [shape=diamond];
+    query -> sites_and_env;
+    extractions -> sites_and_env;
+    sites_and_env -> dataframe;
+    
+    trees [shape=diamond];
+    config -> brt;
+    dataframe -> brt;
+    brt -> trees;
+    
+    maps [shape=box];
+    trees -> brt_predict;
+    dataframe -> brt_predict;
+    brt_predict -> maps;
+}
