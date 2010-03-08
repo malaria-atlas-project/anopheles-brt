@@ -114,6 +114,11 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels):
 # and the RightNode's and LeftNode's SplitCodes tell what the values are on either side
 # side of the split. Not sure what MissingNode is about but we have no missing data.
 
+def maybe_array(a):
+    try:
+        return np.array(a)
+    except ValueError:
+        return a
 
 def unpack_gbm_object(brt_results, *names):
     """
@@ -121,7 +126,7 @@ def unpack_gbm_object(brt_results, *names):
     by column name.
     """
     namelist = np.array(brt_results.names)
-    return map(lambda n: np.array(brt_results[np.where(namelist==n)[0][0]]), names)
+    return map(lambda n: maybe_array(brt_results[np.where(namelist==n)[0][0]]), names)
 
 def unpack_brt_trees(brt_results, layer_names, glob_name, glob_channels):
     """
@@ -150,6 +155,30 @@ def unpack_brt_trees(brt_results, layer_names, glob_name, glob_channels):
         nice_tree_dict[v] = np.rec.fromarrays(np.array(v_array).T, names='split_loc,left_val,right_val') if v_array else None
                 
     return nice_tree_dict
+
+def brt(fname, gbm_opts):
+    """
+    Takes the name of a CSV file containing a data frame and a dict
+    of options for gbm.step, runs gbm.step, and returns the results.
+    """
+    from rpy2.robjects import r
+    import anopheles_brt
+    r.source(os.path.join(anopheles_brt.__path__[0],'brt.functions.R'))
+    
+    heads = file(os.path.join('anopheles-caches',fname)).readline().split(',')
+    base_argstr = 'data=read.csv("anopheles-caches/%s"), gbm.x=2:%i, gbm.y=1, family="bernoulli"'%(fname, len(heads))
+    opt_argstr = ', '.join([base_argstr] + map(lambda t: '%s=%s'%t, gbm_opts.iteritems()))
+    
+    brt_fname = hashlib.sha1(opt_argstr).hexdigest()+'.brt'
+    if brt_fname in os.listdir('anopheles-caches'):
+        r('load')(os.path.join('anopheles-caches', brt_fname))
+        return r('brt_results')
+
+    else:
+        r('brt_results<-gbm.step(%s)'%opt_argstr)
+        r('save(brt_results, file="%s")'%os.path.join('anopheles-caches', brt_fname))
+        return r('brt_results')
+
 
 class brt_evaluator(object):
     """
@@ -187,27 +216,8 @@ def brt_doublecheck(fname, brt_evaluator, brt_results):
     data = csv2rec(os.path.join('anopheles-caches', fname))
     ddict = dict([(k, data[k]) for k in data.dtype.names[1:]])
     out = brt_evaluator(ddict)
-    
+
     print np.abs(out-ures).max()
 
-def brt(fname, gbm_opts):
-    """
-    Takes the name of a CSV file containing a data frame and a dict
-    of options for gbm.step, runs gbm.step, and returns the results.
-    """
-    from rpy2.robjects import r
-    import anopheles_brt
-    r.source(os.path.join(anopheles_brt.__path__[0],'brt.functions.R'))
-    
-    heads = file(os.path.join('anopheles-caches',fname)).readline().split(',')
-    base_argstr = 'data=read.csv("anopheles-caches/%s"), gbm.x=2:%i, gbm.y=1, family="bernoulli"'%(fname, len(heads))
-    opt_argstr = ', '.join([base_argstr] + map(lambda t: '%s=%s'%t, gbm_opts.iteritems()))
-    
-    brt_fname = hashlib.sha1(opt_argstr).hexdigest()+'.brt'
-    if brt_fname in os.listdir('anopheles-caches'):
-        return cPickle.loads(os.path.join('anopheles-caches',brt_fname))
-
-    else:
-        brt_results = r('gbm.step(%s)'%opt_argstr)
-        file(brt_fname,'w').write(cPickle.dumps(brt_results))
-        return brt_results
+def trees_to_map(species, layer_names, glob_name, glob_channels):
+    pass
