@@ -18,13 +18,16 @@ def get_names(layer_names, glob_name, glob_channels):
     return map(lambda ch: str.lower(os.path.basename(ch)),layer_names) \
                 + map(lambda ch: str.lower(os.path.basename(glob_name)) + '_' + str(ch), glob_channels)
 
+def sanitize_species_name(s):
+    return s.replace(' ','.').replace('-','.')
+
 def df_to_ra(d):
     "Converts an R data fram to a NumPy record array."
     a = [np.array(c) for c in d.iter_column()]
     n = np.array(d.colnames)
     return np.rec.fromarrays(a, names=','.join(n))
     
-def sites_and_env(session, species, layer_names, glob_name, glob_channels):
+def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffer_size):
     """
     Queries the DB to get a list of locations. Writes it out along with matching 
     extractions of the requested layers to a temporary csv file, which serves the 
@@ -32,7 +35,7 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels):
     the BRT package.
     """
     breaks, x, found, zero, others_found, multipoints = sites_as_ndarray(session, species)
-    fname = hashlib.sha1(found.tostring()+\
+    fname = hashlib.sha1(str(buffer_size)+found.tostring()+\
             glob_name+'channel'.join([str(i) for i in glob_channels])+\
             'layer'.join(layer_names)).hexdigest()+'.csv'
 
@@ -163,7 +166,7 @@ def unpack_brt_trees(brt_results, layer_names, glob_name, glob_channels):
                 
     return nice_tree_dict
 
-def brt(fname, gbm_opts):
+def brt(fname, species_name, gbm_opts):
     """
     Takes the name of a CSV file containing a data frame and a dict
     of options for gbm.step, runs gbm.step, and returns the results.
@@ -175,16 +178,17 @@ def brt(fname, gbm_opts):
     heads = file(os.path.join('anopheles-caches',fname)).readline().split(',')
     base_argstr = 'data=read.csv("anopheles-caches/%s"), gbm.x=2:%i, gbm.y=1, family="bernoulli"'%(fname, len(heads))
     opt_argstr = ', '.join([base_argstr] + map(lambda t: '%s=%s'%t, gbm_opts.iteritems()))
-    
+
+    varname = sanitize_species_name(species_name)
+
     brt_fname = hashlib.sha1(opt_argstr).hexdigest()+'.r'
     if brt_fname in os.listdir('anopheles-caches'):
         r('load')(os.path.join('anopheles-caches', brt_fname))
-        return r('brt_results')
-
+        return r(varname)
     else:
-        r('brt_results<-gbm.step(%s)'%opt_argstr)
-        r('save(brt_results, file="%s")'%os.path.join('anopheles-caches', brt_fname))
-        return r('brt_results')
+        r('%s<-gbm.step(%s)'%(varname,opt_argstr))
+        r('save(%s, file="%s")'%(varname,os.path.join('anopheles-caches', brt_fname)))
+        return r(varname)
 
 class brt_evaluator(object):
     """
@@ -229,8 +233,8 @@ def brt_doublecheck(fname, brt_evaluator, brt_results):
 
 def get_result_dir(species_name):
     "Utility"
-    result_dirname = ('%s-results'%species_name).replace(' ','-')
-    try:
+    result_dirname = ('%s-results'%sanitize_species_name(species_name))
+    try: 
         os.mkdir(result_dirname)
     except OSError:
         pass
@@ -245,30 +249,31 @@ def write_brt_results(brt_results, species_name, result_names):
     from rpy2.robjects import r
 
     result_dirname = get_result_dir(species_name)
-    r('save(brt_results, file="%s")'%os.path.join(result_dirname, 'gbm.object.r'))
+    varname = sanitize_species_name(species_name)
+    r('save(%s, file="%s")'%(varname,os.path.join(result_dirname, 'gbm.object.r')))
     
     results = unpack_gbm_object(brt_results, *result_names)
     for n,v in zip(result_names, results):
         file(os.path.join(result_dirname, n+'.txt'),'w').write(str(v))
         
-def trees_to_map(brt_evaluator, species_name, layer_names, glob_name, glob_channels):
+def trees_to_map(brt_evaluator, species_name, layer_names, glob_name, glob_channels, bbox):
     """
     Makes maps and writes them out in flt format.
     """
     all_names = get_names(layer_names, glob_name, glob_channels)
     short_layer_names = all_names[:len(layer_names)]
     short_glob_names = all_names[len(layer_names):]
-    
     result_dirname = get_result_dir(species_name)
     
-    print 'Reading rasters'
+    llclat,llclon,urclat,urclon = bbox
+
     rasters = {}
     for n, p in zip(short_layer_names, layer_names):
         lon,lat,rasters[n],t = map_utils.import_raster(*os.path.split(p)[::-1])
     lon,lat,glob,t = map_utils.import_raster(*os.path.split(glob_name)[::-1])
     for n, ch in zip(short_glob_names, glob_channels):
         rasters[n] = glob==ch
-    print 'Checking consistency'
+
     # Consistency check, just in case
     k,v = rasters.keys(), rasters.values()
     base_raster = v[0]
@@ -276,15 +281,12 @@ def trees_to_map(brt_evaluator, species_name, layer_names, glob_name, glob_chann
         if v_.shape != base_raster.shape:
             raise ValueError, 'Raster %s is not same shape as raster %s.'%(k_, k[0])
         elif np.any(v_.mask != base_raster.mask):
-            raise ValueError, 'Raster %s has different missingness pattern from raster %s'%(k_, k[0])
-    
-    print 'Ravelling'
+            raise ValueError, 'Raster %s has different missingness pattern from raster %s.'%(k_, k[0])
+
     where_notmask = np.where(True-base_raster.mask)
     for k in rasters.keys():
         rasters[k] = rasters[k][where_notmask]
-    print 'Evaluating'    
     ravelledmap = brt_evaluator(rasters)
-    print 'Putting back'
     base_raster[where_notmask] = invlogit(ravelledmap)
-    print 'Done'
-    return base_raster
+
+    return lon,lat,base_raster

@@ -29,7 +29,6 @@ def extract_environment(layer_name, x, postproc=lambda x:x):
     if fname in os.listdir('anopheles-caches'):
         return name, numpy.load(os.path.join('anopheles-caches',fname))
     else:    
-        print 'Extracting environmental layer %s'%name
         grid_lon, grid_lat, grid_data, grid_type = map_utils.import_raster(name,path)
         
         # Convert to centroids
