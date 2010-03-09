@@ -79,6 +79,8 @@ def sites_as_ndarray(session, species):
         hf.close()
     
     else:
+        # Yes, this is here twice. The database gets angry if it's only here once.
+        sites, eo = species_query(session, species[0])
         sites, eo = species_query(session, species[0])
         
         # Forget about non-records
