@@ -290,6 +290,6 @@ def trees_to_map(brt_evaluator, species_name, layer_names, glob_name, glob_chann
     for k in rasters.keys():
         rasters[k] = subset_raster(rasters[k], llclati, llcloni, urclati, urcloni)[where_notmask]
     ravelledmap = brt_evaluator(rasters)
-    base_raster[where_notmask] = pm.flib.invlogit(ravelledmap)
+    out_raster[where_notmask] = pm.flib.invlogit(ravelledmap)
 
-    return lon[llcloni:urcloni],lat[llclati:urclati],base_raster
+    return lon[llcloni:urcloni],lat[llclati:urclati],out_raster
