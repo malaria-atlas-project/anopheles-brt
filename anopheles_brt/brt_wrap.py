@@ -27,14 +27,18 @@ def df_to_ra(d):
     n = np.array(d.colnames)
     return np.rec.fromarrays(a, names=','.join(n))
     
-def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffer_size):
+def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffer_size, dblock=None):
     """
     Queries the DB to get a list of locations. Writes it out along with matching 
     extractions of the requested layers to a temporary csv file, which serves the 
     dual purpose of caching the extraction and making it easier to get data into 
     the BRT package.
     """
+    if dblock is not None:
+        dblock.acquire()
     breaks, x, found, zero, others_found, multipoints = sites_as_ndarray(session, species)
+    if dblock is not None:
+        dblock.release()
     fname = hashlib.sha1(str(buffer_size)+found.tostring()+\
             glob_name+'channel'.join([str(i) for i in glob_channels])+\
             'layer'.join(layer_names)).hexdigest()+'.csv'
