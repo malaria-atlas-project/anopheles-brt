@@ -2,10 +2,13 @@ import numpy as np
 import os
 from env_data import extract_environment
 from query_to_rec import sites_as_ndarray
+import map_utils
 import hashlib
 import warnings
 import matplotlib
+from generic_mbg import invlogit
 import cPickle
+from treetran import treetran
 matplotlib.use('pdf')
 
 from pylab import rec2csv, csv2rec
@@ -195,20 +198,22 @@ class brt_evaluator(object):
     def __call__(self, pred_vars):
         if set(pred_vars.keys()) != set(self.nice_tree_dict.keys()):
             raise ValueError, "You haven't supplied all the predictors."
-        out = np.zeros(len(pred_vars.values()[0]))
+        out = np.empty(len(pred_vars.values()[0]))
+        out.fill(self.intercept)
         N = 0.
         for n, trees in self.nice_tree_dict.iteritems():
             if trees is None:
                 continue
             N += len(trees)
-            for i in xrange(len(trees)):
-                tree = trees[i]
-                if np.isinf(tree.split_loc) or np.isnan(tree.split_loc):
-                    raise ValueError                
-                less = pred_vars[n] < tree.split_loc
-                out[np.where(less)] += tree.left_val
-                out[np.where(True-less)] += tree.right_val
-        return out+self.intercept
+            treetran(trees.split_loc, trees.left_val, trees.right_val, pred_vars[n], out)
+            # for i in xrange(len(trees)):
+            #     tree = trees[i]
+            #     if np.isinf(tree.split_loc) or np.isnan(tree.split_loc):
+            #         raise ValueError                
+            #     less = pred_vars[n] < tree.split_loc
+            #     out[np.where(less)] += tree.left_val
+            #     out[np.where(True-less)] += tree.right_val
+        return out
 
 def brt_doublecheck(fname, brt_evaluator, brt_results):
     """
@@ -246,15 +251,40 @@ def write_brt_results(brt_results, species_name, result_names):
     for n,v in zip(result_names, results):
         file(os.path.join(result_dirname, n+'.txt'),'w').write(str(v))
         
-def trees_to_map(brt_results, species_name, layer_names, glob_name, glob_channels):
+def trees_to_map(brt_evaluator, species_name, layer_names, glob_name, glob_channels):
     """
     Makes maps and writes them out in flt format.
     """
     all_names = get_names(layer_names, glob_name, glob_channels)
-    nice_trees = unpack_brt_trees(brt_results, layer_names, glob_name, glob_channels)
-    intercept = unpack_gbm_object(brt_results, 'initF')[0][0]
-    evaluator = brt_evaluator(nice_trees, intercept)
+    short_layer_names = all_names[:len(layer_names)]
+    short_glob_names = all_names[len(layer_names):]
     
     result_dirname = get_result_dir(species_name)
     
-    # Tomorrow: load rasters from disk, serialize, evaluate, repopulate, write out.
+    print 'Reading rasters'
+    rasters = {}
+    for n, p in zip(short_layer_names, layer_names):
+        lon,lat,rasters[n],t = map_utils.import_raster(*os.path.split(p)[::-1])
+    lon,lat,glob,t = map_utils.import_raster(*os.path.split(glob_name)[::-1])
+    for n, ch in zip(short_glob_names, glob_channels):
+        rasters[n] = glob==ch
+    print 'Checking consistency'
+    # Consistency check, just in case
+    k,v = rasters.keys(), rasters.values()
+    base_raster = v[0]
+    for k_,v_ in zip(k[1:],v[1:]):
+        if v_.shape != base_raster.shape:
+            raise ValueError, 'Raster %s is not same shape as raster %s.'%(k_, k[0])
+        elif np.any(v_.mask != base_raster.mask):
+            raise ValueError, 'Raster %s has different missingness pattern from raster %s'%(k_, k[0])
+    
+    print 'Ravelling'
+    where_notmask = np.where(True-base_raster.mask)
+    for k in rasters.keys():
+        rasters[k] = rasters[k][where_notmask]
+    print 'Evaluating'    
+    ravelledmap = brt_evaluator(rasters)
+    print 'Putting back'
+    base_raster[where_notmask] = invlogit(ravelledmap)
+    print 'Done'
+    return base_raster
