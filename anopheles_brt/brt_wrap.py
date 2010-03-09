@@ -10,6 +10,11 @@ matplotlib.use('pdf')
 
 from pylab import rec2csv, csv2rec
 
+def get_names(layer_names, glob_name, glob_channels):
+    "Utility"
+    return map(lambda ch: str.lower(os.path.basename(ch)),layer_names) \
+                + map(lambda ch: str.lower(os.path.basename(glob_name)) + '_' + str(ch), glob_channels)
+
 def df_to_ra(d):
     "Converts an R data fram to a NumPy record array."
     a = [np.array(c) for c in d.iter_column()]
@@ -134,8 +139,7 @@ def unpack_brt_trees(brt_results, layer_names, glob_name, glob_channels):
     dictionary are record arrays giving the split points and node values 
     associated with the corresponding predictors.
     """
-    all_names = map(lambda ch: str.lower(os.path.basename(ch)),layer_names) \
-                + map(lambda ch: str.lower(os.path.basename(glob_name)) + '_' + str(ch), glob_channels)
+    all_names = get_names(layer_names, glob_name, glob_channels)
     
     tree_matrix = unpack_gbm_object(brt_results, 'trees')[0]
     nice_trees = []
@@ -169,7 +173,7 @@ def brt(fname, gbm_opts):
     base_argstr = 'data=read.csv("anopheles-caches/%s"), gbm.x=2:%i, gbm.y=1, family="bernoulli"'%(fname, len(heads))
     opt_argstr = ', '.join([base_argstr] + map(lambda t: '%s=%s'%t, gbm_opts.iteritems()))
     
-    brt_fname = hashlib.sha1(opt_argstr).hexdigest()+'.brt'
+    brt_fname = hashlib.sha1(opt_argstr).hexdigest()+'.r'
     if brt_fname in os.listdir('anopheles-caches'):
         r('load')(os.path.join('anopheles-caches', brt_fname))
         return r('brt_results')
@@ -178,7 +182,6 @@ def brt(fname, gbm_opts):
         r('brt_results<-gbm.step(%s)'%opt_argstr)
         r('save(brt_results, file="%s")'%os.path.join('anopheles-caches', brt_fname))
         return r('brt_results')
-
 
 class brt_evaluator(object):
     """
@@ -219,5 +222,39 @@ def brt_doublecheck(fname, brt_evaluator, brt_results):
 
     print np.abs(out-ures).max()
 
-def trees_to_map(species, layer_names, glob_name, glob_channels):
-    pass
+def get_result_dir(species_name):
+    "Utility"
+    result_dirname = ('%s-results'%species_name).replace(' ','-')
+    try:
+        os.mkdir(result_dirname)
+    except OSError:
+        pass
+    return result_dirname
+
+def write_brt_results(brt_results, species_name, result_names):
+    """
+    Writes the actual R gbm.object containing the BRT results out to
+    a results directory, and also some requested elements of it as
+    flat text files.
+    """
+    from rpy2.robjects import r
+
+    result_dirname = get_result_dir(species_name)
+    r('save(brt_results, file="%s")'%os.path.join(result_dirname, 'gbm.object.r'))
+    
+    results = unpack_gbm_object(brt_results, *result_names)
+    for n,v in zip(result_names, results):
+        file(os.path.join(result_dirname, n+'.txt'),'w').write(str(v))
+        
+def trees_to_map(brt_results, species_name, layer_names, glob_name, glob_channels):
+    """
+    Makes maps and writes them out in flt format.
+    """
+    all_names = get_names(layer_names, glob_name, glob_channels)
+    nice_trees = unpack_brt_trees(brt_results, layer_names, glob_name, glob_channels)
+    intercept = unpack_gbm_object(brt_results, 'initF')[0][0]
+    evaluator = brt_evaluator(nice_trees, intercept)
+    
+    result_dirname = get_result_dir(species_name)
+    
+    # Tomorrow: load rasters from disk, serialize, evaluate, repopulate, write out.
