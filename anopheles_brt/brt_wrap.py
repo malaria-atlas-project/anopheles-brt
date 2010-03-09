@@ -6,7 +6,7 @@ import map_utils
 import hashlib
 import warnings
 import matplotlib
-from generic_mbg import invlogit
+import pymc as pm
 import cPickle
 from treetran import treetran
 matplotlib.use('pdf')
@@ -176,7 +176,7 @@ def brt(fname, species_name, gbm_opts):
     r.source(os.path.join(anopheles_brt.__path__[0],'brt.functions.R'))
     
     heads = file(os.path.join('anopheles-caches',fname)).readline().split(',')
-    base_argstr = 'data=read.csv("anopheles-caches/%s"), gbm.x=2:%i, gbm.y=1, family="bernoulli"'%(fname, len(heads))
+    base_argstr = 'data=read.csv("anopheles-caches/%s"), gbm.x=2:%i, gbm.y=1, family="bernoulli", silent=TRUE'%(fname, len(heads))
     opt_argstr = ', '.join([base_argstr] + map(lambda t: '%s=%s'%t, gbm_opts.iteritems()))
 
     varname = sanitize_species_name(species_name)
@@ -210,13 +210,6 @@ class brt_evaluator(object):
                 continue
             N += len(trees)
             treetran(trees.split_loc, trees.left_val, trees.right_val, pred_vars[n], out)
-            # for i in xrange(len(trees)):
-            #     tree = trees[i]
-            #     if np.isinf(tree.split_loc) or np.isnan(tree.split_loc):
-            #         raise ValueError                
-            #     less = pred_vars[n] < tree.split_loc
-            #     out[np.where(less)] += tree.left_val
-            #     out[np.where(True-less)] += tree.right_val
         return out
 
 def brt_doublecheck(fname, brt_evaluator, brt_results):
@@ -266,14 +259,14 @@ def trees_to_map(brt_evaluator, species_name, layer_names, glob_name, glob_chann
     result_dirname = get_result_dir(species_name)
     
     llclat,llclon,urclat,urclon = bbox
-
+    
     rasters = {}
     for n, p in zip(short_layer_names, layer_names):
         lon,lat,rasters[n],t = map_utils.import_raster(*os.path.split(p)[::-1])
     lon,lat,glob,t = map_utils.import_raster(*os.path.split(glob_name)[::-1])
     for n, ch in zip(short_glob_names, glob_channels):
         rasters[n] = glob==ch
-
+    
     # Consistency check, just in case
     k,v = rasters.keys(), rasters.values()
     base_raster = v[0]
@@ -282,11 +275,11 @@ def trees_to_map(brt_evaluator, species_name, layer_names, glob_name, glob_chann
             raise ValueError, 'Raster %s is not same shape as raster %s.'%(k_, k[0])
         elif np.any(v_.mask != base_raster.mask):
             raise ValueError, 'Raster %s has different missingness pattern from raster %s.'%(k_, k[0])
-
+    
     where_notmask = np.where(True-base_raster.mask)
     for k in rasters.keys():
         rasters[k] = rasters[k][where_notmask]
     ravelledmap = brt_evaluator(rasters)
-    base_raster[where_notmask] = invlogit(ravelledmap)
+    base_raster[where_notmask] = pm.flib.invlogit(ravelledmap)
 
     return lon,lat,base_raster
