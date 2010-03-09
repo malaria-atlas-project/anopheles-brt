@@ -249,6 +249,10 @@ def write_brt_results(brt_results, species_name, result_names):
     for n,v in zip(result_names, results):
         file(os.path.join(result_dirname, n+'.txt'),'w').write(str(v))
         
+def subset_raster(r, llclati, llcloni, urclati, urcloni):
+    r_ = map_utils.grid_convert(r,'y-x+','x+y+')
+    return map_utils.grid_convert(r_[llcloni:urcloni,llclati:urclati],'x+y+','y-x+')
+
 def trees_to_map(brt_evaluator, species_name, layer_names, glob_name, glob_channels, bbox):
     """
     Makes maps and writes them out in flt format.
@@ -267,6 +271,11 @@ def trees_to_map(brt_evaluator, species_name, layer_names, glob_name, glob_chann
     for n, ch in zip(short_glob_names, glob_channels):
         rasters[n] = glob==ch
     
+    llclati = np.where(lat>=llclat)[0][0]
+    llcloni = np.where(lon>=llclon)[0][0]
+    urclati = np.where(lat<=urclat)[0][-1]
+    urcloni = np.where(lon<=urclon)[0][-1]    
+    
     # Consistency check, just in case
     k,v = rasters.keys(), rasters.values()
     base_raster = v[0]
@@ -276,10 +285,11 @@ def trees_to_map(brt_evaluator, species_name, layer_names, glob_name, glob_chann
         elif np.any(v_.mask != base_raster.mask):
             raise ValueError, 'Raster %s has different missingness pattern from raster %s.'%(k_, k[0])
     
-    where_notmask = np.where(True-base_raster.mask)
+    out_raster = subset_raster(base_raster, llclati, llcloni, urclati, urcloni)
+    where_notmask = np.where(True-out_raster.mask)
     for k in rasters.keys():
-        rasters[k] = rasters[k][where_notmask]
+        rasters[k] = subset_raster(rasters[k], llclati, llcloni, urclati, urcloni)[where_notmask]
     ravelledmap = brt_evaluator(rasters)
     base_raster[where_notmask] = pm.flib.invlogit(ravelledmap)
 
-    return lon,lat,base_raster
+    return lon[llcloni:urcloni],lat[llclati:urclati],base_raster
