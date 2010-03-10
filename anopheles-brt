@@ -1,0 +1,83 @@
+import warnings
+warnings.simplefilter('ignore')
+import os,sys,time
+# import threading, Queue
+import multiprocessing
+import Queue
+import matplotlib
+matplotlib.use('pdf')
+import imp
+import anopheles_brt
+from anopheles_query import Session
+import datetime
+import thread
+import map_utils
+
+suff = imp.get_suffixes()[2]
+
+dblock = multiprocessing.Lock()
+s = Session()
+species = dict([sp[::-1] for sp in anopheles_brt.list_species(s)])
+
+err_info = []
+def targ(q,s):
+    while True:
+        try:
+            config_filename = q.get(block=False)
+        except Queue.Empty:
+            break
+    
+        # imp.load_module(name, file, pathname, description)
+        m = imp.load_module(os.path.splitext(config_filename)[0], file(config_filename), '.', suff)
+        # from m import layer_names, glob_name, glob_channels, buffer_size, brt_args, bbox, species_name
+        exec('from %s import layer_names, glob_name, glob_channels, buffer_size, brt_opts, llclat, llclon, urclat, urclon, species_name, saved_results'%os.path.splitext(config_filename)[0])
+        
+        print 'Process %i starting species %s.'%(multiprocessing.current_process().ident,species_name)
+        species_tup = (species[species_name], species_name)
+    
+        # Will call sites_as_ndarray, gen_pseudoabsences and extract_environment.
+        print 'Process %i querying database, extracting environmental layers etc. for species %s.'%(multiprocessing.current_process().ident,species_name)
+        fname = anopheles_brt.sites_and_env(s, species_tup, layer_names, glob_name, glob_channels, buffer_size, dblock=None)
+    
+        # The actual BRT code
+        print 'Process %i sending species %s into Leathwick et al\'s BRT code.'%(multiprocessing.current_process().ident,species_name)
+        brt_res = anopheles_brt.brt(fname, species_name, brt_opts)
+    
+        if anopheles_brt.np.random.random() < .001:
+            print 'Hi, it\'s process %i. I just wanted to say hello.'%(multiprocessing.current_process().ident)
+    
+        # Write the requested results out
+        anopheles_brt.write_brt_results(brt_res, species_name, ['cv.statistics', 'self.statistics'])
+    
+        # Make an evaluator object
+        nice_tree_dict = anopheles_brt.unpack_brt_trees(brt_res, layer_names, glob_name, glob_channels)
+        intercept = anopheles_brt.unpack_gbm_object(brt_res, 'initF')[0][0]
+        be = anopheles_brt.brt_evaluator(nice_tree_dict, intercept)
+
+        # Make the maps and write them to disk.
+        print 'Process %i generating a predictive map for species %s.'%(multiprocessing.current_process().ident,species_name)
+        lon,lat,data = anopheles_brt.trees_to_map(be, species_name, layer_names, glob_name, glob_channels, (llclat, llclon, urclat, urclon))
+        result_dirname = anopheles_brt.get_result_dir(species_name)
+        map_utils.export_raster(lon,lat,data,'probability-map',result_dirname,'flt')
+    
+        print 'Process %i has finished species %s.'%(multiprocessing.current_process().ident,species_name)
+    
+        if q.empty():
+            break
+
+# Set up the queue of species names and the worker threads.
+snames = sys.argv[1:]
+q = multiprocessing.Queue(maxsize=len(snames))        
+workers = [multiprocessing.Process(target=targ, args=(q, Session())) for i in range(int(os.environ['OMP_NUM_THREADS']))]
+[q.put(sn) for sn in snames]
+
+# Dispatch the threads.
+try:
+    [t.start() for t in workers]
+    [t.join() for t in workers]
+except KeyboardInterrupt:
+    # This if clause passes if an internal error was raised in one of the threads.
+    # If a KeyboardInterrupt is raised directly in the main thread, it doesn't pass.
+    if len(err_info)>0:
+        cls, inst, tb = err_info[0]
+        raise cls, inst, tb
