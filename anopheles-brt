@@ -72,12 +72,5 @@ workers = [multiprocessing.Process(target=targ, args=(q, Session())) for i in ra
 [q.put(sn) for sn in snames]
 
 # Dispatch the threads.
-try:
-    [t.start() for t in workers]
-    [t.join() for t in workers]
-except KeyboardInterrupt:
-    # This if clause passes if an internal error was raised in one of the threads.
-    # If a KeyboardInterrupt is raised directly in the main thread, it doesn't pass.
-    if len(err_info)>0:
-        cls, inst, tb = err_info[0]
-        raise cls, inst, tb
+[t.start() for t in workers]
+[t.join() for t in workers]
