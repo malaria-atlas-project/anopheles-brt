@@ -30,14 +30,14 @@ def targ(q,s):
         # imp.load_module(name, file, pathname, description)
         m = imp.load_module(os.path.splitext(config_filename)[0], file(config_filename), '.', suff)
         # from m import layer_names, glob_name, glob_channels, buffer_size, brt_args, bbox, species_name
-        exec('from %s import layer_names, glob_name, glob_channels, buffer_size, brt_opts, llclat, llclon, urclat, urclon, species_name, saved_results'%os.path.splitext(config_filename)[0])
+        exec('from %s import layer_names, glob_name, glob_channels, buffer_shapefile, n_pseudoabsences, brt_opts, llclat, llclon, urclat, urclon, species_name, saved_results'%os.path.splitext(config_filename)[0])
         
         print 'Process %i starting species %s.'%(multiprocessing.current_process().ident,species_name)
         species_tup = (species[species_name], species_name)
     
         # Will call sites_as_ndarray, gen_pseudoabsences and extract_environment.
         print 'Process %i querying database, extracting environmental layers etc. for species %s.'%(multiprocessing.current_process().ident,species_name)
-        fname = anopheles_brt.sites_and_env(s, species_tup, layer_names, glob_name, glob_channels, buffer_size, dblock=None)
+        fname, pseudoabsences = anopheles_brt.sites_and_env(s, species_tup, layer_names, glob_name, glob_channels, buffer_shapefile, n_pseudoabsences, dblock=None)
     
         # The actual BRT code
         print 'Process %i sending species %s into Leathwick et al\'s BRT code.'%(multiprocessing.current_process().ident,species_name)
@@ -59,6 +59,7 @@ def targ(q,s):
         lon,lat,data = anopheles_brt.trees_to_map(be, species_name, layer_names, glob_name, glob_channels, (llclat, llclon, urclat, urclon))
         result_dirname = anopheles_brt.get_result_dir(species_name)
         map_utils.export_raster(lon,lat,data,'probability-map',result_dirname,'flt')
+        np.savetxt(os.path.join(result_dirname, 'pseudoabsences.csv'), pseudoabsences, delimiter=',')
     
         print 'Process %i has finished species %s.'%(multiprocessing.current_process().ident,species_name)
     

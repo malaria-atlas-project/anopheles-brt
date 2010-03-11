@@ -76,6 +76,7 @@ def sites_as_ndarray(session, species):
         zero = hf.root.zero[:]
         others_found = hf.root.others_found[:]
         multipoints = hf.root.multipoints[0]
+        eo = hf.root.eo[0]
         hf.close()
     
     else:
@@ -122,9 +123,11 @@ def sites_as_ndarray(session, species):
         hf.createArray('/','zero',zero)
         hf.createArray('/','others_found',others_found)
         hf.createArray('/','multipoints',[multipoints])
+        hf.createVLArray('/','eo',tb.ObjectAtom())
+        hf.root.eo.append(eo)
         hf.close()
     
-    return breaks, x, found, zero, others_found, multipoints
+    return breaks, x, found, zero, others_found, multipoints, eo
     
 if __name__ == '__main__':
     session = Session()
