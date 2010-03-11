@@ -12,6 +12,7 @@ from anopheles_query import Session
 import datetime
 import thread
 import map_utils
+import numpy as np
 
 suff = imp.get_suffixes()[2]
 
