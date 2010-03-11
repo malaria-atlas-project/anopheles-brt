@@ -26,6 +26,31 @@ def df_to_ra(d):
     a = [np.array(c) for c in d.iter_column()]
     n = np.array(d.colnames)
     return np.rec.fromarrays(a, names=','.join(n))
+
+def get_pseudoabsences(eo, buffer_shapefile, n_pseudoabsences, layer_names):
+    fname = hashlib.sha1(cPickle.dumps(eo)+'_'+file(buffer_shapefile).read()+'_'+str(n_pseudoabsences)).hexdigest()+'.npy'
+    if fname in os.listdir('anopheles-caches'):
+        pseudoabsences = np.load(os.path.join('anopheles-caches', fname))
+    else:
+        buff = reduce(lambda mp, p: mp.union(p), map_utils.shapefile_utils.NonSuckyShapefile(buffer_shapefile).polygons)
+        diff_buffer = buff.difference(eo)
+    
+        lon, lat, test_raster, rtype = map_utils.import_raster(*os.path.split(layer_names[0])[::-1])
+        # Right the raster
+        test_raster = map_utils.grid_convert(test_raster,'y-x+','x+y+')
+        # Convert lower-left coords to centroids
+        lon += (lon[1]-lon[0])/2.
+        lat += (lat[1]-lat[0])/2.
+    
+        def testfn(lon_test,lat_test,r=test_raster,lon=lon,lat=lat):
+            lon_ind = np.argmin(np.abs(lon-lon_test))
+            lat_ind = np.argmin(np.abs(lat-lat_test))
+            return True-test_raster.mask[lon_ind,lat_ind]
+    
+        pseudoabsences = np.vstack(map_utils.shapefile_utils.multipoly_sample(n_pseudoabsences, diff_buffer, test=testfn)).T
+        numpy.save(os.path.join('anopheles-caches',fname), pseudoabsences)
+    return pseudoabsences
+    
     
 def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffer_shapefile, n_pseudoabsences, dblock=None):
     """
@@ -43,23 +68,9 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
             glob_name+'channel'.join([str(i) for i in glob_channels])+\
             'layer'.join(layer_names)).hexdigest()+'.csv'
             
+    pseudoabsences = get_pseudoabsences(eo, buffer_shapefile, n_pseudoabsences, layer_names)        
+            
     x_found = x[np.where(found)]
-    buff = reduce(lambda mp, p: mp.union(p), map_utils.shapefile_utils.NonSuckyShapefile(buffer_shapefile).polygons)
-    diff_buffer = buff.difference(eo)
-    
-    lon, lat, test_raster, rtype = map_utils.import_raster(*os.path.split(layer_names[0])[::-1])
-    # Right the raster
-    test_raster = map_utils.grid_convert(test_raster,'y-x+','x+y+')
-    # Convert lower-left coords to centroids
-    lon += (lon[1]-lon[0])/2.
-    lat += (lat[1]-lat[0])/2.
-    
-    def testfn(lon_test,lat_test,r=test_raster,lon=lon,lat=lat):
-        lon_ind = np.argmin(np.abs(lon-lon_test))
-        lat_ind = np.argmin(np.abs(lat-lat_test))
-        return True-test_raster.mask[lon_ind,lat_ind]
-    
-    pseudoabsences = np.vstack(map_utils.shapefile_utils.multipoly_sample(n_pseudoabsences, diff_buffer, test=testfn)).T
     
     x = np.vstack((x_found, pseudoabsences))
     found = np.concatenate((np.ones(len(x_found)), np.zeros(n_pseudoabsences)))
