@@ -62,8 +62,7 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
     if dblock is not None:
         dblock.acquire()
     breaks, x, found, zero, others_found, multipoints, eo = sites_as_ndarray(session, species)
-    if dblock is not None:
-        dblock.release()
+
     fname = hashlib.sha1(str(buffer_width)+str(n_pseudoabsences)+found.tostring()+\
             glob_name+'channel'.join([str(i) for i in glob_channels])+\
             'layer'.join(layer_names)).hexdigest()+'.csv'
@@ -92,6 +91,8 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
             print 'There were some NaNs in the data, probably points in the sea'
         data = data[np.where(True-nancheck)]
         rec2csv(data, os.path.join('anopheles-caches',fname))
+    if dblock is not None:
+        dblock.release()
     return fname, pseudoabsences
 
 def maybe_array(a):
