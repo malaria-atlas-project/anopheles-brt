@@ -37,9 +37,9 @@ def get_pseudoabsences(eo, buffer_shapefile, n_pseudoabsences, layer_names):
             buff = reduce(lambda mp, p: mp.union(p), sf.polygons)
         else:
             buff = sf.polygons[0]
-        print buff.is_empty
+        print len(sf.polygons)
+        print sf.polygons[0]
         diff_buffer = buff.difference(eo)
-        print diff_buffer.is_empty
     
         lon, lat, test_raster, rtype = map_utils.import_raster(*os.path.split(layer_names[0])[::-1])
         # Right the raster
