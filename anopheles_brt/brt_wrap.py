@@ -28,7 +28,7 @@ def df_to_ra(d):
     return np.rec.fromarrays(a, names=','.join(n))
 
 def get_pseudoabsences(eo, buffer_shapefile, n_pseudoabsences, layer_names):
-    fname = hashlib.sha1(cPickle.dumps(eo)+'_'+file(buffer_shapefile).read()+'_'+str(n_pseudoabsences)).hexdigest()+'.npy'
+    fname = hashlib.sha1(cPickle.dumps(eo)+'_'+file(buffer_shapefile+'.shp').read()+'_'+str(n_pseudoabsences)).hexdigest()+'.npy'
     if fname in os.listdir('anopheles-caches'):
         pseudoabsences = np.load(os.path.join('anopheles-caches', fname))
     else:
