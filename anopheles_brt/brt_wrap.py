@@ -27,18 +27,12 @@ def df_to_ra(d):
     n = np.array(d.colnames)
     return np.rec.fromarrays(a, names=','.join(n))
 
-def get_pseudoabsences(eo, buffer_shapefile, n_pseudoabsences, layer_names):
-    fname = hashlib.sha1(cPickle.dumps(eo)+'_'+file(buffer_shapefile+'.shp').read()+'_'+str(n_pseudoabsences)).hexdigest()+'.npy'
+def get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names):
+    fname = hashlib.sha1(cPickle.dumps(eo)+'_'+str(buffer_width)+'_'+str(n_pseudoabsences)).hexdigest()+'.npy'
     if fname in os.listdir('anopheles-caches'):
         pseudoabsences = np.load(os.path.join('anopheles-caches', fname))
     else:
-        sf = map_utils.shapefile_utils.NonSuckyShapefile(buffer_shapefile)
-        if len(sf.polygons) > 1:
-            buff = reduce(lambda mp, p: mp.union(p), sf.polygons)
-        else:
-            buff = sf.polygons[0]
-        print len(sf.polygons)
-        print sf.polygons[0]
+        buff = eo.buffer(buffer_width)
         diff_buffer = buff.difference(eo)
     
         lon, lat, test_raster, rtype = map_utils.import_raster(*os.path.split(layer_names[0])[::-1])
@@ -58,7 +52,7 @@ def get_pseudoabsences(eo, buffer_shapefile, n_pseudoabsences, layer_names):
     return pseudoabsences
     
     
-def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffer_shapefile, n_pseudoabsences, dblock=None):
+def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffer_width, n_pseudoabsences, dblock=None):
     """
     Queries the DB to get a list of locations. Writes it out along with matching 
     extractions of the requested layers to a temporary csv file, which serves the 
@@ -70,11 +64,11 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
     breaks, x, found, zero, others_found, multipoints, eo = sites_as_ndarray(session, species)
     if dblock is not None:
         dblock.release()
-    fname = hashlib.sha1(str(buffer_shapefile)+str(n_pseudoabsences)+found.tostring()+\
+    fname = hashlib.sha1(str(buffer_width)+str(n_pseudoabsences)+found.tostring()+\
             glob_name+'channel'.join([str(i) for i in glob_channels])+\
             'layer'.join(layer_names)).hexdigest()+'.csv'
             
-    pseudoabsences = get_pseudoabsences(eo, buffer_shapefile, n_pseudoabsences, layer_names)        
+    pseudoabsences = get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names)        
             
     x_found = x[np.where(found)]
     

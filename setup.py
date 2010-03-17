@@ -16,6 +16,7 @@ if __name__ == '__main__':
         bin='/opt/local/bin'
     else:
         bin = '/usr/bin'
+    #bin = '/Users/marianne/bin'
         
-    file(os.path.join(bin,'anopheles-brt'),'w').write('#!%s/python\n\n'%bin+file('anopheles-brt').read())
-    os.system('chmod ugo+x %s/anopheles-brt'%bin)
+    file('/Users/marianne/bin/anopheles-brt','w').write('#!%s/python\n\n'%bin+file('anopheles-brt').read())
+    os.system('chmod ugo+x /Users/marianne/bin/anopheles-brt')
