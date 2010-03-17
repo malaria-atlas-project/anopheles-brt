@@ -32,7 +32,11 @@ def get_pseudoabsences(eo, buffer_shapefile, n_pseudoabsences, layer_names):
     if fname in os.listdir('anopheles-caches'):
         pseudoabsences = np.load(os.path.join('anopheles-caches', fname))
     else:
-        buff = reduce(lambda mp, p: mp.union(p), map_utils.shapefile_utils.NonSuckyShapefile(buffer_shapefile).polygons)
+        sf = map_utils.shapefile_utils.NonSuckyShapefile(buffer_shapefile)
+        if len(sf.polygons) > 1:
+            buff = reduce(lambda mp, p: mp.union(p), sf.polygons)
+        else:
+            buff = sf.polygons[0]
         diff_buffer = buff.difference(eo)
     
         lon, lat, test_raster, rtype = map_utils.import_raster(*os.path.split(layer_names[0])[::-1])
