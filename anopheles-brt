@@ -57,11 +57,14 @@ def targ(q,s):
 
         # Make the maps and write them to disk.
         print 'Process %i generating a predictive map for species %s.'%(multiprocessing.current_process().ident,species_name)
+        dblock.acquire()
         lon,lat,data = anopheles_brt.trees_to_map(be, species_name, layer_names, glob_name, glob_channels, (llclat, llclon, urclat, urclon))
         result_dirname = anopheles_brt.get_result_dir(species_name)
         map_utils.export_raster(lon,lat,data,'probability-map',result_dirname,'flt')
         np.savetxt(os.path.join(result_dirname, 'pseudoabsences.csv'), pseudoabsences, delimiter=',')
-    
+        del data
+        dblock.release()
+
         print 'Process %i has finished species %s.'%(multiprocessing.current_process().ident,species_name)
     
         if q.empty():

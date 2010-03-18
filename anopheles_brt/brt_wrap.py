@@ -48,7 +48,10 @@ def get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names):
             return True-test_raster.mask[lon_ind,lat_ind]
     
         pseudoabsences = np.vstack(map_utils.shapefile_utils.multipoly_sample(n_pseudoabsences, diff_buffer, test=testfn)).T
+        if not np.all([testfn(l1,l2) for l1,l2 in pseudoabsences]):
+            raise ValueError, 'Test failed for some pseudoabsences.'
         np.save(os.path.join('anopheles-caches',fname), pseudoabsences)
+        
     return pseudoabsences
     
     
