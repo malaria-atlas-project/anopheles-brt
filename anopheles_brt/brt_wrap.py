@@ -224,7 +224,7 @@ def write_brt_results(brt_results, species_name, result_names):
         
 def subset_raster(r, llclati, llcloni, urclati, urcloni):
     r_ = map_utils.grid_convert(r,'y-x+','x+y+')
-    return map_utils.grid_convert(r_[llcloni:urcloni,llclati:urclati],'x+y+','y-x+')
+    return map_utils.grid_convert(r_[llcloni:urcloni,llclati:urclati],'x+y+','y-x+').astype('float32')
 
 def trees_to_map(brt_evaluator, species_name, layer_names, glob_name, glob_channels, bbox):
     """

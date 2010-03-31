@@ -73,9 +73,12 @@ def targ(q,s):
 # Set up the queue of species names and the worker threads.
 snames = sys.argv[1:]
 q = multiprocessing.Queue(maxsize=len(snames))        
-workers = [multiprocessing.Process(target=targ, args=(q, Session())) for i in range(int(os.environ['OMP_NUM_THREADS']))]
 [q.put(sn) for sn in snames]
 
+# print 'Serializing in main process'
+# targ(q,Session())
+
+workers = [multiprocessing.Process(target=targ, args=(q, Session())) for i in range(int(os.environ['OMP_NUM_THREADS']))]
 # Dispatch the threads.
 [t.start() for t in workers]
 [t.join() for t in workers]
