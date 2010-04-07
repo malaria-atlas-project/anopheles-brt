@@ -48,7 +48,7 @@ def targ(q,s):
             print 'Hi, it\'s process %i. I just wanted to say hello.'%(multiprocessing.current_process().ident)
     
         # Write the requested results out
-        anopheles_brt.write_brt_results(brt_res, species_name, ['cv.statistics', 'self.statistics'])
+        anopheles_brt.write_brt_results(brt_res, species_name, saved_results)
     
         # Make an evaluator object
         nice_tree_dict = anopheles_brt.unpack_brt_trees(brt_res, layer_names, glob_name, glob_channels)
