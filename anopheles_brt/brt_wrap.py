@@ -32,8 +32,13 @@ def get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names):
     if fname in os.listdir('anopheles-caches'):
         pseudoabsences = np.load(os.path.join('anopheles-caches', fname))
     else:
-        buff = eo.buffer(buffer_width)
-        diff_buffer = buff.difference(eo)
+        if buffer_width >= 0:
+            buff = eo.buffer(buffer_width)
+            diff_buffer = buff.difference(eo)
+        elif buffer_width == -1:
+            duff_buffer = eo
+        else:
+            raise ValueError, 'Buffer width is negative, but not -1.'
     
         lon, lat, test_raster, rtype = map_utils.import_raster(*os.path.split(layer_names[0])[::-1])
         # Right the raster
@@ -55,7 +60,7 @@ def get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names):
     return pseudoabsences
     
     
-def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffer_width, n_pseudoabsences, dblock=None):
+def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffer_width, n_pseudoabsences, dblock=None, simdata=False):
     """
     Queries the DB to get a list of locations. Writes it out along with matching 
     extractions of the requested layers to a temporary csv file, which serves the 
@@ -64,7 +69,11 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
     """
     if dblock is not None:
         dblock.acquire()
-    breaks, x, found, zero, others_found, multipoints, eo = sites_as_ndarray(session, species)
+    if simdata:
+        x = get_pseudoabsences(eo, -1, n_pseudoabsences, layer_names)
+        found = np.ones(n_pseudoabsences)
+    else:
+        breaks, x, found, zero, others_found, multipoints, eo = sites_as_ndarray(session, species)
 
     fname = hashlib.sha1(str(buffer_width)+str(n_pseudoabsences)+found.tostring()+\
             glob_name+'channel'.join([str(i) for i in glob_channels])+\
@@ -96,7 +105,7 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
         rec2csv(data, os.path.join('anopheles-caches',fname))
     if dblock is not None:
         dblock.release()
-    return fname, pseudoabsences
+    return fname, pseudoabsences, x
 
 def maybe_array(a):
     try:

@@ -13,6 +13,14 @@ import datetime
 import thread
 import map_utils
 import numpy as np
+from optparse import OptionParser
+
+p = OptionParser('usage: %prog species1 species2 [options]')
+p.add_option('-s','--simulate',help='Whether to simulate data. Defaults to 0.',dest='simulate_data',type='int')
+
+p.set_defaults(simulate_data=0)
+
+(o, args) = p.parse_args()
 
 suff = imp.get_suffixes()[2]
 
@@ -38,7 +46,7 @@ def targ(q,s):
     
         # Will call sites_as_ndarray, gen_pseudoabsences and extract_environment.
         print 'Process %i querying database, extracting environmental layers etc. for species %s.'%(multiprocessing.current_process().ident,species_name)
-        fname, pseudoabsences = anopheles_brt.sites_and_env(s, species_tup, layer_names, glob_name, glob_channels, buffer_width/111.32, n_pseudoabsences, dblock=dblock)
+        fname, pseudoabsences, x = anopheles_brt.sites_and_env(s, species_tup, layer_names, glob_name, glob_channels, buffer_width/111.32, n_pseudoabsences, dblock=dblock, simdata=o.simulate_data)
     
         # The actual BRT code
         print 'Process %i sending species %s into Leathwick et al\'s BRT code.'%(multiprocessing.current_process().ident,species_name)
@@ -62,6 +70,8 @@ def targ(q,s):
         result_dirname = anopheles_brt.get_result_dir(species_name)
         map_utils.export_raster(lon,lat,data,'probability-map',result_dirname,'flt')
         np.savetxt(os.path.join(result_dirname, 'pseudoabsences.csv'), pseudoabsences, delimiter=',')
+        if simdata:
+            np.savetxt(os.path.join(result_dirname, 'simulated-presences.csv'), x, delimiter=',')
         del data
         dblock.release()
 
@@ -71,7 +81,7 @@ def targ(q,s):
             break
 
 # Set up the queue of species names and the worker threads.
-snames = sys.argv[1:]
+snames = args
 q = multiprocessing.Queue(maxsize=len(snames))        
 [q.put(sn) for sn in snames]
 
