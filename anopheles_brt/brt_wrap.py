@@ -250,6 +250,41 @@ def write_brt_results(brt_results, species_name, result_names):
 def subset_raster(r, llclati, llcloni, urclati, urcloni):
     r_ = map_utils.grid_convert(r,'y-x+','x+y+')
     return map_utils.grid_convert(r_[llcloni:urcloni,llclati:urclati],'x+y+','y-x+').astype('float32')
+    
+def trees_to_diagnostics(brt_evaluator, fname, species_name):
+    """
+    Takes the BRT evaluator and sees how well it does at predicting the training dataset.
+    """
+
+    from diagnostics import simple_assessments, roc, plot_roc_
+
+    din = csv2rec(os.path.join('anopheles-caches',fname))
+    found = din.found
+    din = dict([(k,din[k]) for k in brt_evaluator.nice_tree_dict.iterkeys()])
+    probs = pm.flib.invlogit(brt_evaluator(din))
+
+    result_dirname = get_result_dir(species_name)
+    
+    resdict = {}
+    for f in simple_assessments:
+        resdict[f.__name__] = f(probs>.5, found)
+
+    pstack = np.array([pm.rbernoulli(probs) for i in xrange(10000)])
+    fp, tp, AUC = roc(pstack, found)
+    resdict['AUC'] = AUC
+    
+    fout=file(os.path.join(result_dirname,'simple-diagnostics.txt'),'w')
+    for k in resdict.iteritems():
+        fout.write('%s: %s\n'%k)
+    
+    import pylab as pl
+    pl.clf()
+    plot_roc_(fp,tp,AUC)
+    pl.savefig(os.path.join(result_dirname,'roc.pdf'))
+    
+    r = np.rec.fromarrays([fp,tp],names='false,true')
+    rec2csv(r,os.path.join(result_dirname,'roc.csv'))
+
 
 def trees_to_map(brt_evaluator, species_name, layer_names, glob_name, glob_channels, bbox):
     """

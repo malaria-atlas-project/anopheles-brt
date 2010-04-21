@@ -20,7 +20,7 @@ from __future__ import division
 import numpy as np
 from env_data import extract_environment
 
-__all__ = ['compose','simple_assessments','roc','plot_roc','plot_roc_','validate','plot_validation']
+__all__ = ['compose','simple_assessments','roc','plot_roc','plot_roc_']
 
 def compose(*fns):
     def composite_function(*a, **k):
@@ -103,69 +103,38 @@ def plot_roc_(fp, tp, AUC):
 
 plot_roc = compose(plot_roc_, roc)    
 
-def validate(M, session, x, a, burn=0, trace_thin=1):
-    """
-    Computes posterior predictive distributions for all validation metrics
-    at holdout locations x. The true classification is a.
-    """
-    
-    chain_len = len(M.db._h5file.root.chain0.PyMCsamples)
-    
-    species = M.species
-    names = [s.__name__ for s in simple_assessments]
-    results = dict([(n, []) for n in names])
-    
-    env_x = np.array([extract_environment(n, x * 180./np.pi) for n in M.env_variables]).T
-    full_x = np.hstack((x,env_x))
+# def plot_validation_(results):
+#     import pylab as pl
+#     pl.close('all')
+#     for k in results.iterkeys():
+#         pl.figure()
+#         if k=='roc':
+#             plot_roc_(*results['roc'])
+#         elif k in ['producer_accuracy','consumer_accuracy']:
+#             pl.hist(results[k][:,0])
+#             pl.title('%s, false')
+#             pl.figure()
+#             pl.hist(results[k][:,1])
+#             pl.title('%s, true'%k)
+#         else:
+#             pl.hist(results[k])
+#             pl.title(k)
 
-    ptrace = M.trace('p')[:]
-    ps = []
-    for i in xrange(burn, chain_len, trace_thin):        
-        pf = ptrace[i]
-        p = pf(full_x)
-        ps.append(p)
-        for s in simple_assessments:
-            results[s.__name__].append(s(p,a))
-        
-    results = dict([(n, np.asarray(results[n])) for n in names])
-    results['roc'] = roc(np.asarray(ps), a)
-    
-    return results, 
 
-def plot_validation_(results):
-    import pylab as pl
-    pl.close('all')
-    for k in results.iterkeys():
-        pl.figure()
-        if k=='roc':
-            plot_roc_(*results['roc'])
-        elif k in ['producer_accuracy','consumer_accuracy']:
-            pl.hist(results[k][:,0])
-            pl.title('%s, false')
-            pl.figure()
-            pl.hist(results[k][:,1])
-            pl.title('%s, true'%k)
-        else:
-            pl.hist(results[k])
-            pl.title(k)
-            
-plot_validation = compose(plot_validation_, validate)
-    
-    
-if __name__ == '__main__':
-    import pymc as pm
-    import pylab as pl
-    n = 1000
-    a = pm.rbernoulli(.7,size=n).astype('bool')
-    p = pm.rbernoulli(.7,size=n).astype('bool')
-    
-    for s in simple_assessments:
-        print s.__name__, s(p, a)
-    
-    ps = pm.rbernoulli(.7,size=(100,n)).astype('bool')
-    for i in xrange(100):
-        if np.random.random()<.05:
-            ps[i,:]=a
-    pl.clf()
-    fp,tp,auc = roc(ps,a)
-    plot_roc(ps, a)
+# if __name__ == '__main__':
+#     import pymc as pm
+#     import pylab as pl
+#     n = 1000
+#     a = pm.rbernoulli(.7,size=n).astype('bool')
+#     p = pm.rbernoulli(.7,size=n).astype('bool')
+#     
+#     for s in simple_assessments:
+#         print s.__name__, s(p, a)
+#     
+#     ps = pm.rbernoulli(.7,size=(100,n)).astype('bool')
+#     for i in xrange(100):
+#         if np.random.random()<.05:
+#             ps[i,:]=a
+#     pl.clf()
+#     fp,tp,auc = roc(ps,a)
+#     plot_roc(ps, a)
