@@ -70,7 +70,7 @@ def targ(q,s):
         result_dirname = anopheles_brt.get_result_dir(species_name)
         map_utils.export_raster(lon,lat,data,'probability-map',result_dirname,'flt')
         np.savetxt(os.path.join(result_dirname, 'pseudoabsences.csv'), pseudoabsences, delimiter=',')
-        if simdata:
+        if o.simulate_data:
             np.savetxt(os.path.join(result_dirname, 'simulated-presences.csv'), x, delimiter=',')
         del data
         dblock.release()
