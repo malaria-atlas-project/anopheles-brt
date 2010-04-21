@@ -183,7 +183,7 @@ def brt(fname, species_name, gbm_opts):
         return r(varname)
     else:
         r('%s<-gbm.step(%s)'%(varname,opt_argstr))
-        if r('is.null(%s)'%varname):
+        if str(r(varname))=='NULL':
             raise ValueError, 'gbm.step returned NULL'
         r('save(%s, file="%s")'%(varname,os.path.join('anopheles-caches', brt_fname)))
         return r(varname)
