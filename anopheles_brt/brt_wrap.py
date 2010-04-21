@@ -27,7 +27,7 @@ def df_to_ra(d):
     n = np.array(d.colnames)
     return np.rec.fromarrays(a, names=','.join(n))
 
-def get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names):
+def get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names, glob_name):
     fname = hashlib.sha1(cPickle.dumps(eo)+'_'+str(buffer_width)+'_'+str(n_pseudoabsences)).hexdigest()+'.npy'
     if fname in os.listdir('anopheles-caches'):
         pseudoabsences = np.load(os.path.join('anopheles-caches', fname))
@@ -39,8 +39,12 @@ def get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names):
             duff_buffer = eo
         else:
             raise ValueError, 'Buffer width is negative, but not -1.'
-    
-        lon, lat, test_raster, rtype = map_utils.import_raster(*os.path.split(layer_names[0])[::-1])
+        
+        if len(layer_names)>0:
+            template = layer_names[0]
+        else:
+            template = glob_name
+        lon, lat, test_raster, rtype = map_utils.import_raster(*os.path.split(template)[::-1])
         # Right the raster
         test_raster = map_utils.grid_convert(test_raster,'y-x+','x+y+')
         # Convert lower-left coords to centroids
@@ -70,7 +74,7 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
     if dblock is not None:
         dblock.acquire()
     if simdata:
-        x = get_pseudoabsences(eo, -1, n_pseudoabsences, layer_names)
+        x = get_pseudoabsences(eo, -1, n_pseudoabsences, layer_names, glob_name)
         found = np.ones(n_pseudoabsences)
     else:
         breaks, x, found, zero, others_found, multipoints, eo = sites_as_ndarray(session, species)
@@ -79,7 +83,7 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
             glob_name+'channel'.join([str(i) for i in glob_channels])+\
             'layer'.join(layer_names)).hexdigest()+'.csv'
             
-    pseudoabsences = get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names)        
+    pseudoabsences = get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names, glob_name)        
             
     x_found = x[np.where(found)]
     
@@ -93,6 +97,7 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
         env_layers = map(lambda ln: extract_environment(ln, x), layer_names)\
                 + map(lambda ch: (os.path.basename(glob_name)+'_'+str(ch), extract_environment(glob_name,x,\
                     postproc=lambda d: d==ch)[1]), glob_channels)
+    
         
         arrays = [(found>0).astype('int')] + [l[1] for l in env_layers]
         names = ['found'] + [l[0] for l in env_layers]
@@ -101,6 +106,12 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
         nancheck = np.array([np.any(np.isnan(row.tolist())) for row in data])
         if np.any(nancheck):
             print 'There were some NaNs in the data, probably points in the sea'
+        
+        for e in env_layers:
+            if len(set(e[1][np.where(True-np.isnan(e[1]))])):
+                raise ValueError, 'Layer %s has only one value, %f, at observation locations.'%(e[0], e[1][0])
+            
+        
         data = data[np.where(True-nancheck)]
         rec2csv(data, os.path.join('anopheles-caches',fname))
     if dblock is not None:
@@ -173,6 +184,8 @@ def brt(fname, species_name, gbm_opts):
         return r(varname)
     else:
         r('%s<-gbm.step(%s)'%(varname,opt_argstr))
+        if r('is.null(%s)'%varname):
+            raise ValueError, 'gbm.step returned NULL'
         r('save(%s, file="%s")'%(varname,os.path.join('anopheles-caches', brt_fname)))
         return r(varname)
 
