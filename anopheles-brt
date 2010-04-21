@@ -62,6 +62,9 @@ def targ(q,s):
         nice_tree_dict = anopheles_brt.unpack_brt_trees(brt_res, layer_names, glob_name, glob_channels)
         intercept = anopheles_brt.unpack_gbm_object(brt_res, 'initF')[0][0]
         be = anopheles_brt.brt_evaluator(nice_tree_dict, intercept)
+        
+        print 'Process %i running intra-sample diagnostics on species %s'%(multiprocessing.current_process().ident,species_name)
+        anopheles_brt.trees_to_diagnostics(be, fname, species_name)
 
         # Make the maps and write them to disk.
         print 'Process %i generating a predictive map for species %s.'%(multiprocessing.current_process().ident,species_name)
