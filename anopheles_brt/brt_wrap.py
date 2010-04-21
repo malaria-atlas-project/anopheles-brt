@@ -96,8 +96,7 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
         # Makes list of (key, value) tuples
         env_layers = map(lambda ln: extract_environment(ln, x), layer_names)\
                 + map(lambda ch: (os.path.basename(glob_name)+'_'+str(ch), extract_environment(glob_name,x,\
-                    postproc=lambda d: d==ch)[1]), glob_channels)
-    
+                    postproc=lambda d: d==ch, id_=ch)[1]), glob_channels)
         
         arrays = [(found>0).astype('int')] + [l[1] for l in env_layers]
         names = ['found'] + [l[0] for l in env_layers]
@@ -107,9 +106,9 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
         if np.any(nancheck):
             print 'There were some NaNs in the data, probably points in the sea'
         
-        for e in env_layers:
-            if len(set(e[1][np.where(True-np.isnan(e[1]))])):
-                raise ValueError, 'Layer %s has only one value, %f, at observation locations.'%(e[0], e[1][0])
+        # for e in env_layers:
+        #     if len(set(e[1][np.where(True-np.isnan(e[1]))])):
+        #         raise ValueError, 'Layer %s has only one value, %f, at observation locations.'%(e[0], e[1][0])
             
         
         data = data[np.where(True-nancheck)]
@@ -184,7 +183,7 @@ def brt(fname, species_name, gbm_opts):
         return r(varname)
     else:
         r('%s<-gbm.step(%s)'%(varname,opt_argstr))
-        if r('is.null(%s)'%varname):
+        if str(r(varname))=='NULL':
             raise ValueError, 'gbm.step returned NULL'
         r('save(%s, file="%s")'%(varname,os.path.join('anopheles-caches', brt_fname)))
         return r(varname)
