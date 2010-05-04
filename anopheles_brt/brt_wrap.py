@@ -10,7 +10,7 @@ import pymc as pm
 import cPickle
 from treetran import treetran
 matplotlib.use('pdf')
-
+import multiprocessing
 from pylab import rec2csv, csv2rec
 
 def get_names(layer_names, glob_name, glob_channels):
@@ -36,7 +36,7 @@ def get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names, glob_nam
             buff = eo.buffer(buffer_width)
             diff_buffer = buff.difference(eo)
         elif buffer_width == -1:
-            duff_buffer = eo
+            diff_buffer = eo
         else:
             raise ValueError, 'Buffer width is negative, but not -1.'
         
@@ -44,6 +44,7 @@ def get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names, glob_nam
             template = layer_names[0]
         else:
             template = glob_name
+
         lon, lat, test_raster, rtype = map_utils.import_raster(*os.path.split(template)[::-1])
         # Right the raster
         test_raster = map_utils.grid_convert(test_raster,'y-x+','x+y+')
@@ -71,50 +72,53 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
     dual purpose of caching the extraction and making it easier to get data into 
     the BRT package.
     """
-    if dblock is not None:
-        dblock.acquire()
+
+    breaks, x, found, zero, others_found, multipoints, eo = sites_as_ndarray(session, species)
+    
     if simdata:
+        print 'Process %i simulating presences for species %s.'%(multiprocessing.current_process().ident,species[1])
         x = get_pseudoabsences(eo, -1, n_pseudoabsences, layer_names, glob_name)
         found = np.ones(n_pseudoabsences)
-    else:
-        breaks, x, found, zero, others_found, multipoints, eo = sites_as_ndarray(session, species)
+        
 
-    fname = hashlib.sha1(str(buffer_width)+str(n_pseudoabsences)+found.tostring()+\
+    fname = hashlib.sha1(str(x)+found.tostring()+\
             glob_name+'channel'.join([str(i) for i in glob_channels])+\
             'layer'.join(layer_names)).hexdigest()+'.csv'
             
     pseudoabsences = get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names, glob_name)        
             
     x_found = x[np.where(found)]
-    
+
     x = np.vstack((x_found, pseudoabsences))
     found = np.concatenate((np.ones(len(x_found)), np.zeros(n_pseudoabsences)))
 
     if fname in os.listdir('anopheles-caches'):
         pass
     else:
+
         # Makes list of (key, value) tuples
-        env_layers = map(lambda ln: extract_environment(ln, x), layer_names)\
+        env_layers = map(lambda ln: extract_environment(ln, x, lock=dblock), layer_names)\
                 + map(lambda ch: (os.path.basename(glob_name)+'_'+str(ch), extract_environment(glob_name,x,\
-                    postproc=lambda d: d==ch, id_=ch)[1]), glob_channels)
-        
+                    postproc=lambda d: d==ch, id_=ch, lock=dblock)[1]), glob_channels)
+
         arrays = [(found>0).astype('int')] + [l[1] for l in env_layers]
         names = ['found'] + [l[0] for l in env_layers]
-        
+
         data = np.rec.fromarrays(arrays, names=','.join(names))
         nancheck = np.array([np.any(np.isnan(row.tolist())) for row in data])
         if np.any(nancheck):
             print 'There were some NaNs in the data, probably points in the sea'
-        
-        # for e in env_layers:
-        #     if len(set(e[1][np.where(True-np.isnan(e[1]))])):
-        #         raise ValueError, 'Layer %s has only one value, %f, at observation locations.'%(e[0], e[1][0])
-            
+
+        singletons = 0
+        for e in env_layers:
+            if len(set(e[1][np.where(True-np.isnan(e[1]))]))==1:
+                singletons += 1
+        if singletons == len(env_layers):
+            raise ValueError, 'All environmental layer evaluations contained only single values.'
         
         data = data[np.where(True-nancheck)]
         rec2csv(data, os.path.join('anopheles-caches',fname))
-    if dblock is not None:
-        dblock.release()
+
     return fname, pseudoabsences, x
 
 def maybe_array(a):
@@ -274,6 +278,8 @@ def trees_to_diagnostics(brt_evaluator, fname, species_name):
     resdict['AUC'] = AUC
     
     fout=file(os.path.join(result_dirname,'simple-diagnostics.txt'),'w')
+    fout.write('presences: %i\n'%found.sum())
+    fout.write('absences: %i\n'%(True-found).sum())
     for k in resdict.iteritems():
         fout.write('%s: %s\n'%k)
     
@@ -286,7 +292,7 @@ def trees_to_diagnostics(brt_evaluator, fname, species_name):
     rec2csv(r,os.path.join(result_dirname,'roc.csv'))
 
 
-def trees_to_map(brt_evaluator, species_name, layer_names, glob_name, glob_channels, bbox):
+def trees_to_map(brt_evaluator, species_name, layer_names, glob_name, glob_channels, bbox, memlim = 4e9):
     """
     Makes maps and writes them out in flt format.
     """
@@ -298,31 +304,34 @@ def trees_to_map(brt_evaluator, species_name, layer_names, glob_name, glob_chann
     llclat,llclon,urclat,urclon = bbox
     
     rasters = {}
-    for n, p in zip(short_layer_names, layer_names):
-        lon,lat,rasters[n],t = map_utils.import_raster(*os.path.split(p)[::-1])
+
+    n_rasters = len(layer_names)+len(glob_channels)
     lon,lat,glob,t = map_utils.import_raster(*os.path.split(glob_name)[::-1])
-    for n, ch in zip(short_glob_names, glob_channels):
-        rasters[n] = glob==ch
+    
+    orig_glob_shape = glob.shape
     
     llclati = np.where(lat>=llclat)[0][0]
     llcloni = np.where(lon>=llclon)[0][0]
     urclati = np.where(lat<=urclat)[0][-1]
     urcloni = np.where(lon<=urclon)[0][-1]    
     
-    # Consistency check, just in case
-    k,v = rasters.keys(), rasters.values()
-    base_raster = v[0]
-    for k_,v_ in zip(k[1:],v[1:]):
-        if v_.shape != base_raster.shape:
-            raise ValueError, 'Raster %s is not same shape as raster %s.'%(k_, k[0])
-        elif np.any(v_.mask != base_raster.mask):
-            raise ValueError, 'Raster %s has different missingness pattern from raster %s.'%(k_, k[0])
+    glob = subset_raster(glob, llclati, llcloni, urclati, urcloni)
+    where_notmask = np.where(True-glob.mask)
+    raster_size = np.prod(glob.shape)*4
+    if raster_size * n_rasters > memlim:
+        warnings.warn('Species %s: Generating this map would require too much memory. Make the bounding box smaller.'%species_name)
     
-    out_raster = subset_raster(base_raster, llclati, llcloni, urclati, urcloni)
-    where_notmask = np.where(True-out_raster.mask)
-    for k in rasters.keys():
-        rasters[k] = subset_raster(rasters[k], llclati, llcloni, urclati, urcloni)[where_notmask]
+    for n, ch in zip(short_glob_names, glob_channels):
+        rasters[n] = (glob==ch)[where_notmask]    
+
+    for n, p in zip(short_layer_names, layer_names):
+        lon,lat,data,t = map_utils.import_raster(*os.path.split(p)[::-1])
+        if data.shape != orig_glob_shape:
+            raise ValueError, 'Shape of raster %s does not match shape of Glob raster for species %s. Check config file.'%(n,species_name)
+        rasters[n] = subset_raster(data, llclati, llcloni, urclati, urcloni)[where_notmask]
+        
     ravelledmap = brt_evaluator(rasters)
+    out_raster = glob.astype('float32')
     out_raster[where_notmask] = pm.flib.invlogit(ravelledmap)
 
     return lon[llcloni:urcloni],lat[llclati:urclati],out_raster

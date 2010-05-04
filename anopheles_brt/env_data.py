@@ -20,7 +20,7 @@ import numpy
 
 __all__ = ['extract_environment']
 
-def extract_environment(layer_name, x, postproc=lambda x:x, id_=None):
+def extract_environment(layer_name, x, postproc=lambda x:x, id_=None, lock=None):
     "Expects ALL locations to be in decimal degrees."
     
     fname = hashlib.sha1(x.tostring()+layer_name+str(id_)).hexdigest()+'.npy'
@@ -29,6 +29,9 @@ def extract_environment(layer_name, x, postproc=lambda x:x, id_=None):
     if fname in os.listdir('anopheles-caches'):
         return name, numpy.load(os.path.join('anopheles-caches',fname))
     else:    
+        
+        # if lock is not None:
+        #     lock.acquire()
         grid_lon, grid_lat, grid_data, grid_type = map_utils.import_raster(name,path)
         
         # Convert to centroids
@@ -37,6 +40,9 @@ def extract_environment(layer_name, x, postproc=lambda x:x, id_=None):
         
         # Interpolate
         extracted = map_utils.interp_geodata(grid_lon, grid_lat, postproc(grid_data).data, x[:,0], x[:,1], grid_data.mask, chunk=None, view='y-x+', order=0)
+        del grid_data
+        # if lock is not None:
+        #     lock.release()
 
         numpy.save(os.path.join('anopheles-caches',fname), extracted)
         return name, extracted
