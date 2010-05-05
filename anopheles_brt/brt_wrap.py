@@ -249,7 +249,8 @@ def write_brt_results(brt_results, species_name, result_names):
     
     results = print_gbm_object(brt_results, *result_names)
     for n,v in zip(result_names, results):
-        file(os.path.join(result_dirname, n+'.txt'),'w').write(str(v))
+        r('write.table')(v, file=os.path.join(result_dirname, n+'.txt'), sep=',')
+        # file(os.path.join(result_dirname, n+'.txt'),'w').write(str(v))
         
 def subset_raster(r, llclati, llcloni, urclati, urcloni):
     r_ = map_utils.grid_convert(r,'y-x+','x+y+')
