@@ -31,31 +31,31 @@ def compose(*fns):
     return composite_function
 
 def proportion_correct(p, a):
-    return np.sum(p==a)/len(a)
+    return np.sum(p==a)/float(len(a))
     
 def false_positives(p, a):
-    return np.sum(p*(True-a))/len(a)
+    return np.sum(p*(True-a))/float(len(a))
 
 def false_negatives(p, a):
-    return np.sum((True-p)*a)/len(a)
+    return np.sum((True-p)*a)/float(len(a))
     
 def sensitivity(p, a):
-    return np.sum(p*a)/np.sum(a)
+    return np.sum(p*a)/float(np.sum(a))
     
 def specificity(p, a):
-    return np.sum((True-p)*(True-a))/np.sum(True-a)
+    return np.sum((True-p)*(True-a))/float(np.sum(True-a))
     
 def producer_accuracy(p, a):
     return sensitivity(p, a), specificity(p, a)
     
 def consumer_accuracy(p, a):
-    return np.sum(p*a)/np.sum(p), np.sum((True-p)*(True-a))/np.sum(True-p)
+    return np.sum(p*a)/float(np.sum(p)), np.sum((True-p)*(True-a))/float(np.sum(True-p))
 
 def kappa(p, a):
     pa = np.sum(a)/len(a)
     pp = np.sum(p)/len(p)
     pagree = pa*pp + (1-pa)*(1-pp)
-    return (np.sum(p==a)/len(a)-pagree)/(1-pagree)
+    return (np.sum(p==a)/float(len(a))-pagree)/float(1-pagree)
     
 simple_assessments = [proportion_correct, false_positives, false_negatives, sensitivity, specificity, producer_accuracy, consumer_accuracy, kappa]
     
@@ -69,8 +69,8 @@ def roc(ps, a):
     fp = [1]
     
     marginal_p = np.sum(ps,axis=0)/ps.shape[0]
-    tot_neg = np.sum(True-a)
-    tot_pos = np.sum(a)
+    tot_neg = float(np.sum(True-a))
+    tot_pos = float(np.sum(a))
     
     for i in xrange(len(t)):
         p = marginal_p>t[i]

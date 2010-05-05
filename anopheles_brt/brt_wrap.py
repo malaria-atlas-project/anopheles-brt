@@ -267,6 +267,8 @@ def trees_to_diagnostics(brt_evaluator, fname, species_name):
     din = dict([(k,din[k]) for k in brt_evaluator.nice_tree_dict.iterkeys()])
     probs = pm.flib.invlogit(brt_evaluator(din))
 
+    print 'Species %s: fraction %f correctly classified.'%(species_name, ((probs>.5)*found+(probs<.5)*(True-found)).sum()/float(len(probs)))
+
     result_dirname = get_result_dir(species_name)
     
     resdict = {}
