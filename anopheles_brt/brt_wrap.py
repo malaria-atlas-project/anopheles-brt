@@ -248,7 +248,7 @@ def write_brt_results(brt_results, species_name, result_names):
     r('save(%s, file="%s")'%(varname,os.path.join(result_dirname, 'gbm.object.r')))
     
     for n in result_names:
-        r('write.csv(%s$%s, file=%s)'%(varname, n, n))
+        r('write.csv(%s$%s, file=%s.txt)'%(varname, n, n))
         
 def subset_raster(r, llclati, llcloni, urclati, urcloni):
     r_ = map_utils.grid_convert(r,'y-x+','x+y+')
