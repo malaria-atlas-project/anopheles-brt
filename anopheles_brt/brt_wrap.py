@@ -137,7 +137,7 @@ def unpack_gbm_object(brt_results, *names):
     
 def print_gbm_object(brt_results, *names):
     namelist = np.array(brt_results.names)
-    return map(lambda n: str(brt_results[np.where(namelist==n)[0][0]]), names)
+    return map(lambda n: brt_results[np.where(namelist==n)[0][0]], names)
 
 def unpack_brt_trees(brt_results, layer_names, glob_name, glob_channels):
     """
@@ -247,10 +247,8 @@ def write_brt_results(brt_results, species_name, result_names):
     varname = sanitize_species_name(species_name)
     r('save(%s, file="%s")'%(varname,os.path.join(result_dirname, 'gbm.object.r')))
     
-    results = print_gbm_object(brt_results, *result_names)
-    for n,v in zip(result_names, results):
-        r('write.table')(v, file=os.path.join(result_dirname, n+'.txt'), sep=',')
-        # file(os.path.join(result_dirname, n+'.txt'),'w').write(str(v))
+    for n in result_names:
+        r('write.csv(%s$%s, file=%s)'%(varname, n, n))
         
 def subset_raster(r, llclati, llcloni, urclati, urcloni):
     r_ = map_utils.grid_convert(r,'y-x+','x+y+')
