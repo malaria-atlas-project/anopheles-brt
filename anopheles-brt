@@ -15,13 +15,15 @@ import map_utils
 import numpy as np
 from optparse import OptionParser
 import sys
+import geojson
 
 p = OptionParser('usage: %prog species1 species2 [options]')
-p.add_option('-s','--simulate',help='Whether to simulate data. Defaults to 0.',dest='simulate_data',type='int')
 p.add_option('-m','--main',help='Whether to serialize in main process. Defaults to 0.',dest='serialize',type='int')
+p.add_option('-e','--eo-expand',help='How much to artificially expand the EO region, in decimal degrees. Defaults to 0.', dest='eo_expand', type='float')
 
-p.set_defaults(simulate_data=0)
+
 p.set_defaults(serialize=0)
+p.set_defaults(eo_expand=0)
 
 (o, args) = p.parse_args()
 
@@ -43,7 +45,7 @@ def targ(q,s):
         # imp.load_module(name, file, pathname, description)
         m = imp.load_module(os.path.splitext(config_filename)[0], file(config_filename), '.', suff)
         # from m import layer_names, glob_name, glob_channels, buffer_size, brt_args, bbox, species_name
-        exec('from %s import layer_names, glob_name, glob_channels, buffer_width, n_pseudoabsences, brt_opts, llclat, llclon, urclat, urclon, species_name, saved_results'%os.path.splitext(config_filename)[0])
+        exec('from %s import layer_names, glob_name, glob_channels, buffer_width, n_pseudoabsences, n_pseudopresences, pseudopresence_weight, pseudoabsence_weight, use_real_presences, brt_opts, llclat, llclon, urclat, urclon, species_name, saved_results'%os.path.splitext(config_filename)[0])
 
         try:
 
@@ -54,7 +56,7 @@ def targ(q,s):
             dblock.acquire()
             print 'Process %i querying database, extracting environmental layers etc. for species %s.'%(multiprocessing.current_process().ident,species_name)
             try:
-                fname, pseudoabsences, x = anopheles_brt.sites_and_env(s, species_tup, layer_names, glob_name, glob_channels, buffer_width/111.32, n_pseudoabsences, dblock=dblock, simdata=o.simulate_data)
+                fname, pseudoabsences, x, eo = anopheles_brt.sites_and_env(s, species_tup, layer_names, glob_name, glob_channels, buffer_width/111.32, n_pseudoabsences, dblock=dblock, n_pseudopresences=n_pseudopresences, eo_expand=o.eo_expand/111.32, real_presences=use_real_presences)
                 dblock.release()
                 print 'Done'
             except:
@@ -96,6 +98,8 @@ def targ(q,s):
                 raise cls, inst, tb
 
             np.savetxt(os.path.join(result_dirname, 'pseudoabsences.csv'), pseudoabsences, delimiter=',')
+            if o.eo_expand > 0:
+                file(os.path.join(result_dirname,'extended_eo.json'),'w').write(geojson.dumps(eo))
             if o.simulate_data:
                 np.savetxt(os.path.join(result_dirname, 'simulated-presences.csv'), x, delimiter=',')
 

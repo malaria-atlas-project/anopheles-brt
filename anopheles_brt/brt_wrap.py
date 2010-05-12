@@ -12,6 +12,7 @@ from treetran import treetran
 matplotlib.use('pdf')
 import multiprocessing
 from pylab import rec2csv, csv2rec
+import geojson
 
 def get_names(layer_names, glob_name, glob_channels):
     "Utility"
@@ -27,8 +28,10 @@ def df_to_ra(d):
     n = np.array(d.colnames)
     return np.rec.fromarrays(a, names=','.join(n))
 
-def get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names, glob_name):
-    fname = hashlib.sha1(cPickle.dumps(eo)+'_'+str(buffer_width)+'_'+str(n_pseudoabsences)).hexdigest()+'.npy'
+def get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names, glob_name, eo_expand=0):
+    if eo_expand:
+        eo = eo.buffer(eo_expand)
+    fname = hashlib.sha1(geojson.dumps(eo)+'_'+str(buffer_width)+'_'+str(n_pseudoabsences)).hexdigest()+'.npy'
     if fname in os.listdir('anopheles-caches'):
         pseudoabsences = np.load(os.path.join('anopheles-caches', fname))
     else:
@@ -62,10 +65,10 @@ def get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names, glob_nam
             raise ValueError, 'Test failed for some pseudoabsences.'
         np.save(os.path.join('anopheles-caches',fname), pseudoabsences)
         
-    return pseudoabsences
+    return pseudoabsences, eo
     
     
-def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffer_width, n_pseudoabsences, dblock=None, simdata=False):
+def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffer_width, n_pseudoabsences, eo_expand=0, dblock=None, n_pseudopresences=0, real_presences=True, pseudopresence_weight=1, pseudoabsence_weight=1):
     """
     Queries the DB to get a list of locations. Writes it out along with matching 
     extractions of the requested layers to a temporary csv file, which serves the 
@@ -75,22 +78,29 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
 
     breaks, x, found, zero, others_found, multipoints, eo = sites_as_ndarray(session, species)
     
-    if simdata:
+    if not real_presences:
+        x = np.zeros((0,2))
+        found = np.zeros(0)
+    
+    weights = found
+    
+    if n_pseudopresences>0:
         print 'Process %i simulating presences for species %s.'%(multiprocessing.current_process().ident,species[1])
-        x = get_pseudoabsences(eo, -1, n_pseudoabsences, layer_names, glob_name)
-        found = np.ones(n_pseudoabsences)
+        x = np.vstack([x,get_pseudoabsences(eo, -1, n_pseudopresences, layer_names, glob_name, e_expand)[eo]])
+        found = np.hstack([found,np.ones(n_pseudopresences)])
+        weights = np.hstack([weights, np.ones(n_pseudopresences)*pseudoabsence_weight])
         
-
     fname = hashlib.sha1(str(x)+found.tostring()+\
             glob_name+'channel'.join([str(i) for i in glob_channels])+\
             'layer'.join(layer_names)).hexdigest()+'.csv'
             
-    pseudoabsences = get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names, glob_name)        
-            
+    pseudoabsences, eo = get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names, glob_name, buffer_expand)      
+    
     x_found = x[np.where(found)]
 
     x = np.vstack((x_found, pseudoabsences))
     found = np.concatenate((np.ones(len(x_found)), np.zeros(n_pseudoabsences)))
+    weights = np.hstack((weights, np.ones(n_pseudoabsences)*pseudoabsence_weight))
 
     if fname in os.listdir('anopheles-caches'):
         pass
@@ -119,7 +129,7 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
         data = data[np.where(True-nancheck)]
         rec2csv(data, os.path.join('anopheles-caches',fname))
 
-    return fname, pseudoabsences, x
+    return fname, pseudoabsences, x, eo
 
 def maybe_array(a):
     try:
