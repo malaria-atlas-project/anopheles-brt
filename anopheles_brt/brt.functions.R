@@ -389,6 +389,7 @@ function (data,                             # the input dataframe
   cv.deviance.stats <- rep(0, n.folds)
   cv.roc.stats <- rep(0, n.folds)
   cv.cor.stats <- rep(0, n.folds)
+  cv.kappa.stats <- rep(0, n.folds)
   cv.calibration.stats <- matrix(0, ncol=5, nrow = n.folds)
   if (family == "bernoulli") threshold.stats <- rep(0, n.folds)
 
@@ -418,7 +419,17 @@ function (data,                             # the input dataframe
     weight.preds <- site.weights[pred.mask]
 
     cv.deviance.stats[i] <- calc.deviance(y_i, u_i, weight.preds, family = family)
-
+    
+    # pa = np.sum(a)/len(a)
+    # pp = np.sum(p)/len(p)
+    # pagree = pa*pp + (1-pa)*(1-pp)
+    # return (np.sum(p==a)/float(len(a))-pagree)/float(1-pagree)
+    
+    p.y = mean(y_i)
+    p.u = mean((u_i>.5))
+    p.agree = p.y*p.u + (1-p.y)*(1-p.u)
+    
+    cv.kappa.stats[i] <- (mean((y_i==(u_i>.5)))-p.agree)/(1-p.agree)
     cv.cor.stats[i] <- cor(y_i,u_i)
 
     if (family == "bernoulli") {
@@ -441,6 +452,9 @@ function (data,                             # the input dataframe
 
   cv.cor <- mean(cv.cor.stats, na.rm = TRUE)
   cv.cor.se <- sqrt(var(cv.cor.stats, use = "complete.obs")) / sqrt(n.folds)
+  
+  cv.kappa <- mean(cv.kappa.stats, na.rm = TRUE)
+  cv.kappa.se <- sqrt(var(cv.kappa.stats)) / sqrt(n.folds)
 
   cv.roc <- 0.0
   cv.roc.se <- 0.0 
@@ -563,7 +577,8 @@ function (data,                             # the input dataframe
   cv.stats <- list(deviance.mean = cv.dev, deviance.se = cv.dev.se, 
     correlation.mean = cv.cor, correlation.se = cv.cor.se,
     discrimination.mean = cv.roc, discrimination.se = cv.roc.se,
-    calibration.mean = cv.calibration, calibration.se = cv.calibration.se)
+    calibration.mean = cv.calibration, calibration.se = cv.calibration.se,
+    kappa.mean = cv.kappa, kappa.se = cv.kappa.se)
 
   if (family == "bernoulli") {
     cv.stats$cv.threshold <- cv.threshold

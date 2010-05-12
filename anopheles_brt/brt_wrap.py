@@ -14,6 +14,8 @@ import multiprocessing
 from pylab import rec2csv, csv2rec
 import geojson
 
+
+
 def get_names(layer_names, glob_name, glob_channels):
     "Utility"
     return map(lambda ch: str.lower(os.path.basename(ch)),layer_names) \
@@ -77,33 +79,37 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
     """
 
     breaks, x, found, zero, others_found, multipoints, eo = sites_as_ndarray(session, species)
+    x_found = x[np.where(found)]
+    x = x_found
+    
     
     if not real_presences:
         x = np.zeros((0,2))
         found = np.zeros(0)
     
-    weights = found
+    weights = np.ones(x.shape[0])
     
     if n_pseudopresences>0:
         print 'Process %i simulating presences for species %s.'%(multiprocessing.current_process().ident,species[1])
-        x = np.vstack([x,get_pseudoabsences(eo, -1, n_pseudopresences, layer_names, glob_name, e_expand)[eo]])
+        x = np.vstack([x,get_pseudoabsences(eo, -1, n_pseudopresences, layer_names, glob_name, eo_expand)[0]])
         found = np.hstack([found,np.ones(n_pseudopresences)])
-        weights = np.hstack([weights, np.ones(n_pseudopresences)*pseudoabsence_weight])
+        weights = np.hstack([weights, np.ones(n_pseudopresences)*pseudopresence_weight])
         
     fname = hashlib.sha1(str(x)+found.tostring()+\
             glob_name+'channel'.join([str(i) for i in glob_channels])+\
             'layer'.join(layer_names)).hexdigest()+'.csv'
             
-    pseudoabsences, eo = get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names, glob_name, buffer_expand)      
+    pseudoabsences, eo = get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names, glob_name, eo_expand)      
     
-    x_found = x[np.where(found)]
 
-    x = np.vstack((x_found, pseudoabsences))
-    found = np.concatenate((np.ones(len(x_found)), np.zeros(n_pseudoabsences)))
+    x = np.vstack((x, pseudoabsences))
+    found = np.concatenate((np.ones(len(weights)), np.zeros(n_pseudoabsences)))
     weights = np.hstack((weights, np.ones(n_pseudoabsences)*pseudoabsence_weight))
 
     if fname in os.listdir('anopheles-caches'):
-        pass
+        data = csv2rec(os.path.join('anopheles-caches',fname))
+        nancheck = np.array([np.any(np.isnan(row.tolist())) for row in data])
+        weights = weights[np.where(True-nancheck)]
     else:
 
         # Makes list of (key, value) tuples
@@ -127,9 +133,10 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
             raise ValueError, 'All environmental layer evaluations contained only single values.'
         
         data = data[np.where(True-nancheck)]
-        rec2csv(data, os.path.join('anopheles-caches',fname))
+        weights = weights[np.where(True-nancheck)]
+        rec2csv(data, os.path.join('anopheles-caches',fname)) 
 
-    return fname, pseudoabsences, x, eo
+    return fname, pseudoabsences, x, eo, weights
 
 def maybe_array(a):
     try:
@@ -176,7 +183,7 @@ def unpack_brt_trees(brt_results, layer_names, glob_name, glob_channels):
                 
     return nice_tree_dict
 
-def brt(fname, species_name, gbm_opts):
+def brt(fname, species_name, gbm_opts, weights):
     """
     Takes the name of a CSV file containing a data frame and a dict
     of options for gbm.step, runs gbm.step, and returns the results.
@@ -186,7 +193,8 @@ def brt(fname, species_name, gbm_opts):
     r.source(os.path.join(anopheles_brt.__path__[0],'brt.functions.R'))
     
     heads = file(os.path.join('anopheles-caches',fname)).readline().split(',')
-    base_argstr = 'data=read.csv("anopheles-caches/%s"), gbm.x=2:%i, gbm.y=1, family="bernoulli", silent=TRUE'%(fname, len(heads))
+    weight_str = str(weights.tolist()).replace('[','c(').replace(']',')')
+    base_argstr = 'data=read.csv("anopheles-caches/%s"), gbm.x=2:%i, gbm.y=1, family="bernoulli", site.weights=%s, silent=TRUE'%(fname, len(heads), weight_str)
     opt_argstr = ', '.join([base_argstr] + map(lambda t: '%s=%s'%t, gbm_opts.iteritems()))
 
     varname = sanitize_species_name(species_name)
