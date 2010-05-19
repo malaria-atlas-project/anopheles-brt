@@ -13,6 +13,7 @@ matplotlib.use('pdf')
 import multiprocessing
 from pylab import rec2csv, csv2rec
 import geojson
+import shapely
 
 
 
@@ -30,15 +31,25 @@ def df_to_ra(d):
     n = np.array(d.colnames)
     return np.rec.fromarrays(a, names=','.join(n))
 
+def accum_polygon(cur, next, width):
+    return cur.union(next.buffer(width))
+    
+def lomem_buffer(p, width):
+    if isinstance(p, shapely.geometry.multipolygon.MultiPolygon):
+        init = p.geoms[0].buffer(width)
+        return reduce(lambda cur, next, width=width: accum_polygon(cur, next, width), [p.geoms[k] for k in range(1,len(p.geoms))], init)
+    else:
+        return p.buffer(width)
+
 def get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names, glob_name, eo_expand=0):
     if eo_expand:
-        eo = eo.buffer(eo_expand)
+        eo = lomem_buffer(eo, eo_expand)
     fname = hashlib.sha1(geojson.dumps(eo)+'_'+str(buffer_width)+'_'+str(n_pseudoabsences)).hexdigest()+'.npy'
     if fname in os.listdir('anopheles-caches'):
         pseudoabsences = np.load(os.path.join('anopheles-caches', fname))
     else:
         if buffer_width >= 0:
-            buff = eo.buffer(buffer_width)
+            buff = lomem_buffer(eo, buffer_width)
             diff_buffer = buff.difference(eo)
         elif buffer_width == -1:
             diff_buffer = eo
@@ -98,7 +109,8 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
     fname = hashlib.sha1(str(x)+found.tostring()+\
             glob_name+'channel'.join([str(i) for i in glob_channels])+\
             'layer'.join(layer_names)).hexdigest()+'.csv'
-            
+    
+        
     pseudoabsences, eo = get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names, glob_name, eo_expand)      
     
 
@@ -111,7 +123,7 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
         nancheck = np.array([np.any(np.isnan(row.tolist())) for row in data])
         weights = weights[np.where(True-nancheck)]
     else:
-
+        
         # Makes list of (key, value) tuples
         env_layers = map(lambda ln: extract_environment(ln, x, lock=dblock), layer_names)\
                 + map(lambda ch: (os.path.basename(glob_name)+'_'+str(ch), extract_environment(glob_name,x,\
