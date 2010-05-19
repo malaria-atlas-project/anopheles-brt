@@ -19,6 +19,7 @@ function (data,                             # the input dataframe
   tolerance = 0.001,                        # tolerance value to use - if method == fixed is absolute, 
                                             # if auto is multiplier * total mean deviance
   keep.data = FALSE,                        # keep raw data in final model
+  result.dir = '.',                         # where to put the plots, if requested
   plot.main = TRUE,                         # plot hold-out deviance curve
   plot.folds = FALSE,                       # plot the individual folds as well
   verbose = TRUE,                           # control amount of screen reporting
@@ -352,6 +353,8 @@ function (data,                             # the input dataframe
 # plot out the resulting curve of holdout deviance 
 
   if (plot.main) {
+    
+    pdf(paste(result.dir,'/','deviance-plot.pdf',sep=''))
 
     y.min <- min(cv.loss.values - cv.loss.ses)  #je added multiplier 10/8/05
     y.max <- max(cv.loss.values + cv.loss.ses)  #je added multiplier 10/8/05 }
@@ -367,6 +370,8 @@ function (data,                             # the input dataframe
       lines(trees.fitted, cv.loss.values + cv.loss.ses, lty=2)  
       lines(trees.fitted, cv.loss.values - cv.loss.ses, lty=2)  
 
+      
+
       if (plot.folds) {
         for (i in 1:n.folds) {
           lines(trees.fitted, cv.loss.matrix[i,],lty = 3)
@@ -381,6 +386,7 @@ function (data,                             # the input dataframe
   if(plot.main) {
     abline(v = target.trees, col=3)
     title(paste(sp.name,", d - ",tree.complexity,", lr - ",learning.rate, sep=""))
+    dev.off()
   }
 
 # estimate the cv deviance and test statistics

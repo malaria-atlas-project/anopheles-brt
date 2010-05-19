@@ -66,6 +66,8 @@ def targ(q,s):
     
             # The actual BRT code
             print 'Process %i sending species %s into Leathwick et al\'s BRT code.'%(multiprocessing.current_process().ident,species_name)
+            result_dirname = anopheles_brt.get_result_dir(species_name)
+            brt_opts.update({'result.dir':'"'+result_dirname+'"'})
             brt_res = anopheles_brt.brt(fname, species_name, brt_opts, weights)
     
             if anopheles_brt.np.random.random() < .001:
