@@ -102,7 +102,7 @@ def targ(q,s):
             if o.eo_expand > 0:
                 file(os.path.join(result_dirname,'extended_eo.json'),'w').write(geojson.dumps(eo))
             if n_pseudopresences>0:
-                np.savetxt(os.path.join(result_dirname, 'pseudopresences.csv'), x, delimiter=',')
+                np.savetxt(os.path.join(result_dirname, 'pseudopresences.csv'), x[-n_pseudoabsences-n_pseudopresences: -n_pseudoabsences], delimiter=',')
 
 
             print 'Process %i has finished species %s.'%(multiprocessing.current_process().ident,species_name)
