@@ -256,16 +256,16 @@ def brt_doublecheck(fname, brt_evaluator, brt_results):
 
     print np.abs(out-ures).max()
 
-def get_result_dir(species_name):
+def get_result_dir(config_filename):
     "Utility"
-    result_dirname = ('%s-results'%sanitize_species_name(species_name))
+    result_dirname = ('%s-results'%sanitize_species_name(os.path.splitext(config_filename)[0]))
     try: 
         os.mkdir(result_dirname)
     except OSError:
         pass
     return result_dirname
 
-def write_brt_results(brt_results, species_name, result_names):
+def write_brt_results(brt_results, species_name, result_names, config_filename):
     """
     Writes the actual R gbm.object containing the BRT results out to
     a results directory, and also some requested elements of it as
@@ -273,7 +273,7 @@ def write_brt_results(brt_results, species_name, result_names):
     """
     from rpy2.robjects import r
 
-    result_dirname = get_result_dir(species_name)
+    result_dirname = get_result_dir(config_filename)
     varname = sanitize_species_name(species_name)
     r('save(%s, file="%s")'%(varname,os.path.join(result_dirname, 'gbm.object.r')))
     
@@ -284,7 +284,7 @@ def subset_raster(r, llclati, llcloni, urclati, urcloni):
     r_ = map_utils.grid_convert(r,'y-x+','x+y+')
     return map_utils.grid_convert(r_[llcloni:urcloni,llclati:urclati],'x+y+','y-x+').astype('float32')
     
-def trees_to_diagnostics(brt_evaluator, fname, species_name, n_pseudopresences, n_pseudoabsences):
+def trees_to_diagnostics(brt_evaluator, fname, species_name, n_pseudopresences, n_pseudoabsences, config_filename):
     """
     Takes the BRT evaluator and sees how well it does at predicting the training dataset.
     """
@@ -298,7 +298,7 @@ def trees_to_diagnostics(brt_evaluator, fname, species_name, n_pseudopresences, 
 
     print 'Species %s: fraction %f correctly classified.'%(species_name, ((probs>.5)*found+(probs<.5)*(True-found)).sum()/float(len(probs)))
 
-    result_dirname = get_result_dir(species_name)
+    result_dirname = get_result_dir(config_filename)
     
     resdict = {}
     for f in simple_assessments:
@@ -324,14 +324,14 @@ def trees_to_diagnostics(brt_evaluator, fname, species_name, n_pseudopresences, 
     rec2csv(r,os.path.join(result_dirname,'roc.csv'))
 
 
-def trees_to_map(brt_evaluator, species_name, layer_names, glob_name, glob_channels, bbox, memlim = 4e9):
+def trees_to_map(brt_evaluator, species_name, layer_names, glob_name, glob_channels, bbox, config_filename, memlim = 4e9):
     """
     Makes maps and writes them out in flt format.
     """
     all_names = get_names(layer_names, glob_name, glob_channels)
     short_layer_names = all_names[:len(layer_names)]
     short_glob_names = all_names[len(layer_names):]
-    result_dirname = get_result_dir(species_name)
+    result_dirname = get_result_dir(config_filename)
     
     llclat,llclon,urclat,urclon = bbox
     
