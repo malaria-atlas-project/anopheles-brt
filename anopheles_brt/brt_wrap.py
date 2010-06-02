@@ -284,7 +284,7 @@ def subset_raster(r, llclati, llcloni, urclati, urcloni):
     r_ = map_utils.grid_convert(r,'y-x+','x+y+')
     return map_utils.grid_convert(r_[llcloni:urcloni,llclati:urclati],'x+y+','y-x+').astype('float32')
     
-def trees_to_diagnostics(brt_evaluator, fname, species_name):
+def trees_to_diagnostics(brt_evaluator, fname, species_name, n_pseudopresences, n_pseudoabsences):
     """
     Takes the BRT evaluator and sees how well it does at predicting the training dataset.
     """
@@ -309,8 +309,9 @@ def trees_to_diagnostics(brt_evaluator, fname, species_name):
     resdict['AUC'] = AUC
     
     fout=file(os.path.join(result_dirname,'simple-diagnostics.txt'),'w')
-    fout.write('presences: %i\n'%found.sum())
-    fout.write('absences: %i\n'%(True-found).sum())
+    fout.write('presences: %i\n'%(found.sum()-n_pseudopresences))
+    fout.write('pseudopresences: %i\n'%n_pseudopresences)
+    fout.write('pseudoabsences: %i\n'%n_pseudoabsences)
     for k in resdict.iteritems():
         fout.write('%s: %s\n'%k)
     

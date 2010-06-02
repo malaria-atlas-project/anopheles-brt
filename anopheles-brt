@@ -82,7 +82,7 @@ def targ(q,s):
             be = anopheles_brt.brt_evaluator(nice_tree_dict, intercept)
         
             print 'Process %i running intra-sample diagnostics on species %s'%(multiprocessing.current_process().ident,species_name)
-            anopheles_brt.trees_to_diagnostics(be, fname, species_name)
+            anopheles_brt.trees_to_diagnostics(be, fname, species_name, n_pseudopresences, n_pseudoabsences)
 
             # Make the maps and write them to disk.
             memlock.acquire()
