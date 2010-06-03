@@ -84,12 +84,12 @@ def targ(q,s):
             print 'Process %i running intra-sample diagnostics on species %s'%(multiprocessing.current_process().ident,species_name)
             anopheles_brt.trees_to_diagnostics(be, fname, species_name, n_pseudopresences, n_pseudoabsences, config_filename)
 
-            Make the maps and write them to disk.
+            # Make the maps and write them to disk.
             memlock.acquire()
             print 'Process %i generating a predictive map for species %s.'%(multiprocessing.current_process().ident,species_name)
             try:
                 lon,lat,data = anopheles_brt.trees_to_map(be, species_name, layer_names, glob_name, glob_channels, (llclat, llclon, urclat, urclon), config_filename)
-                result_dirname = anopheles_brt.get_result_dir(species_name)
+                result_dirname = anopheles_brt.get_result_dir(config_filename)
                 map_utils.export_raster(lon,lat,data,'probability-map',result_dirname,'flt')
                 del data
                 memlock.release()            
