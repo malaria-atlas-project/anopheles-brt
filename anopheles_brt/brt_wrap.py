@@ -176,7 +176,7 @@ def unpack_brt_trees(brt_results, layer_names, glob_name, glob_channels):
                 
     return nice_tree_dict
 
-def brt(fname, species_name, gbm_opts):
+def brt(fname, species_name, gbm_opts, weights):
     """
     Takes the name of a CSV file containing a data frame and a dict
     of options for gbm.step, runs gbm.step, and returns the results.
@@ -186,7 +186,8 @@ def brt(fname, species_name, gbm_opts):
     r.source(os.path.join(anopheles_brt.__path__[0],'brt.functions.R'))
     
     heads = file(os.path.join('anopheles-caches',fname)).readline().split(',')
-    base_argstr = 'data=read.csv("anopheles-caches/%s"), gbm.x=2:%i, gbm.y=1, family="bernoulli", silent=TRUE'%(fname, len(heads))
+    weight_str = str(weights).replace(' ',', ').replace('[','c(').replace(']',')')
+    base_argstr = 'data=read.csv("anopheles-caches/%s"), gbm.x=2:%i, gbm.y=1, family="bernoulli", site.weights=%s, silent=TRUE'%(fname, len(heads), weight_str)
     opt_argstr = ', '.join([base_argstr] + map(lambda t: '%s=%s'%t, gbm_opts.iteritems()))
 
     varname = sanitize_species_name(species_name)
