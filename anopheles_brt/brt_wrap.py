@@ -105,18 +105,16 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
         x = np.vstack([x,get_pseudoabsences(eo, -1, n_pseudopresences, layer_names, glob_name, eo_expand)[0]])
         found = np.hstack([found,np.ones(n_pseudopresences)])
         weights = np.hstack([weights, np.ones(n_pseudopresences)*pseudopresence_weight])
-        
-    fname = hashlib.sha1(str(x)+found.tostring()+\
-            glob_name+'channel'.join([str(i) for i in glob_channels])+\
-            'layer'.join(layer_names)).hexdigest()+'.csv'
     
-        
     pseudoabsences, eo = get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names, glob_name, eo_expand)      
     
-
     x = np.vstack((x, pseudoabsences))
     found = np.concatenate((np.ones(len(weights)), np.zeros(n_pseudoabsences)))
     weights = np.hstack((weights, np.ones(n_pseudoabsences)*pseudoabsence_weight))
+    
+    fname = hashlib.sha1(str(x)+found.tostring()+\
+            glob_name+'channel'.join([str(i) for i in glob_channels])+\
+            'layer'.join(layer_names)).hexdigest()+'.csv'
 
     if fname in os.listdir('anopheles-caches'):
         data = csv2rec(os.path.join('anopheles-caches',fname))
