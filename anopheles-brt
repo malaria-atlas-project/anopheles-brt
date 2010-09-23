@@ -19,7 +19,7 @@ import geojson
 
 p = OptionParser('usage: %prog species1 species2 [options]')
 p.add_option('-m','--main',help='Whether to serialize in main process. Defaults to 0.',dest='serialize',type='int')
-p.add_option('-e','--eo-expand',help='How much to artificially expand the EO region, in decimal degrees. Defaults to 0.', dest='eo_expand', type='float')
+p.add_option('-e','--eo-expand',help='How much to artificially expand the EO region, in km. Defaults to 0.', dest='eo_expand', type='float')
 
 
 p.set_defaults(serialize=0)
@@ -56,7 +56,7 @@ def targ(q,s):
             dblock.acquire()
             print 'Process %i querying database, extracting environmental layers etc. for species %s.'%(multiprocessing.current_process().ident,species_name)
             try:
-                fname, pseudoabsences, x, eo = anopheles_brt.sites_and_env(s, species_tup, layer_names, glob_name, glob_channels, buffer_width/111.32, n_pseudoabsences, dblock=dblock, n_pseudopresences=n_pseudopresences, eo_expand=o.eo_expand/111.32, real_presences=use_real_presences)
+                fname, pseudoabsences, x, eo, weights = anopheles_brt.sites_and_env(s, species_tup, layer_names, glob_name, glob_channels, buffer_width/111.32, n_pseudoabsences, dblock=dblock, n_pseudopresences=n_pseudopresences, eo_expand=o.eo_expand/111.32, pseudoabsence_weight=pseudoabsence_weight, pseudopresence_weight=pseudopresence_weight, real_presences=use_real_presences)
                 dblock.release()
                 print 'Done'
             except:
@@ -66,13 +66,15 @@ def targ(q,s):
     
             # The actual BRT code
             print 'Process %i sending species %s into Leathwick et al\'s BRT code.'%(multiprocessing.current_process().ident,species_name)
-            brt_res = anopheles_brt.brt(fname, species_name, brt_opts)
+            result_dirname = anopheles_brt.get_result_dir(config_filename)
+            brt_opts.update({'result.dir':'"'+result_dirname+'"'})
+            brt_res = anopheles_brt.brt(fname, species_name, brt_opts, weights)
     
             if anopheles_brt.np.random.random() < .001:
                 print 'Hi, it\'s process %i. I just wanted to say hello.'%(multiprocessing.current_process().ident)
     
             # Write the requested results out
-            anopheles_brt.write_brt_results(brt_res, species_name, saved_results)
+            anopheles_brt.write_brt_results(brt_res, species_name, saved_results, config_filename)
     
             # Make an evaluator object
             nice_tree_dict = anopheles_brt.unpack_brt_trees(brt_res, layer_names, glob_name, glob_channels)
@@ -80,14 +82,14 @@ def targ(q,s):
             be = anopheles_brt.brt_evaluator(nice_tree_dict, intercept)
         
             print 'Process %i running intra-sample diagnostics on species %s'%(multiprocessing.current_process().ident,species_name)
-            anopheles_brt.trees_to_diagnostics(be, fname, species_name)
+            anopheles_brt.trees_to_diagnostics(be, fname, species_name, n_pseudopresences, n_pseudoabsences, config_filename)
 
             # Make the maps and write them to disk.
             memlock.acquire()
             print 'Process %i generating a predictive map for species %s.'%(multiprocessing.current_process().ident,species_name)
             try:
-                lon,lat,data = anopheles_brt.trees_to_map(be, species_name, layer_names, glob_name, glob_channels, (llclat, llclon, urclat, urclon))
-                result_dirname = anopheles_brt.get_result_dir(species_name)
+                lon,lat,data = anopheles_brt.trees_to_map(be, species_name, layer_names, glob_name, glob_channels, (llclat, llclon, urclat, urclon), config_filename)
+                result_dirname = anopheles_brt.get_result_dir(config_filename)
                 map_utils.export_raster(lon,lat,data,'probability-map',result_dirname,'flt')
                 del data
                 memlock.release()            
@@ -97,12 +99,13 @@ def targ(q,s):
                 cls, inst, tb = sys.exc_info()
                 raise cls, inst, tb
 
-            np.savetxt(os.path.join(result_dirname, 'pseudoabsences.csv'), pseudoabsences, delimiter=',')
+            if n_pseudoabsences>0:
+                print 'Hi!'
+                np.savetxt(os.path.join(result_dirname, 'pseudoabsences.csv'), pseudoabsences, delimiter=',')
             if o.eo_expand > 0:
                 file(os.path.join(result_dirname,'extended_eo.json'),'w').write(geojson.dumps(eo))
-            if o.simulate_data:
-                np.savetxt(os.path.join(result_dirname, 'simulated-presences.csv'), x, delimiter=',')
-
+            if n_pseudopresences>0:
+                np.savetxt(os.path.join(result_dirname, 'pseudopresences.csv'), x[-n_pseudoabsences-n_pseudopresences: -n_pseudoabsences], delimiter=',')
 
             print 'Process %i has finished species %s.'%(multiprocessing.current_process().ident,species_name)
         except:

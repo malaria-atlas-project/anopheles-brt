@@ -13,6 +13,9 @@ matplotlib.use('pdf')
 import multiprocessing
 from pylab import rec2csv, csv2rec
 import geojson
+import shapely
+
+
 
 def get_names(layer_names, glob_name, glob_channels):
     "Utility"
@@ -28,15 +31,25 @@ def df_to_ra(d):
     n = np.array(d.colnames)
     return np.rec.fromarrays(a, names=','.join(n))
 
+def accum_polygon(cur, next, width):
+    return cur.union(next.buffer(width))
+    
+def lomem_buffer(p, width):
+    if isinstance(p, shapely.geometry.multipolygon.MultiPolygon):
+        init = p.geoms[0].buffer(width)
+        return reduce(lambda cur, next, width=width: accum_polygon(cur, next, width), [p.geoms[k] for k in range(1,len(p.geoms))], init)
+    else:
+        return p.buffer(width)
+
 def get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names, glob_name, eo_expand=0):
     if eo_expand:
-        eo = eo.buffer(eo_expand)
+        eo = lomem_buffer(eo, eo_expand)
     fname = hashlib.sha1(geojson.dumps(eo)+'_'+str(buffer_width)+'_'+str(n_pseudoabsences)).hexdigest()+'.npy'
     if fname in os.listdir('anopheles-caches'):
         pseudoabsences = np.load(os.path.join('anopheles-caches', fname))
     else:
         if buffer_width >= 0:
-            buff = eo.buffer(buffer_width)
+            buff = lomem_buffer(eo, buffer_width)
             diff_buffer = buff.difference(eo)
         elif buffer_width == -1:
             diff_buffer = eo
@@ -77,35 +90,38 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
     """
 
     breaks, x, found, zero, others_found, multipoints, eo = sites_as_ndarray(session, species)
+    x_found = x[np.where(found)]
+    x = x_found
+    
     
     if not real_presences:
         x = np.zeros((0,2))
         found = np.zeros(0)
     
-    weights = found
+    weights = np.ones(x.shape[0])
     
     if n_pseudopresences>0:
         print 'Process %i simulating presences for species %s.'%(multiprocessing.current_process().ident,species[1])
-        x = np.vstack([x,get_pseudoabsences(eo, -1, n_pseudopresences, layer_names, glob_name, e_expand)[eo]])
+        x = np.vstack([x,get_pseudoabsences(eo, -1, n_pseudopresences, layer_names, glob_name, eo_expand)[0]])
         found = np.hstack([found,np.ones(n_pseudopresences)])
-        weights = np.hstack([weights, np.ones(n_pseudopresences)*pseudoabsence_weight])
-        
+        weights = np.hstack([weights, np.ones(n_pseudopresences)*pseudopresence_weight])
+    
+    pseudoabsences, eo = get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names, glob_name, eo_expand)      
+    
+    x = np.vstack((x, pseudoabsences))
+    found = np.concatenate((np.ones(len(weights)), np.zeros(n_pseudoabsences)))
+    weights = np.hstack((weights, np.ones(n_pseudoabsences)*pseudoabsence_weight))
+    
     fname = hashlib.sha1(str(x)+found.tostring()+\
             glob_name+'channel'.join([str(i) for i in glob_channels])+\
             'layer'.join(layer_names)).hexdigest()+'.csv'
-            
-    pseudoabsences, eo = get_pseudoabsences(eo, buffer_width, n_pseudoabsences, layer_names, glob_name, buffer_expand)      
-    
-    x_found = x[np.where(found)]
-
-    x = np.vstack((x_found, pseudoabsences))
-    found = np.concatenate((np.ones(len(x_found)), np.zeros(n_pseudoabsences)))
-    weights = np.hstack((weights, np.ones(n_pseudoabsences)*pseudoabsence_weight))
 
     if fname in os.listdir('anopheles-caches'):
-        pass
+        data = csv2rec(os.path.join('anopheles-caches',fname))
+        nancheck = np.array([np.any(np.isnan(row.tolist())) for row in data])
+        weights = weights[np.where(True-nancheck)]
     else:
-
+        
         # Makes list of (key, value) tuples
         env_layers = map(lambda ln: extract_environment(ln, x, lock=dblock), layer_names)\
                 + map(lambda ch: (os.path.basename(glob_name)+'_'+str(ch), extract_environment(glob_name,x,\
@@ -127,9 +143,10 @@ def sites_and_env(session, species, layer_names, glob_name, glob_channels, buffe
             raise ValueError, 'All environmental layer evaluations contained only single values.'
         
         data = data[np.where(True-nancheck)]
-        rec2csv(data, os.path.join('anopheles-caches',fname))
+        weights = weights[np.where(True-nancheck)]
+        rec2csv(data, os.path.join('anopheles-caches',fname)) 
 
-    return fname, pseudoabsences, x, eo
+    return fname, pseudoabsences, x, eo, weights
 
 def maybe_array(a):
     try:
@@ -186,7 +203,7 @@ def brt(fname, species_name, gbm_opts, weights):
     r.source(os.path.join(anopheles_brt.__path__[0],'brt.functions.R'))
     
     heads = file(os.path.join('anopheles-caches',fname)).readline().split(',')
-    weight_str = str(weights).replace(' ',', ').replace('[','c(').replace(']',')')
+    weight_str = str(weights.tolist()).replace('[','c(').replace(']',')')
     base_argstr = 'data=read.csv("anopheles-caches/%s"), gbm.x=2:%i, gbm.y=1, family="bernoulli", site.weights=%s, silent=TRUE'%(fname, len(heads), weight_str)
     opt_argstr = ', '.join([base_argstr] + map(lambda t: '%s=%s'%t, gbm_opts.iteritems()))
 
@@ -237,16 +254,16 @@ def brt_doublecheck(fname, brt_evaluator, brt_results):
 
     print np.abs(out-ures).max()
 
-def get_result_dir(species_name):
+def get_result_dir(config_filename):
     "Utility"
-    result_dirname = ('%s-results'%sanitize_species_name(species_name))
+    result_dirname = ('%s-results'%sanitize_species_name(os.path.splitext(config_filename)[0]))
     try: 
         os.mkdir(result_dirname)
     except OSError:
         pass
     return result_dirname
 
-def write_brt_results(brt_results, species_name, result_names):
+def write_brt_results(brt_results, species_name, result_names, config_filename):
     """
     Writes the actual R gbm.object containing the BRT results out to
     a results directory, and also some requested elements of it as
@@ -254,7 +271,7 @@ def write_brt_results(brt_results, species_name, result_names):
     """
     from rpy2.robjects import r
 
-    result_dirname = get_result_dir(species_name)
+    result_dirname = get_result_dir(config_filename)
     varname = sanitize_species_name(species_name)
     r('save(%s, file="%s")'%(varname,os.path.join(result_dirname, 'gbm.object.r')))
     
@@ -265,7 +282,7 @@ def subset_raster(r, llclati, llcloni, urclati, urcloni):
     r_ = map_utils.grid_convert(r,'y-x+','x+y+')
     return map_utils.grid_convert(r_[llcloni:urcloni,llclati:urclati],'x+y+','y-x+').astype('float32')
     
-def trees_to_diagnostics(brt_evaluator, fname, species_name):
+def trees_to_diagnostics(brt_evaluator, fname, species_name, n_pseudopresences, n_pseudoabsences, config_filename):
     """
     Takes the BRT evaluator and sees how well it does at predicting the training dataset.
     """
@@ -279,7 +296,7 @@ def trees_to_diagnostics(brt_evaluator, fname, species_name):
 
     print 'Species %s: fraction %f correctly classified.'%(species_name, ((probs>.5)*found+(probs<.5)*(True-found)).sum()/float(len(probs)))
 
-    result_dirname = get_result_dir(species_name)
+    result_dirname = get_result_dir(config_filename)
     
     resdict = {}
     for f in simple_assessments:
@@ -290,8 +307,9 @@ def trees_to_diagnostics(brt_evaluator, fname, species_name):
     resdict['AUC'] = AUC
     
     fout=file(os.path.join(result_dirname,'simple-diagnostics.txt'),'w')
-    fout.write('presences: %i\n'%found.sum())
-    fout.write('absences: %i\n'%(True-found).sum())
+    fout.write('presences: %i\n'%(found.sum()-n_pseudopresences))
+    fout.write('pseudopresences: %i\n'%n_pseudopresences)
+    fout.write('pseudoabsences: %i\n'%n_pseudoabsences)
     for k in resdict.iteritems():
         fout.write('%s: %s\n'%k)
     
@@ -304,14 +322,14 @@ def trees_to_diagnostics(brt_evaluator, fname, species_name):
     rec2csv(r,os.path.join(result_dirname,'roc.csv'))
 
 
-def trees_to_map(brt_evaluator, species_name, layer_names, glob_name, glob_channels, bbox, memlim = 4e9):
+def trees_to_map(brt_evaluator, species_name, layer_names, glob_name, glob_channels, bbox, config_filename, memlim = 4e9):
     """
     Makes maps and writes them out in flt format.
     """
     all_names = get_names(layer_names, glob_name, glob_channels)
     short_layer_names = all_names[:len(layer_names)]
     short_glob_names = all_names[len(layer_names):]
-    result_dirname = get_result_dir(species_name)
+    result_dirname = get_result_dir(config_filename)
     
     llclat,llclon,urclat,urclon = bbox
     

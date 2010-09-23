@@ -19,6 +19,7 @@ function (data,                             # the input dataframe
   tolerance = 0.001,                        # tolerance value to use - if method == fixed is absolute, 
                                             # if auto is multiplier * total mean deviance
   keep.data = FALSE,                        # keep raw data in final model
+  result.dir = '.',                         # where to put the plots, if requested
   plot.main = TRUE,                         # plot hold-out deviance curve
   plot.folds = FALSE,                       # plot the individual folds as well
   verbose = TRUE,                           # control amount of screen reporting
@@ -352,6 +353,8 @@ function (data,                             # the input dataframe
 # plot out the resulting curve of holdout deviance 
 
   if (plot.main) {
+    
+    pdf(paste(result.dir,'/','deviance-plot.pdf',sep=''))
 
     y.min <- min(cv.loss.values - cv.loss.ses)  #je added multiplier 10/8/05
     y.max <- max(cv.loss.values + cv.loss.ses)  #je added multiplier 10/8/05 }
@@ -367,6 +370,8 @@ function (data,                             # the input dataframe
       lines(trees.fitted, cv.loss.values + cv.loss.ses, lty=2)  
       lines(trees.fitted, cv.loss.values - cv.loss.ses, lty=2)  
 
+      
+
       if (plot.folds) {
         for (i in 1:n.folds) {
           lines(trees.fitted, cv.loss.matrix[i,],lty = 3)
@@ -381,6 +386,7 @@ function (data,                             # the input dataframe
   if(plot.main) {
     abline(v = target.trees, col=3)
     title(paste(sp.name,", d - ",tree.complexity,", lr - ",learning.rate, sep=""))
+    dev.off()
   }
 
 # estimate the cv deviance and test statistics
@@ -389,6 +395,7 @@ function (data,                             # the input dataframe
   cv.deviance.stats <- rep(0, n.folds)
   cv.roc.stats <- rep(0, n.folds)
   cv.cor.stats <- rep(0, n.folds)
+  cv.kappa.stats <- rep(0, n.folds)
   cv.calibration.stats <- matrix(0, ncol=5, nrow = n.folds)
   if (family == "bernoulli") threshold.stats <- rep(0, n.folds)
 
@@ -418,7 +425,17 @@ function (data,                             # the input dataframe
     weight.preds <- site.weights[pred.mask]
 
     cv.deviance.stats[i] <- calc.deviance(y_i, u_i, weight.preds, family = family)
-
+    
+    # pa = np.sum(a)/len(a)
+    # pp = np.sum(p)/len(p)
+    # pagree = pa*pp + (1-pa)*(1-pp)
+    # return (np.sum(p==a)/float(len(a))-pagree)/float(1-pagree)
+    
+    p.y = mean(y_i)
+    p.u = mean((u_i>.5))
+    p.agree = p.y*p.u + (1-p.y)*(1-p.u)
+    
+    cv.kappa.stats[i] <- (mean((y_i==(u_i>.5)))-p.agree)/(1-p.agree)
     cv.cor.stats[i] <- cor(y_i,u_i)
 
     if (family == "bernoulli") {
@@ -441,6 +458,9 @@ function (data,                             # the input dataframe
 
   cv.cor <- mean(cv.cor.stats, na.rm = TRUE)
   cv.cor.se <- sqrt(var(cv.cor.stats, use = "complete.obs")) / sqrt(n.folds)
+  
+  cv.kappa <- mean(cv.kappa.stats, na.rm = TRUE)
+  cv.kappa.se <- sqrt(var(cv.kappa.stats)) / sqrt(n.folds)
 
   cv.roc <- 0.0
   cv.roc.se <- 0.0 
@@ -563,7 +583,8 @@ function (data,                             # the input dataframe
   cv.stats <- list(deviance.mean = cv.dev, deviance.se = cv.dev.se, 
     correlation.mean = cv.cor, correlation.se = cv.cor.se,
     discrimination.mean = cv.roc, discrimination.se = cv.roc.se,
-    calibration.mean = cv.calibration, calibration.se = cv.calibration.se)
+    calibration.mean = cv.calibration, calibration.se = cv.calibration.se,
+    kappa.mean = cv.kappa, kappa.se = cv.kappa.se)
 
   if (family == "bernoulli") {
     cv.stats$cv.threshold <- cv.threshold
