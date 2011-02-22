@@ -6,10 +6,18 @@ user = sys.argv[2]
 
 def listdir_noext(l):
     return map(lambda x: os.path.splitext(x)[0], os.listdir(l))
+    
+def multimkdir(dir):
+    if os.exists(dir):
+        return
+    head, tail = os.path.split(dir)
+    if not os.exists(head):
+        multimkdir(head)
+    os.mkdir(tail)
 
 glob_path, glob_name = os.path.split(dmod.glob_name)
 glob_path = os.path.join('rasters',glob_path)
-os.system('mkdir %s'%glob_path)
+mutlimkdir(glob_path)
 
 
 if glob_name not in listdir_noext(glob_path):
@@ -20,7 +28,7 @@ if glob_name not in listdir_noext(glob_path):
 for l in dmod.layer_names:
     l_path, l_name = os.path.split(l)
     l_path = os.path.join('rasters',l_path)
-    os.system('mkdir %s'%l_path)
+    multimkdir(l_path)
     if l_name not in listdir_noext(l_path):
         s = os.system('scp %s@map1.zoo.ox.ac.uk:%s* %s'%(user,os.path.join('/srv/data/mastergrids/cleandata',l),l_path))
         if s != 0:
