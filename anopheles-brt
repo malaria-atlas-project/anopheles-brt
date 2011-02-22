@@ -51,6 +51,7 @@ def targ(q,s):
 
         # imp.load_module(name, file, pathname, description)
         m = imp.load_module(os.path.splitext(config_filename)[0], file(config_filename), '.', suff)
+        print 'Process %i uploading rasters for species %s.'%(multiprocessing.current_process().ident,m.species_name)
         upload_rasters(m, o.map1_user)
 
         layer_names = map(lambda x, p=o.raster_path: os.path.join(p, x), m.layer_names)
@@ -78,9 +79,6 @@ def targ(q,s):
             result_dirname = anopheles_brt.get_result_dir(config_filename)
             m.brt_opts.update({'result.dir':'"'+result_dirname+'"'})
             brt_res = anopheles_brt.brt(fname, m.species_name, m.brt_opts, weights)
-    
-            if anopheles_brt.np.random.random() < .001:
-                print 'Hi, it\'s process %i. I just wanted to say hello.'%(multiprocessing.current_process().ident)
     
             # Write the requested results out
             anopheles_brt.write_brt_results(brt_res, m.species_name, m.saved_results, config_filename)
