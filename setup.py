@@ -10,13 +10,9 @@ config.add_extension(name='treetran', sources=['anopheles_brt/treetran.f'])
 config.packages = ["anopheles_brt"]
 if __name__ == '__main__':
     from numpy.distutils.core import setup
-    setup(**(config.todict()))
-    
-    if sys.platform=='darwin':
-        bin='/opt/local/bin'
-    else:
-        bin = '/usr/bin'
-    #bin = '/Users/marianne/bin'
-        
-    file('/Users/marianne/bin/anopheles-brt','w').write('#!%s/python\n\n'%bin+file('anopheles-brt').read())
-    os.system('chmod ugo+x /Users/marianne/bin/anopheles-brt')
+    setup(**(config.todict()))    
+
+    bin = '~/bin'
+    executable = os.path.join(bin,'anopheles-brt')    
+    file(executable,'w').write('#!python\n\n'+file('anopheles-brt').read())
+    os.system('chmod ugo+x %s'%executable)
