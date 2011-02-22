@@ -45,7 +45,7 @@ def targ(q,s):
             break
 
         # imp.load_module(name, file, pathname, description)
-        m = imp.load_module(os.path.splitext(config_filename)[0], file(config_filename), '.', suff))
+        m = imp.load_module(os.path.splitext(config_filename)[0], file(config_filename), '.', suff)
 
         layer_names = map(lambda x, p=o.raster_path: os.path.join(p, x), m.layer_names)
         glob_name = os.path.join(o.raster_path, m.glob_name)
