@@ -45,26 +45,21 @@ def targ(q,s):
             break
 
         # imp.load_module(name, file, pathname, description)
-        m = imp.load_module(os.path.splitext(config_filename)[0], file(config_filename), '.', suff)
+        m = imp.load_module(os.path.splitext(config_filename)[0], file(config_filename), '.', suff))
 
-        from IPython.Debugger import Pdb
-        Pdb(color_scheme='Linux').set_trace()   
-        # from m import layer_names, glob_name, glob_channels, buffer_size, brt_args, bbox, species_name
-        # exec('from %s import layer_names, glob_name, glob_channels, buffer_width, n_pseudoabsences, n_pseudopresences, pseudopresence_weight, pseudoabsence_weight, use_real_presences, brt_opts, llclat, llclon, urclat, urclon, species_name, saved_results'%os.path.splitext(config_filename)[0])
-
-        layer_names = map(lambda x, p=o.raster_path: os.path.join(p, x), layer_names)
-        glob_name = os.path.join(o.raster_path, glob_name)
+        layer_names = map(lambda x, p=o.raster_path: os.path.join(p, x), m.layer_names)
+        glob_name = os.path.join(o.raster_path, m.glob_name)
 
         try:
 
-            print 'Process %i starting species %s.'%(multiprocessing.current_process().ident,species_name)
-            species_tup = (species[species_name], species_name)
+            print 'Process %i starting species %s.'%(multiprocessing.current_process().ident,m.species_name)
+            species_tup = (species[m.species_name], m.species_name)
     
-            # Will call sites_as_ndarray, gen_pseudoabsences and extract_environment.
+            # Will call sites_as_ndarray, gem.n_pseudoabsences and extract_environment.
             dblock.acquire()
-            print 'Process %i querying database, extracting environmental layers etc. for species %s.'%(multiprocessing.current_process().ident,species_name)
+            print 'Process %i querying database, extracting environmental layers etc. for species %s.'%(multiprocessing.current_process().ident,m.species_name)
             try:
-                fname, pseudoabsences, x, eo, weights = anopheles_brt.sites_and_env(s, species_tup, layer_names, glob_name, glob_channels, buffer_width/111.32, n_pseudoabsences, dblock=dblock, n_pseudopresences=n_pseudopresences, eo_expand=o.eo_expand/111.32, pseudoabsence_weight=pseudoabsence_weight, pseudopresence_weight=pseudopresence_weight, real_presences=use_real_presences, raster_path=o.raster_path)
+                fname, pseudoabsences, x, eo, weights = anopheles_brt.sites_and_env(s, species_tup, layer_names, glob_name, m.glob_channels, m.buffer_width/111.32, m.n_pseudoabsences, dblock=dblock, m.n_pseudopresences=m.n_pseudopresences, eo_expand=o.eo_expand/111.32, m.pseudoabsence_weight=m.pseudoabsence_weight, m.pseudopresence_weight=m.pseudopresence_weight, real_presences=m.use_real_presences, raster_path=o.raster_path)
                 dblock.release()
                 print 'Done'
             except:
@@ -73,52 +68,52 @@ def targ(q,s):
                 raise cls, inst, tb
     
             # The actual BRT code
-            print 'Process %i sending species %s into Leathwick et al\'s BRT code.'%(multiprocessing.current_process().ident,species_name)
+            print 'Process %i sending species %s into Leathwick et al\'s BRT code.'%(multiprocessing.current_process().ident,m.species_name)
             result_dirname = anopheles_brt.get_result_dir(config_filename)
-            brt_opts.update({'result.dir':'"'+result_dirname+'"'})
-            brt_res = anopheles_brt.brt(fname, species_name, brt_opts, weights)
+            m.brt_opts.update({'result.dir':'"'+result_dirname+'"'})
+            brt_res = anopheles_brt.brt(fname, m.species_name, m.brt_opts, weights)
     
             if anopheles_brt.np.random.random() < .001:
                 print 'Hi, it\'s process %i. I just wanted to say hello.'%(multiprocessing.current_process().ident)
     
             # Write the requested results out
-            anopheles_brt.write_brt_results(brt_res, species_name, saved_results, config_filename)
+            anopheles_brt.write_brt_results(brt_res, m.species_name, m.saved_results, config_filename)
     
             # Make an evaluator object
-            nice_tree_dict = anopheles_brt.unpack_brt_trees(brt_res, layer_names, glob_name, glob_channels)
+            nice_tree_dict = anopheles_brt.unpack_brt_trees(brt_res, layer_names, glob_name, m.glob_channels)
             intercept = anopheles_brt.unpack_gbm_object(brt_res, 'initF')[0][0]
             be = anopheles_brt.brt_evaluator(nice_tree_dict, intercept)
         
-            print 'Process %i running intra-sample diagnostics on species %s'%(multiprocessing.current_process().ident,species_name)
-            anopheles_brt.trees_to_diagnostics(be, fname, species_name, n_pseudopresences, n_pseudoabsences, config_filename)
+            print 'Process %i running intra-sample diagnostics on species %s'%(multiprocessing.current_process().ident,m.species_name)
+            anopheles_brt.trees_to_diagnostics(be, fname, m.species_name, m.n_pseudopresences, m.n_pseudoabsences, config_filename)
 
             # Make the maps and write them to disk.
             memlock.acquire()
-            print 'Process %i generating a predictive map for species %s.'%(multiprocessing.current_process().ident,species_name)
+            print 'Process %i generating a predictive map for species %s.'%(multiprocessing.current_process().ident,m.species_name)
             try:
-                lon,lat,data = anopheles_brt.trees_to_map(be, species_name, layer_names, glob_name, glob_channels, (llclat, llclon, urclat, urclon), config_filename)
+                lon,lat,data = anopheles_brt.trees_to_map(be, m.species_name, layer_names, glob_name, m.glob_channels, (m.llclat, m.llclon, m.urclat, m.urclon), config_filename)
                 result_dirname = anopheles_brt.get_result_dir(config_filename)
                 map_utils.export_raster(lon,lat,data,'probability-map',result_dirname,'flt')
                 del data
                 memlock.release()            
-                print 'Process %i done generating a predictive map for species %s.'%(multiprocessing.current_process().ident,species_name)
+                print 'Process %i done generating a predictive map for species %s.'%(multiprocessing.current_process().ident,m.species_name)
             except:
                 memlock.release()
                 cls, inst, tb = sys.exc_info()
                 raise cls, inst, tb
 
-            if n_pseudoabsences>0:
+            if m.n_pseudoabsences>0:
                 print 'Hi!'
                 np.savetxt(os.path.join(result_dirname, 'pseudoabsences.csv'), pseudoabsences, delimiter=',')
             if o.eo_expand > 0:
                 file(os.path.join(result_dirname,'extended_eo.json'),'w').write(geojson.dumps(eo))
-            if n_pseudopresences>0:
-                np.savetxt(os.path.join(result_dirname, 'pseudopresences.csv'), x[-n_pseudoabsences-n_pseudopresences: -n_pseudoabsences], delimiter=',')
+            if m.n_pseudopresences>0:
+                np.savetxt(os.path.join(result_dirname, 'pseudopresences.csv'), x[-m.n_pseudoabsences-m.n_pseudopresences: -m.n_pseudoabsences], delimiter=',')
 
-            print 'Process %i has finished species %s.'%(multiprocessing.current_process().ident,species_name)
+            print 'Process %i has finished species %s.'%(multiprocessing.current_process().ident,m.species_name)
         except:
             cls, inst, tb = sys.exc_info()
-            new_error = cls('Did not produce a map for species %s. Original error:\n\n'%(species_name))
+            new_error = cls('Did not produce a map for species %s. Original error:\n\n'%(m.species_name))
             raise cls, inst, tb
     
         if q.empty():
