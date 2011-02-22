@@ -12,7 +12,7 @@ if __name__ == '__main__':
     from numpy.distutils.core import setup
     setup(**(config.todict()))    
 
-    bin = '~/bin'
+    bin = os.path.expanduser('~/bin')
     executable = os.path.join(bin,'anopheles-brt')    
     file(executable,'w').write('#!python\n\n'+file('anopheles-brt').read())
     os.system('chmod ugo+x %s'%executable)
