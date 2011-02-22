@@ -9,6 +9,7 @@ matplotlib.use('pdf')
 import imp
 import anopheles_brt
 from anopheles_brt.anopheles_query import Session
+from anopheles_brt.upload_raster import upload_raster
 import datetime
 import thread
 import map_utils
@@ -21,13 +22,17 @@ p = OptionParser('usage: %prog species1 species2 [options]')
 p.add_option('-m','--main',help='Whether to serialize in main process. Defaults to 0.',dest='serialize',type='int')
 p.add_option('-e','--eo-expand',help='How much to artificially expand the EO region, in km. Defaults to 0.', dest='eo_expand', type='float')
 p.add_option('-p','--raster-path',help='Where the raster files are located', dest='raster_path')
+p.add_option('-u','--map1-user',help='Which user to log into map1 as',dest='map1_user')
 
 
 p.set_defaults(serialize=0)
 p.set_defaults(eo_expand=0)
 p.set_defaults(raster_path='')
+p.set_defaults(map1_user='')
 
 (o, args) = p.parse_args()
+
+os.system('ssh -L 2345:localhost:5432 -fN %s@map1.zoo.ox.ac.uk'%o.map1_user)
 
 suff = imp.get_suffixes()[2]
 
@@ -46,6 +51,7 @@ def targ(q,s):
 
         # imp.load_module(name, file, pathname, description)
         m = imp.load_module(os.path.splitext(config_filename)[0], file(config_filename), '.', suff)
+        upload_rasters(m, o.map1_user)
 
         layer_names = map(lambda x, p=o.raster_path: os.path.join(p, x), m.layer_names)
         glob_name = os.path.join(o.raster_path, m.glob_name)
