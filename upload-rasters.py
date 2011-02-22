@@ -13,8 +13,7 @@ os.mkdir(glob_path)
 
 
 if glob_name not in listdir_noext(glob_path):
-    os.system('scp %s@map1.zoo.ox.ac.uk:%s* %s'%(user,os.path.join('/srv/data/mastergrids/cleandata',dmod.glob_name),gl\
-ob_path))
+    os.system('scp %s@map1.zoo.ox.ac.uk:%s* %s'%(user,os.path.join('/srv/data/mastergrids/cleandata',dmod.glob_name),glob_path))
 
 for l in dmod.layer_names:
     l_path, l_name = os.path.split(l)
