@@ -13,14 +13,18 @@ os.system('mkdir %s'%glob_path)
 
 
 if glob_name not in listdir_noext(glob_path):
-    os.system('scp %s@map1.zoo.ox.ac.uk:%s* %s'%(user,os.path.join('/srv/data/mastergrids/cleandata',dmod.glob_name),glob_path))
+    s = os.system('scp %s@map1.zoo.ox.ac.uk:%s* %s'%(user,os.path.join('/srv/data/mastergrids/cleandata',dmod.glob_name),glob_path))
+    if s != 0:
+        raise KeyboardInterrupt()
 
 for l in dmod.layer_names:
     l_path, l_name = os.path.split(l)
     l_path = os.path.join('rasters',l_path)
     os.system('mkdir %s'%l_path)
     if l_name not in listdir_noext(l_path):
-        os.system('scp %s@map1.zoo.ox.ac.uk:%s* %s'%(user,os.path.join('/srv/data/mastergrids/cleandata',l),l_path))
+        s = os.system('scp %s@map1.zoo.ox.ac.uk:%s* %s'%(user,os.path.join('/srv/data/mastergrids/cleandata',l),l_path))
+        if s != 0:
+            raise KeyboardInterrupt()
 
 
 
