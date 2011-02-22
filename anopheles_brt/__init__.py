@@ -1,5 +1,6 @@
 import os,sys
 import anopheles_query
+import upload_rasters
 from anopheles_query import *
 
 
