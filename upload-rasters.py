@@ -17,7 +17,7 @@ def multimkdir(dir):
 
 glob_path, glob_name = os.path.split(dmod.glob_name)
 glob_path = os.path.join('rasters',glob_path)
-mutlimkdir(glob_path)
+multimkdir(glob_path)
 
 
 if glob_name not in listdir_noext(glob_path):
