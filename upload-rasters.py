@@ -13,7 +13,7 @@ def multimkdir(dir):
     head, tail = os.path.split(dir)
     if not os.path.exists(head):
         multimkdir(head)
-    os.mkdir(tail)
+    os.mkdir(dir)
 
 glob_path, glob_name = os.path.split(dmod.glob_name)
 glob_path = os.path.join('rasters',glob_path)
