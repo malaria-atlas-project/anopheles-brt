@@ -14,6 +14,6 @@ if __name__ == '__main__':
 
     bin = os.path.expanduser('~/bin')
     executable = os.path.join(bin,'anopheles-brt')    
-    python_executable = os.system('which python')
+    python_executable = os.popen('which python').read()
     file(executable,'w').write('#!%s\n\n'%python_executable+file('anopheles-brt').read())
     os.system('chmod ugo+x %s'%executable)
