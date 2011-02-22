@@ -9,7 +9,7 @@ matplotlib.use('pdf')
 import imp
 import anopheles_brt
 from anopheles_brt.anopheles_query import Session
-from anopheles_brt.upload_raster import upload_raster
+from anopheles_brt.upload_rasters import upload_rasters
 import datetime
 import thread
 import map_utils
