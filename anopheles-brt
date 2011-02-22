@@ -8,7 +8,7 @@ import matplotlib
 matplotlib.use('pdf')
 import imp
 import anopheles_brt
-from anopheles_query import Session
+from anopheles_brt.anopheles_query import Session
 import datetime
 import thread
 import map_utils
@@ -46,8 +46,11 @@ def targ(q,s):
 
         # imp.load_module(name, file, pathname, description)
         m = imp.load_module(os.path.splitext(config_filename)[0], file(config_filename), '.', suff)
+
+        from IPython.Debugger import Pdb
+        Pdb(color_scheme='Linux').set_trace()   
         # from m import layer_names, glob_name, glob_channels, buffer_size, brt_args, bbox, species_name
-        exec('from %s import layer_names, glob_name, glob_channels, buffer_width, n_pseudoabsences, n_pseudopresences, pseudopresence_weight, pseudoabsence_weight, use_real_presences, brt_opts, llclat, llclon, urclat, urclon, species_name, saved_results'%os.path.splitext(config_filename)[0])
+        # exec('from %s import layer_names, glob_name, glob_channels, buffer_width, n_pseudoabsences, n_pseudopresences, pseudopresence_weight, pseudoabsence_weight, use_real_presences, brt_opts, llclat, llclon, urclat, urclon, species_name, saved_results'%os.path.splitext(config_filename)[0])
 
         layer_names = map(lambda x, p=o.raster_path: os.path.join(p, x), layer_names)
         glob_name = os.path.join(o.raster_path, glob_name)
