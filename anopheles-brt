@@ -59,7 +59,7 @@ def targ(q,s):
             dblock.acquire()
             print 'Process %i querying database, extracting environmental layers etc. for species %s.'%(multiprocessing.current_process().ident,m.species_name)
             try:
-                fname, pseudoabsences, x, eo, weights = anopheles_brt.sites_and_env(s, species_tup, layer_names, glob_name, m.glob_channels, m.buffer_width/111.32, m.n_pseudoabsences, dblock=dblock, m.n_pseudopresences=m.n_pseudopresences, eo_expand=o.eo_expand/111.32, m.pseudoabsence_weight=m.pseudoabsence_weight, m.pseudopresence_weight=m.pseudopresence_weight, real_presences=m.use_real_presences, raster_path=o.raster_path)
+                fname, pseudoabsences, x, eo, weights = anopheles_brt.sites_and_env(s, species_tup, layer_names, glob_name, m.glob_channels, m.buffer_width/111.32, m.n_pseudoabsences, dblock=dblock, n_pseudopresences=m.n_pseudopresences, eo_expand=o.eo_expand/111.32, pseudoabsence_weight=m.pseudoabsence_weight, pseudopresence_weight=m.pseudopresence_weight, real_presences=m.use_real_presences, raster_path=o.raster_path)
                 dblock.release()
                 print 'Done'
             except:
