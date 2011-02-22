@@ -8,10 +8,10 @@ def listdir_noext(l):
     return map(lambda x: os.path.splitext(x)[0], os.listdir(l))
     
 def multimkdir(dir):
-    if os.exists(dir):
+    if os.path.exists(dir):
         return
     head, tail = os.path.split(dir)
-    if not os.exists(head):
+    if not os.path.exists(head):
         multimkdir(head)
     os.mkdir(tail)
 
